@@ -22,6 +22,7 @@
 #define MAC_ADDR_SIZE_BYTES		6UL
 
 static struct board_info_ops *ops;
+static struct board_info_ops *nct_ops;
 static bool board_info_initialized;
 
 void create_mac_addr_string(char *mac_addr_s, uint8_t *mac_addr_n,
@@ -93,6 +94,8 @@ static void tegrabl_board_info_init(void)
 #if defined(CONFIG_ENABLE_NCT)
 	if (!ops) {
 		ops = nct_get_ops();	/* Retrieve info from NCT */
+	} else {
+		nct_ops = nct_get_ops();
 	}
 #endif
 
@@ -137,7 +140,7 @@ fail:
 tegrabl_error_t tegrabl_get_mac_address(mac_addr_type_t type, uint8_t *mac_bytes,
 										uint8_t *mac_string)
 {
-	tegrabl_error_t err;
+	tegrabl_error_t err = TEGRABL_ERR_NOT_SUPPORTED;
 	struct mac_addr mac_addr_info;
 
 	if ((mac_bytes == NULL) && (mac_string == NULL)) {
@@ -151,11 +154,17 @@ tegrabl_error_t tegrabl_get_mac_address(mac_addr_type_t type, uint8_t *mac_bytes
 	if (!board_info_initialized)
 		tegrabl_board_info_init();
 
-	if (ops != NULL) {
-		err = (ops->get_mac_addr)((void *)&mac_addr_info);
-	} else {
+	if (ops == NULL && nct_ops == NULL) {
 		pr_warn("No MAC address type %d available\n", type);
 		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_SUPPORTED, 1);
+	}
+
+	if (ops != NULL) {
+		err = (ops->get_mac_addr)((void *)&mac_addr_info);
+	}
+
+	if (nct_ops != NULL && err != TEGRABL_NO_ERROR) {
+		err = (nct_ops->get_mac_addr)((void *)&mac_addr_info);
 	}
 
 	return err;
