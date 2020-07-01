@@ -20,7 +20,7 @@ GLOBAL_INCLUDES += \
 GLOBAL_INCLUDES += \
 	$(LOCAL_DIR)/../../include/lib \
 	$(LOCAL_DIR)/../../include/soc/$(TARGET) \
-	$(LOCAL_DIR)/../../../../../hwinc-$(TARGET_FAMILY)
+	$(LOCAL_DIR)/../../../../../hardware/nvidia/hwinc/$(TARGET_FAMILY)
 
 MODULE_SRCS += \
 	$(LOCAL_DIR)/tegrabl_odmdata.c \
