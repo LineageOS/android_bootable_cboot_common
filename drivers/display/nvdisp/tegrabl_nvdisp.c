@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -655,6 +655,7 @@ fail:
 tegrabl_error_t nvdisp_disable(struct tegrabl_nvdisp *nvdisp)
 {
 	uint32_t i;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	nvdisp_writel(nvdisp, CMD_INT_MASK, 0);
 
@@ -665,8 +666,12 @@ tegrabl_error_t nvdisp_disable(struct tegrabl_nvdisp *nvdisp)
 		w->flags &= ~WIN_FLAG_ENABLED;
 	}
 
-	tegrabl_car_clk_disable(nvdisp->module_nvdisp, nvdisp->instance);
-	return TEGRABL_NO_ERROR;
+	err = tegrabl_car_clk_disable(nvdisp->module_nvdisp, nvdisp->instance);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("Failed to disable nvdisp clk\n");
+	}
+
+	return err;
 }
 
 struct tegrabl_nvdisp *tegrabl_nvdisp_init(int32_t out_type, struct tegrabl_display_pdata *pdata)

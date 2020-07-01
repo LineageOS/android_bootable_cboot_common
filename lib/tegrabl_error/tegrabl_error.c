@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -279,7 +279,6 @@ static int32_t pre_process_error_string(char *err,
 	}
 
 	err[MIN(index, (err_size - 1U))] = '\0';
-	va_end(args);
 
 	return count;
 }
@@ -367,6 +366,7 @@ void tegrabl_error_print(bool set_first_error, uint32_t level, tegrabl_error_t e
 	}
 
 	va_end(copy_args);
+	va_end(args);
 }
 
 const char *tegrabl_error_module_str(tegrabl_err_module_t module)

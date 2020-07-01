@@ -45,6 +45,10 @@ int ext2_open_file(fscookie *cookie, const char *path, filecookie **fcookie)
 
     /* create the file object */
     ext2_file_t *file = malloc(sizeof(ext2_file_t));
+    if (file == NULL) {
+        TRACEF("Failed to allocate memory for ext2 file object\n");
+        return ERR_NO_MEMORY;
+    }
     memset(file, 0, sizeof(ext2_file_t));
 
     /* read in the inode */

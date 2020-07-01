@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -23,6 +23,7 @@
 #include <xhci_priv.h>
 #include <tegrabl_timer.h>
 #include <tegrabl_io.h>
+#include <tegrabl_xusbh_soc.h>
 
 #define NV_XUSB_PADCTL_READ(reg, value) \
 	value = NV_READ32((NV_ADDRESS_MAP_XUSB_PADCTL_BASE + XUSB_PADCTL_##reg##_0))
@@ -52,72 +53,6 @@ void xhci_init_pinmux(void)
 	/* TODO */
 }
 
-void xhci_enable_vbus(void)
-{
-	uint32_t reg_val;
-
-	/* TODO: assign over current signal mapping for usb 2.0 and SS ports */
-	NV_XUSB_PADCTL_READ(USB2_OC_MAP, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_OC_MAP, PORT3_OC_PIN, OC_DETECTED3, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_OC_MAP, PORT2_OC_PIN, OC_DETECTED2, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_OC_MAP, PORT1_OC_PIN, OC_DETECTED1, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_OC_MAP, PORT0_OC_PIN, OC_DETECTED0, reg_val);
-	NV_XUSB_PADCTL_WRITE(USB2_OC_MAP, reg_val);
-
-	NV_XUSB_PADCTL_READ(SS_OC_MAP, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, SS_OC_MAP, PORT3_OC_PIN, OC_DETECTED3, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, SS_OC_MAP, PORT2_OC_PIN, OC_DETECTED2, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, SS_OC_MAP, PORT1_OC_PIN, OC_DETECTED1, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, SS_OC_MAP, PORT0_OC_PIN, OC_DETECTED0, reg_val);
-	NV_XUSB_PADCTL_WRITE(SS_OC_MAP, reg_val);
-
-	NV_XUSB_PADCTL_READ(VBUS_OC_MAP, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, VBUS_OC_MAP, VBUS_ENABLE1_OC_MAP, OC_DETECTED1, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, VBUS_OC_MAP, VBUS_ENABLE0_OC_MAP, OC_DETECTED0, reg_val);
-	NV_XUSB_PADCTL_WRITE(VBUS_OC_MAP, reg_val);
-
-	/* clear false reporting of over current events */
-	NV_XUSB_PADCTL_READ(OC_DET, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, OC_DET, OC_DETECTED3, YES, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, OC_DET, OC_DETECTED2, YES, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, OC_DET, OC_DETECTED1, YES, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, OC_DET, OC_DETECTED0, YES, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, OC_DET, OC_DETECTED_VBUS_PAD3, YES, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, OC_DET, OC_DETECTED_VBUS_PAD2, YES, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, OC_DET, OC_DETECTED_VBUS_PAD1, YES, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, OC_DET, OC_DETECTED_VBUS_PAD0, YES, reg_val);
-	NV_XUSB_PADCTL_WRITE(OC_DET, reg_val);
-	tegrabl_udelay(1);
-
-#if 0
-	/* enable VBUS for the host ports */
-	NV_XUSB_PADCTL_READ(VBUS_OC_MAP, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, VBUS_OC_MAP, VBUS_ENABLE3, YES, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, VBUS_OC_MAP, VBUS_ENABLE2, YES, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, VBUS_OC_MAP, VBUS_ENABLE1, YES, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, VBUS_OC_MAP, VBUS_ENABLE0, YES, reg_val);
-	NV_XUSB_PADCTL_WRITE(VBUS_OC_MAP, reg_val);
-#endif
-}
-
-void xhci_vbus_override(void)
-{
-	uint32_t reg_val;
-
-	/* Local override for VBUS and ID status reporting. */
-	NV_XUSB_PADCTL_READ(USB2_VBUS_ID, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_VBUS_ID, ID_SOURCE_SELECT, ID_OVERRIDE, reg_val);
-	reg_val = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_VBUS_ID, VBUS_SOURCE_SELECT, VBUS_OVERRIDE, reg_val);
-	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_VBUS_ID, ID_OVERRIDE, 0x0, reg_val);
-	NV_XUSB_PADCTL_WRITE(USB2_VBUS_ID, reg_val);
-
-	/* Clear false reporting of VBUS and ID status changes. */
-	NV_XUSB_PADCTL_READ(USB2_VBUS_ID, reg_val);
-	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_VBUS_ID, IDDIG_ST_CHNG, 0x1, reg_val);
-	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_VBUS_ID, VBUS_VALID_ST_CHNG, 0x1, reg_val);
-	NV_XUSB_PADCTL_WRITE(USB2_VBUS_ID, reg_val);
-}
-
 void xhci_release_ss_wakestate_latch(void)
 {
 	uint32_t reg_val;
@@ -135,6 +70,26 @@ void xhci_release_ss_wakestate_latch(void)
 	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, ELPG_PROGRAM_1, SSP0_ELPG_CLAMP_EN, 0x0, reg_val);
 	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, ELPG_PROGRAM_1, SSP0_ELPG_CLAMP_EN_EARLY, 0x0, reg_val);
 	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, ELPG_PROGRAM_1, SSP0_ELPG_VCORE_DOWN, 0x0, reg_val);
+	NV_XUSB_PADCTL_WRITE(ELPG_PROGRAM_1, reg_val);
+}
+
+void xhci_usb3_phy_power_off(void)
+{
+	uint32_t reg_val;
+
+	NV_XUSB_PADCTL_READ(ELPG_PROGRAM_1, reg_val);
+	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, ELPG_PROGRAM_1, SSP3_ELPG_CLAMP_EN, 0x1, reg_val);
+	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, ELPG_PROGRAM_1, SSP3_ELPG_CLAMP_EN_EARLY, 0x1, reg_val);
+	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, ELPG_PROGRAM_1, SSP3_ELPG_VCORE_DOWN, 0x1, reg_val);
+	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, ELPG_PROGRAM_1, SSP2_ELPG_CLAMP_EN, 0x1, reg_val);
+	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, ELPG_PROGRAM_1, SSP2_ELPG_CLAMP_EN_EARLY, 0x1, reg_val);
+	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, ELPG_PROGRAM_1, SSP2_ELPG_VCORE_DOWN, 0x1, reg_val);
+	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, ELPG_PROGRAM_1, SSP1_ELPG_CLAMP_EN, 0x1, reg_val);
+	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, ELPG_PROGRAM_1, SSP1_ELPG_CLAMP_EN_EARLY, 0x1, reg_val);
+	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, ELPG_PROGRAM_1, SSP1_ELPG_VCORE_DOWN, 0x1, reg_val);
+	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, ELPG_PROGRAM_1, SSP0_ELPG_CLAMP_EN, 0x1, reg_val);
+	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, ELPG_PROGRAM_1, SSP0_ELPG_CLAMP_EN_EARLY, 0x1, reg_val);
+	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, ELPG_PROGRAM_1, SSP0_ELPG_VCORE_DOWN, 0x1, reg_val);
 	NV_XUSB_PADCTL_WRITE(ELPG_PROGRAM_1, reg_val);
 }
 
@@ -196,6 +151,15 @@ fail:
 	return e;
 }
 
+void xhci_power_down_bias_pad(void)
+{
+	uint32_t reg_val;
+
+	/* XUSB_PADCTL_USB2_BIAS_PAD_CTL_0_0, power down the bias pad */
+	NV_XUSB_PADCTL_READ(USB2_BIAS_PAD_CTL_0, reg_val);
+	reg_val = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_BIAS_PAD_CTL_0, PD, 0x1, reg_val);
+	NV_XUSB_PADCTL_WRITE(USB2_BIAS_PAD_CTL_0, reg_val);
+}
 tegrabl_error_t xhci_init_usb2_padn(void)
 {
 	uint32_t reg_data;
@@ -227,36 +191,24 @@ tegrabl_error_t xhci_init_usb2_padn(void)
 	reg_data = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_OTG_PAD0_CTL_0, PD_ZI, SW_DEFAULT, reg_data);
 	reg_data = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_OTG_PAD0_CTL_0, PD, SW_DEFAULT, reg_data);
 	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD0_CTL_0, HS_CURR_LEVEL, hs_curr_level, reg_data);
-	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD0_CTL_0, TERM_SEL, 1, reg_data);
-	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD0_CTL_0, LS_FSLEW, 6, reg_data);
-	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD0_CTL_0, LS_RSLEW, 6, reg_data);
 	NV_XUSB_PADCTL_WRITE(USB2_OTG_PAD0_CTL_0, reg_data);
 
 	NV_XUSB_PADCTL_READ(USB2_OTG_PAD1_CTL_0, reg_data);
 	reg_data = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_OTG_PAD1_CTL_0, PD_ZI, SW_DEFAULT, reg_data);
 	reg_data = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_OTG_PAD1_CTL_0, PD, SW_DEFAULT, reg_data);
 	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD1_CTL_0, HS_CURR_LEVEL, hs_curr_level, reg_data);
-	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD1_CTL_0, TERM_SEL, 1, reg_data);
-	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD1_CTL_0, LS_FSLEW, 6, reg_data);
-	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD1_CTL_0, LS_RSLEW, 6, reg_data);
 	NV_XUSB_PADCTL_WRITE(USB2_OTG_PAD1_CTL_0, reg_data);
 
 	NV_XUSB_PADCTL_READ(USB2_OTG_PAD2_CTL_0, reg_data);
 	reg_data = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_OTG_PAD2_CTL_0, PD_ZI, SW_DEFAULT, reg_data);
 	reg_data = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_OTG_PAD2_CTL_0, PD, SW_DEFAULT, reg_data);
 	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD2_CTL_0, HS_CURR_LEVEL, hs_curr_level, reg_data);
-	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD2_CTL_0, TERM_SEL, 1, reg_data);
-	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD2_CTL_0, LS_FSLEW, 6, reg_data);
-	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD2_CTL_0, LS_RSLEW, 6, reg_data);
 	NV_XUSB_PADCTL_WRITE(USB2_OTG_PAD2_CTL_0, reg_data);
 
 	NV_XUSB_PADCTL_READ(USB2_OTG_PAD3_CTL_0, reg_data);
 	reg_data = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_OTG_PAD3_CTL_0, PD_ZI, SW_DEFAULT, reg_data);
 	reg_data = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_OTG_PAD3_CTL_0, PD, SW_DEFAULT, reg_data);
 	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD3_CTL_0, HS_CURR_LEVEL, hs_curr_level, reg_data);
-	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD3_CTL_0, TERM_SEL, 1, reg_data);
-	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD3_CTL_0, LS_FSLEW, 6, reg_data);
-	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD3_CTL_0, LS_RSLEW, 6, reg_data);
 	NV_XUSB_PADCTL_WRITE(USB2_OTG_PAD3_CTL_0, reg_data);
 
 	/* USB2_OTG_PADn_CTL_1 */
@@ -284,26 +236,6 @@ tegrabl_error_t xhci_init_usb2_padn(void)
 	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD3_CTL_1, RPD_CTRL, rpd_ctrl, reg_data);
 	NV_XUSB_PADCTL_WRITE(USB2_OTG_PAD3_CTL_1, reg_data);
 
-	/* USB Pad protection circuit activation */
-	NV_XUSB_PADCTL_READ(USB2_BATTERY_CHRG_OTGPAD2_CTL1, reg_data);
-	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_BATTERY_CHRG_OTGPAD2_CTL1, PD_VREG, 0x1, reg_data);
-//	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_BATTERY_CHRG_OTGPAD2_CTL1, VREG_DIR, 0x1, reg_data);
-	/* TODO: program this based on VBUS */
-//	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_BATTERY_CHRG_OTGPAD2_CTL1, VREG_LEV, 0x0, reg_data);
-	NV_XUSB_PADCTL_WRITE(USB2_BATTERY_CHRG_OTGPAD2_CTL1, reg_data);
-
-	NV_XUSB_PADCTL_READ(USB2_BATTERY_CHRG_OTGPAD0_CTL1, reg_data);
-	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_BATTERY_CHRG_OTGPAD2_CTL1, PD_VREG, 0x1, reg_data);
-	NV_XUSB_PADCTL_WRITE(USB2_BATTERY_CHRG_OTGPAD0_CTL1, reg_data);
-
-	NV_XUSB_PADCTL_READ(USB2_BATTERY_CHRG_OTGPAD1_CTL1, reg_data);
-	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_BATTERY_CHRG_OTGPAD2_CTL1, PD_VREG, 0x1, reg_data);
-	NV_XUSB_PADCTL_WRITE(USB2_BATTERY_CHRG_OTGPAD1_CTL1, reg_data);
-
-	NV_XUSB_PADCTL_READ(USB2_BATTERY_CHRG_OTGPAD3_CTL1, reg_data);
-	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_BATTERY_CHRG_OTGPAD2_CTL1, PD_VREG, 0x1, reg_data);
-	NV_XUSB_PADCTL_WRITE(USB2_BATTERY_CHRG_OTGPAD3_CTL1, reg_data);
-
 	/* Assign port capabilities for 2.0 and superspeed ports */
 	NV_XUSB_PADCTL_READ(USB2_PORT_CAP, reg_data);
 	reg_data = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_PORT_CAP, PORT0_CAP, HOST_ONLY, reg_data);
@@ -311,21 +243,6 @@ tegrabl_error_t xhci_init_usb2_padn(void)
 	reg_data = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_PORT_CAP, PORT2_CAP, HOST_ONLY, reg_data);
 	reg_data = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_PORT_CAP, PORT3_CAP, HOST_ONLY, reg_data);
 	NV_XUSB_PADCTL_WRITE(USB2_PORT_CAP, reg_data);
-
-	/* Disable over current signal mapping for 2.0 and SS ports */
-	NV_XUSB_PADCTL_READ(USB2_OC_MAP, reg_data);
-	reg_data = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_OC_MAP, PORT0_OC_PIN, OC_DETECTION_DISABLED, reg_data);
-	reg_data = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_OC_MAP, PORT1_OC_PIN, OC_DETECTION_DISABLED, reg_data);
-	reg_data = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_OC_MAP, PORT2_OC_PIN, OC_DETECTION_DISABLED, reg_data);
-	reg_data = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_OC_MAP, PORT3_OC_PIN, OC_DETECTION_DISABLED, reg_data);
-	NV_XUSB_PADCTL_WRITE(USB2_OC_MAP, reg_data);
-
-	NV_XUSB_PADCTL_READ(VBUS_OC_MAP, reg_data);
-	reg_data = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, VBUS_OC_MAP, VBUS_ENABLE1_OC_MAP, OC_DETECTION_DISABLED,
-								  reg_data);
-	reg_data = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, VBUS_OC_MAP, VBUS_ENABLE0_OC_MAP, OC_DETECTION_DISABLED,
-								  reg_data);
-	NV_XUSB_PADCTL_WRITE(USB2_OC_MAP, reg_data);
 
 	NV_XUSB_PADCTL_READ(USB2_PAD_MUX, reg_data);
 	reg_data = NV_FLD_SET_DRF_DEF(XUSB_PADCTL, USB2_PAD_MUX, USB2_OTG_PAD_PORT0, XUSB, reg_data);
@@ -336,6 +253,52 @@ tegrabl_error_t xhci_init_usb2_padn(void)
 
 fail:
 	return e;
+}
+
+void xhci_power_down_usb2_padn(void)
+{
+
+	uint32_t reg_data;
+
+	/* XUSB_PADCTL_USB2_OTG_PADX_CTL_0_0 */
+	NV_XUSB_PADCTL_READ(USB2_OTG_PAD0_CTL_0, reg_data);
+	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD0_CTL_0, PD_ZI, 0x1, reg_data);
+	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD0_CTL_0, PD, 0x1, reg_data);
+	NV_XUSB_PADCTL_WRITE(USB2_OTG_PAD0_CTL_0, reg_data);
+
+	NV_XUSB_PADCTL_READ(USB2_OTG_PAD1_CTL_0, reg_data);
+	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD1_CTL_0, PD_ZI, 0x1, reg_data);
+	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD1_CTL_0, PD, 0x1, reg_data);
+	NV_XUSB_PADCTL_WRITE(USB2_OTG_PAD1_CTL_0, reg_data);
+
+	NV_XUSB_PADCTL_READ(USB2_OTG_PAD2_CTL_0, reg_data);
+	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD2_CTL_0, PD_ZI, 0x1, reg_data);
+	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD2_CTL_0, PD, 0x1, reg_data);
+	NV_XUSB_PADCTL_WRITE(USB2_OTG_PAD2_CTL_0, reg_data);
+
+	NV_XUSB_PADCTL_READ(USB2_OTG_PAD3_CTL_0, reg_data);
+	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD3_CTL_0, PD_ZI, 0x1, reg_data);
+	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD3_CTL_0, PD, 0x1, reg_data);
+	NV_XUSB_PADCTL_WRITE(USB2_OTG_PAD3_CTL_0, reg_data);
+
+	/* XUSB_PADCTL_USB2_OTG_PADX_CTL_1_0 */
+	NV_XUSB_PADCTL_READ(USB2_OTG_PAD0_CTL_1, reg_data);
+	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD0_CTL_1, PD_DR, 0x1, reg_data);
+	NV_XUSB_PADCTL_WRITE(USB2_OTG_PAD0_CTL_1, reg_data);
+
+	NV_XUSB_PADCTL_READ(USB2_OTG_PAD1_CTL_1, reg_data);
+	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD1_CTL_1, PD_DR, 0x1, reg_data);
+	NV_XUSB_PADCTL_WRITE(USB2_OTG_PAD1_CTL_1, reg_data);
+
+	NV_XUSB_PADCTL_READ(USB2_OTG_PAD2_CTL_1, reg_data);
+	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD2_CTL_1, PD_DR, 0x1, reg_data);
+	NV_XUSB_PADCTL_WRITE(USB2_OTG_PAD2_CTL_1, reg_data);
+
+	NV_XUSB_PADCTL_READ(USB2_OTG_PAD3_CTL_1, reg_data);
+	reg_data = NV_FLD_SET_DRF_NUM(XUSB_PADCTL, USB2_OTG_PAD3_CTL_1, PD_DR, 0x1, reg_data);
+	NV_XUSB_PADCTL_WRITE(USB2_OTG_PAD3_CTL_1, reg_data);
+
+
 }
 
 bool xhci_set_root_port(struct xusb_host_context *ctx)
@@ -359,7 +322,7 @@ bool xhci_set_root_port(struct xusb_host_context *ctx)
 		}
 	}
 
-	for (i = 4; i < 8; i++) {
+	for (i = HOST_PORTS_NUM; i < HOST_PORTS_NUM*2; i++) {
 		val = xusbh_xhci_readl(OP_PORTSC(i));
 		pr_debug("port[%d] = 0x%x\n", i, val);
 		if ((val & PORT_CONNECT) == PORT_CONNECT) {

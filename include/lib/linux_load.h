@@ -16,10 +16,39 @@
 #include <tegrabl_partition_loader.h>
 #include <tegrabl_bootimg.h>
 
+#if defined(CONFIG_ENABLE_L4T_RECOVERY)
+#define KERNEL_BOOTCTRL_MAGIC_NUMBER 0x4C544342   /* "BCTL" */
+#define KERNEL_BOOTCTRL_VERSION 1
+
+enum boot_mode {
+	BOOT_TO_NORMAL_MODE = 0U,
+	BOOT_TO_RECOVERY_MODE,
+	BOOT_MODE_MAX = BOOT_TO_RECOVERY_MODE,
+};
+
+enum recovery_cmd {
+	RECOVERY_CMD_NULL = 0U,
+	RECOVERY_CMD_UPDATE_PACKAGE,
+	RECOVERY_CMD_FACTORY_RESET,
+	RECOVERY_CMD_MAX = RECOVERY_CMD_FACTORY_RESET,
+};
+
+struct tegrabl_kernel_bootctrl {
+	uint32_t magic_number;  /* "BCTL" */
+	enum boot_mode mode;
+	enum recovery_cmd command;
+	uint32_t version;
+	uint32_t crc32;
+};
+#endif
+
 struct tegrabl_kernel_bin {
 	tegrabl_binary_type_t bin_type;
 	bool load_from_storage;
 	struct tegrabl_binary_info binary;
+#if defined(CONFIG_ENABLE_L4T_RECOVERY)
+	struct tegrabl_kernel_bootctrl bootctrl;
+#endif
 };
 
 struct tegrabl_kernel_load_callbacks {

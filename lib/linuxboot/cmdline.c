@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2018, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2014-2019, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -294,16 +294,19 @@ static bool check_ignore_fastboot_cmd(const char *cmd, int length,
 /* TODO: prepare a BST of params based on initcmdline */
 static uint32_t init_cmd_list(const char *cmdline)
 {
-	int32_t i, next, mood = 0, quote = 0, start = 0;
+	int32_t next, mood = 0, quote = 0, start = 0;
 	uint8_t curr_char;
 	int32_t ignore_fastboot_cmdlen = strlen(ignore_fastboot_cmd);
+	uint32_t i, len_cmdline;
 
 	if (!cmdline) { /* Nothing to do. Early return */
 		s_cmdline[0] = '\0';
 		return 0;
 	}
 
-	for (i = next = 0; i < COMMAND_LINE_SIZE; i++) {
+	/* capture the bound for cmdline */
+	len_cmdline = strlen(cmdline);
+	for (i = next = 0; (i < len_cmdline) && (i < COMMAND_LINE_SIZE); i++) {
 		curr_char = cmdline[i];
 		if (0 == mood) {
 			if (!iswhitespace(curr_char)) {

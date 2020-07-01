@@ -81,7 +81,7 @@ static int ext2_calculate_block_pointer_pos(ext2_t *ext2, blocknum_t block_to_fi
 
     block_to_find -= block_ptr_per_2nd_block;
     // See if it's in the third indirect block
-    if (block_to_find < (block_ptr_per_2nd_block * block_ptr_per_block)) {
+    if (block_to_find < (blocknum_t)(block_ptr_per_2nd_block * block_ptr_per_block)) {
         *level = 3;
         pos[0] = EXT2_TIND_BLOCK;
         pos[1] = block_to_find / block_ptr_per_2nd_block;
@@ -183,7 +183,6 @@ static blocknum_t file_block_to_fs_block(ext2_t *ext2, struct ext2fs_dinode *ino
 
 ssize_t ext2_read_inode(ext2_t *ext2, struct ext2fs_dinode *inode, void *_buf, off_t offset, size_t len)
 {
-    int err = 0;
     size_t bytes_read = 0;
     uint8_t *buf = _buf;
 
@@ -263,8 +262,8 @@ ssize_t ext2_read_inode(ext2_t *ext2, struct ext2fs_dinode *inode, void *_buf, o
         bytes_read += len;
     }
 
-    LTRACEF("err %d, bytes_read %zu\n", err, bytes_read);
+    LTRACEF("bytes_read %zu\n", bytes_read);
 
-    return (err < 0) ? err : (ssize_t)bytes_read;
+    return (ssize_t)bytes_read;
 }
 

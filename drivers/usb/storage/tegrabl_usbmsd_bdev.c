@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2018-2019, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software and related documentation
@@ -674,6 +674,7 @@ tegrabl_error_t tegrabl_usbmsd_bdev_open(uint32_t instance)
 	struct tegrabl_usbmsd_context *context = NULL;
 	uint8_t *in_buf = NULL;
 	uint8_t retry = 5;
+	struct xusb_host_context *host_ctx = NULL;
 
 	if (init_done)
 		goto fail;
@@ -700,7 +701,7 @@ tegrabl_error_t tegrabl_usbmsd_bdev_open(uint32_t instance)
 
 	/* Get host context here */
 	pr_debug("calling get_usbh_context ..\n");
-	struct xusb_host_context *host_ctx = tegrabl_get_usbh_context();
+	host_ctx = tegrabl_get_usbh_context();
 
 	if (host_ctx == NULL) {
 		pr_error("Host context not found, host driver not loaded?\n");
@@ -833,7 +834,9 @@ fail:
 		TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_OPEN_FAILED,
 					   "usbmsd open, %d", instance);
 
-	context->initialized = init_done;
+	if (context) {
+		context->initialized = init_done;
+	}
 
 	pr_debug("%s: Exiting, w/error code 0x%X ...\n", __func__, error);
 	return error;

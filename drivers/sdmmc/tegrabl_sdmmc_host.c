@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -805,6 +805,11 @@ tegrabl_error_t sdmmc_try_send_command(uint32_t cmd_reg, uint32_t arg,
 		sdmmc_writel(hsdmmc, ARGUMENT, arg);
 		sdmmc_writel(hsdmmc, CMD_XFER_MODE, cmd_reg);
 
+#if defined(CONFIG_ENABLE_SDCARD)
+		/* Some SD-Card takes long time to update status register */
+		tegrabl_udelay(2000);
+#endif
+
 		/* Wait for the command to be sent out. If it fails, retry. */
 		if (sdmmc_wait_command_complete(hsdmmc, cmd_reg, arg) == 0U) {
 			break;
@@ -1264,6 +1269,14 @@ tegrabl_error_t sdmmc_select_mode_transfer(struct tegrabl_sdmmc *hsdmmc)
 		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 38);
 		goto fail;
 	}
+
+#if defined(CONFIG_ENABLE_SDCARD)
+	if (hsdmmc->device_type == DEVICE_TYPE_SD) {
+		/* TODO: Add High speed: 0x5A here */
+		if (hsdmmc->tran_speed == CSD_V4_3_TRAN_SPEED)
+			hsdmmc->best_mode = TEGRABL_SDMMC_MODE_SDR26;
+	}
+#endif
 
 	if (hsdmmc->best_mode == TEGRABL_SDMMC_MODE_HS400) {
 		hsdmmc->data_width = DATA_WIDTH_DDR_8BIT;

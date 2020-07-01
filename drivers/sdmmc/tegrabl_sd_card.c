@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -13,21 +13,27 @@
 #include <tegrabl_error.h>
 #include <tegrabl_debug.h>
 #include <tegrabl_gpio.h>
+#include <tegrabl_sd_card.h>
 #include <tegrabl_sd_pdata.h>
+#include <tegrabl_devicetree.h>
 
 static tegrabl_error_t sd_read_pin_status(struct gpio_info *cd_gpio,
 	gpio_pin_state_t *pin_state)
 {
 	struct gpio_driver *gpio_drv;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
-	uint32_t chip_id;
+	uint32_t chip_id = TEGRA_GPIO_MAIN_CHIPID;
+#if defined(CONFIG_ENABLE_GPIO_DT_BASED)
+	void *fdt = NULL;
+#endif
 
 	pr_trace("cd_gpio_pin = %d\n", cd_gpio_pin);
 
 #if defined(CONFIG_ENABLE_GPIO_DT_BASED)
-	err = tegrabl_gpio_get_chipid_with_phandle(cd_gpio->handle, &chip_id);
-	if (err != TEGRABL_NO_ERROR) {
-		goto fail;
+	if (tegrabl_dt_get_fdt_handle(TEGRABL_DT_BL, &fdt) == TEGRABL_NO_ERROR) {
+		err = tegrabl_gpio_get_chipid_with_phandle(cd_gpio->handle, &chip_id);
+		if (err != TEGRABL_NO_ERROR)
+			goto fail;
 	}
 #endif
 
@@ -50,7 +56,6 @@ fail:
 	if (err != TEGRABL_NO_ERROR) {
 		pr_error("sd gpio pin status read failed\n");
 		TEGRABL_SET_HIGHEST_MODULE(err);
-		goto fail;
 	}
 	return err;
 }
@@ -76,9 +81,7 @@ tegrabl_error_t tegrabl_sd_is_card_present(struct gpio_info *cd_gpio, bool *is_p
 		pr_info("No sdcard\n");
 
 fail:
-	if (err != TEGRABL_NO_ERROR) {
+	if (err != TEGRABL_NO_ERROR)
 		pr_error("sd card detection failed\n");
-		goto fail;
-	}
 	return err;
 }

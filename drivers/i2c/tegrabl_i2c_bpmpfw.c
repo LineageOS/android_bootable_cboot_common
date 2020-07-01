@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -68,6 +68,7 @@ static tegrabl_error_t tegrabl_virtual_i2c_bpmp_xfer
 				TEGRABL_VIRTUAL_I2C_BPMP_XFER);
 		TEGRABL_SET_ERROR_STRING(err, "xfer data: %d", "%d", info->xfer_data_size,
 				TEGRA_I2C_IPC_MAX_IN_BUF_SIZE - HDR_LEN);
+		goto fail;
 	}
 
 	hdr_xfer = (struct serial_i2c_request *)i2c_request.xfer.data_buf;

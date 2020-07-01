@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 - 2018, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -22,15 +22,19 @@
 void create_mac_addr_string(char *mac_addr_s, uint8_t *mac_addr_n,
 								   bool big_endian);
 
-#define MAC_ADDR_00     0x0
-#define MAC_ADDR_FF     0x0FFFFFFFFFFFF
-#define MAC_ADDR_MASK   0x0FFFFFFFFFFFF
-#define is_valid_mac_addr(addr) \
-	((((addr) & MAC_ADDR_MASK) != MAC_ADDR_00) && (((addr) & MAC_ADDR_MASK) != MAC_ADDR_FF))
-
 /**
  * @brief Get ops table pointer
  */
 struct board_info_ops *nct_get_ops(void);
 struct board_info_ops *eeprom_get_ops(void);
+
+/*
+ * Check if the MAC addr is valid
+ *
+ * @param mac_addr pointer to mac addr
+ *
+ * @return true if it is valid else false
+ */
+bool is_valid_mac_addr(uint8_t *mac_addr);
+
 #endif

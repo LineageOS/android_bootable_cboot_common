@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -85,7 +85,7 @@ tegrabl_error_t sdmmc_bdev_erase(tegrabl_bdev_t *dev, bnum_t block,
  *
  *  @return TEGRABL_NO_ERROR if success, error code if fails.
  */
-static tegrabl_error_t sdmmc_bdev_xfer(struct tegrabl_blockdev_xfer_info *xfer);
+tegrabl_error_t sdmmc_bdev_xfer(struct tegrabl_blockdev_xfer_info *xfer);
 
 /**
  *  @brief Checks the transfer status and triggers the next
@@ -96,7 +96,7 @@ static tegrabl_error_t sdmmc_bdev_xfer(struct tegrabl_blockdev_xfer_info *xfer);
  *
  *  @return TEGRABL_NO_ERROR if success, error code if fails.
  */
-static tegrabl_error_t sdmmc_bdev_xfer_wait(struct tegrabl_blockdev_xfer_info *xfer, time_t timeout,
+tegrabl_error_t sdmmc_bdev_xfer_wait(struct tegrabl_blockdev_xfer_info *xfer, time_t timeout,
 		uint8_t *status);
 #endif
 

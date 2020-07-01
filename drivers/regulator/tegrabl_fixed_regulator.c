@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -208,12 +208,13 @@ static tegrabl_error_t fixed_regulator_probe(void)
 		}
 
 		phandle = fdt_get_phandle(fdt, offset);
+		/* skip if phandle is missing */
+		if (0 == phandle) {
+			continue;
+		}
+
 		prop_p = fdt_getprop(fdt, offset,
 				     "gpio", NULL);
-
-		/* skip if phandle is missing */
-		if (0 == phandle)
-			continue;
 
 		r = (tegrabl_regulator_t *)
 				tegrabl_calloc(1, sizeof(tegrabl_regulator_t));

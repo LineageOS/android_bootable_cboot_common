@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -32,7 +32,7 @@
 static struct device_info device_info_list[] = {
 	{"Spansion 16MB", 0x01, 0x20, 0x18, 0x10/* 64KB  */, 0x0c/* 4KB */, 8,
 				FLAG_DDR | FLAG_QPI | FLAG_BULK | FLAG_PAGE512},
-	{"Spansion 32MB", 0x01, 0x02, 0x19, 0x12/* 256KB  */, 0x0e/* 4KB */, 8,
+	{"Spansion 32MB", 0x01, 0x02, 0x19, 0x10/* 64KB  */, 0x0c/* 4KB */, 8,
 				FLAG_DDR | FLAG_QPI | FLAG_BULK | FLAG_PAGE512_FIXED},
 	{"Spansion 64MB", 0x01, 0x02, 0x20, 0x12/* 256KB */, 0x0c/* 4KB */, 8,
 				FLAG_DDR | FLAG_QPI | FLAG_BULK | FLAG_PAGE512},
@@ -189,10 +189,13 @@ tegrabl_error_t tegrabl_qspi_flash_open(uint32_t instance,
 		goto init_cleanup;
 	}
 
-	tegrabl_blockdev_initialize_bdev(qspi_dev,
+	err = tegrabl_blockdev_initialize_bdev(qspi_dev,
 					(((uint32_t)TEGRABL_STORAGE_QSPI_FLASH << 16) | instance),
 					hqfdi->chip_info.block_size_log2,
 					hqfdi->chip_info.block_count);
+	if (err != TEGRABL_NO_ERROR) {
+		goto init_cleanup;
+	}
 
 	qspi_dev->buf_align_size = TEGRABL_QSPI_BUF_ALIGN_SIZE;
 

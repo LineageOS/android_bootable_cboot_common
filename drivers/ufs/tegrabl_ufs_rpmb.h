@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -13,7 +13,6 @@
 
 #include <tegrabl_blockdev.h>
 #include <tegrabl_ufs_int.h>
-#include <tegrabl_ufs_rpmb.h>
 
 /* Defines supported RPMB request types. */
 /*macro ufs_rpmb_req*/

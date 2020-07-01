@@ -75,13 +75,15 @@ struct tegrabl_fm_handle *tegrabl_file_manager_get_handle(void)
 */
 tegrabl_error_t tegrabl_fm_publish(tegrabl_bdev_t *bdev, struct tegrabl_fm_handle **handle)
 {
-	struct tegrabl_partition boot_partition = {0};
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
+#if defined(CONFIG_ENABLE_EXTLINUX_BOOT)
+	char *nvidia_boot_pt_guid = NULL;
+	struct tegrabl_partition boot_partition = {0};
 	char *fs_type;
 	char *prefix = NULL;
-	int32_t status = 0x0;
 	uint32_t detect_fs_sector;
-	char *nvidia_boot_pt_guid = NULL;
+	int32_t status = 0x0;
+#endif
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
 
@@ -95,27 +97,30 @@ tegrabl_error_t tegrabl_fm_publish(tegrabl_bdev_t *bdev, struct tegrabl_fm_handl
 	memset(fm_handle, 0x0, sizeof(struct tegrabl_fm_handle));
 	fm_handle->bdev = bdev;
 
-	/* Publish the partitons available in the block device */
+	/* Publish the partitions available in the block device (no error means GPT exists) */
 	err = tegrabl_partition_publish(bdev, 0);
 	if (err != TEGRABL_NO_ERROR) {
+#if defined(CONFIG_ENABLE_EXTLINUX_BOOT)
 		/* GPT does not exist, detect FS from start sector of the device */
 		detect_fs_sector = 0x0;
 		goto detect_fs;
+#else
+		goto fail;
+#endif
 	}
-	/* GPT exists and partitions are published */
 
+#if defined(CONFIG_ENABLE_EXTLINUX_BOOT)
 	pr_info("Look for boot partition\n");
 	nvidia_boot_pt_guid = tegrabl_get_boot_pt_guid();
 	err = tegrabl_partition_boot_guid_lookup_bdev(nvidia_boot_pt_guid, &boot_partition, bdev);
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
-
 	/* BOOT partition exists! */
-	pr_info("Detect filesystem in boot partition\n");
 	detect_fs_sector = boot_partition.partition_info->start_sector;
 
 detect_fs:
+	pr_info("Detect filesystem\n");
 	fs_type = fs_detect(bdev, detect_fs_sector);
 	if (fs_type == NULL) {
 		/* No supported FS detected */
@@ -143,8 +148,69 @@ detect_fs:
 	fm_handle->fs_type = fs_type;
 	fm_handle->start_sector = detect_fs_sector;
 	fm_handle->mount_path = prefix;
+#endif  /* CONFIG_ENABLE_EXTLINUX_BOOT */
+
+fail:
 	if (handle) {
 		*handle = fm_handle;
+	}
+	return err;
+}
+
+tegrabl_error_t tegrabl_fm_read_partition(struct tegrabl_bdev *bdev,
+										  char *partition_name,
+										  void *load_address,
+										  uint32_t *size)
+{
+	struct tegrabl_partition partition;
+	uint32_t partition_size;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+
+	pr_trace("%s(): %u\n", __func__, __LINE__);
+
+	if ((bdev == NULL) || (partition_name == NULL) || (load_address == NULL)) {
+		pr_error("Invalid args passed (bdev: %p, pt name: %s, load addr: %p)\n",
+				 bdev, partition_name, load_address);
+		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0x3);
+		goto fail;
+	}
+
+	/* Get partition info */
+	err = tegrabl_partition_lookup_bdev(partition_name, &partition, bdev);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("Cannot open partition %s\n", partition_name);
+		TEGRABL_SET_HIGHEST_MODULE(err);
+		goto fail;
+	}
+
+	/* Get partition size */
+	partition_size = tegrabl_partition_size(&partition);
+	pr_debug("Size of partition: %u\n", partition_size);
+	if (!partition_size) {
+		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0x4);
+		goto fail;
+	}
+
+	/* Check if the partition load may over flow */
+	if (size != NULL) {
+		if (*size < partition_size) {
+			pr_info("Insufficient buffer size\n");
+			err = TEGRABL_ERROR(TEGRABL_ERR_OVERFLOW, 0x1);
+			goto fail;
+		}
+	}
+
+	/* Read the partition */
+	err = tegrabl_partition_read(&partition, load_address, partition_size);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("Error reading partition %s\n", partition_name);
+		TEGRABL_SET_HIGHEST_MODULE(err);
+		goto fail;
+	}
+
+	/* Return size */
+	if (size) {
+		*size = partition_size;
 	}
 
 fail:
@@ -166,15 +232,13 @@ fail:
 tegrabl_error_t tegrabl_fm_read(struct tegrabl_fm_handle *handle,
 								char *file_path,
 								char *partition_name,
-								void **load_address,
+								void *load_address,
 								uint32_t *size,
 								bool *is_file_loaded_from_fs)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
-	struct tegrabl_partition partition;
-	uint32_t partition_size;
 	char path[200];
-	filehandle *fh;
+	filehandle *fh = NULL;
 	struct file_stat stat;
 	int32_t status = 0x0;
 
@@ -190,41 +254,47 @@ tegrabl_error_t tegrabl_fm_read(struct tegrabl_fm_handle *handle,
 		goto fail;
 	}
 
-	memset(path, ARRAY_SIZE(path), '\0');
-
 	if ((file_path == NULL) || (handle->mount_path == NULL)) {
 		goto load_from_partition;
 	}
 
 	/* Load file from FS */
+	if ((strlen(handle->mount_path) + strlen(file_path)) >= sizeof(path)) {
+		pr_error("Destination buffer is insufficient to hold file path\n");
+		err = TEGRABL_ERROR(TEGRABL_ERR_OVERFLOW, 0x2);
+		goto load_from_partition;
+	}
+	memset(path, '\0', ARRAY_SIZE(path));
 	strcpy(path, handle->mount_path);
 	strcat(path, file_path);
+
+	pr_info("rootfs path: %s\n", path);
 
 	status = fs_open_file(path, &fh);
 	if (status != 0x0) {
 		pr_error("file %s open failed!!\n", path);
 		err = TEGRABL_ERROR(TEGRABL_ERR_OPEN_FAILED, 0x0);
-		goto fail;
+		goto load_from_partition;
 	}
 
 	status = fs_stat_file(fh, &stat);
 	if (status != 0x0) {
 		pr_error("file %s stat failed!!\n", path);
 		err = TEGRABL_ERROR(TEGRABL_ERR_OPEN_FAILED, 0x1);
-		goto fail;
+		goto load_from_partition;
 	}
 
 	/* Check for file overflow */
 	if (*size < stat.size) {
 		err = TEGRABL_ERROR(TEGRABL_ERR_OVERFLOW, 0x0);
-		goto fail;
+		goto load_from_partition;
 	}
 
-	status = fs_read_file(fh, *load_address, 0x0, stat.size);
+	status = fs_read_file(fh, load_address, 0x0, stat.size);
 	if (status < 0) {
 		pr_error("file %s read failed!!\n", path);
 		err = TEGRABL_ERROR(TEGRABL_ERR_READ_FAILED, 0x1);
-		goto fail;
+		goto load_from_partition;
 	}
 
 	*size = stat.size;
@@ -232,50 +302,28 @@ tegrabl_error_t tegrabl_fm_read(struct tegrabl_fm_handle *handle,
 		*is_file_loaded_from_fs = true;
 	}
 
-	fs_close_file(fh);
+	/* Save the handle */
+	fm_handle = handle;
+
 	goto fail;
 
 load_from_partition:
-	if (partition_name != NULL) {
-		/* Get partition info */
-		err = tegrabl_partition_lookup_bdev(partition_name, &partition, handle->bdev);
-		if (err != TEGRABL_NO_ERROR) {
-			pr_error("Cannot open partition %s\n", partition_name);
-			TEGRABL_SET_HIGHEST_MODULE(err);
-			goto fail;
-		}
+	if (partition_name == NULL) {
+		goto fail;
+	}
 
-		/* Get partition size */
-		partition_size = tegrabl_partition_size(&partition);
-		pr_debug("Size of partition: %u\n", partition_size);
-		if (!partition_size) {
-			err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0x4);
-			goto fail;
-		}
-
-		/* Check if the partition load may over flow */
-		if (size != NULL) {
-			if (*size < partition_size) {
-				err = TEGRABL_ERROR(TEGRABL_ERR_OVERFLOW, 0x1);
-				goto fail;
-			}
-		}
-
-		/* Read the partition from storage */
-		err = tegrabl_partition_read(&partition, *load_address, partition_size);
-		if (err != TEGRABL_NO_ERROR) {
-			pr_error("Error reading partition %s\n", partition_name);
-			TEGRABL_SET_HIGHEST_MODULE(err);
-			goto fail;
-		}
-
-		/* Return size */
-		if (size) {
-			*size = partition_size;
-		}
+	pr_info("Fallback: Loading from %s partition of %s device ...\n",
+			partition_name,
+			tegrabl_blockdev_get_name(tegrabl_blockdev_get_storage_type(handle->bdev)));
+	err = tegrabl_fm_read_partition(handle->bdev, partition_name, load_address, size);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
 	}
 
 fail:
+	if (fh != NULL) {
+		fs_close_file(fh);
+	}
 	return err;
 }
 

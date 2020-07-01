@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -18,6 +18,8 @@
 #include <tegrabl_soc_misc.h>
 #include "board_info_local.h"
 #include <ctype.h>
+
+#define MAC_ADDR_SIZE_BYTES		6UL
 
 static struct board_info_ops *ops;
 static bool board_info_initialized;
@@ -176,3 +178,24 @@ tegrabl_error_t tegrabl_get_board_ids(void *id_info)
 	return err;
 }
 
+bool is_valid_mac_addr(uint8_t *mac_addr)
+{
+	uint8_t mac_addr_zero[MAC_ADDR_SIZE_BYTES];
+	uint8_t mac_addr_ff[MAC_ADDR_SIZE_BYTES];
+	bool ret = false;
+
+	if (mac_addr == NULL) {
+		goto fail;
+	}
+
+	memset(mac_addr_zero, 0x0, MAC_ADDR_SIZE_BYTES);
+	memset(mac_addr_ff, 0xFF, MAC_ADDR_SIZE_BYTES);
+
+	if ((memcmp(mac_addr, mac_addr_zero, MAC_ADDR_SIZE_BYTES) != 0UL) &&
+		(memcmp(mac_addr, mac_addr_ff, MAC_ADDR_SIZE_BYTES) != 0UL)) {
+		ret = true;
+	}
+
+fail:
+	return ret;
+}

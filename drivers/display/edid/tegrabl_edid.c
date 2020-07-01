@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -766,7 +766,7 @@ void mode_from_hdmi_mode(struct nvdisp_mode *modes, struct hdmi_mode *mode)
 tegrabl_error_t tegrabl_edid_get_mode(struct nvdisp_mode *modes,
 									  uint32_t module, uint32_t instance)
 {
-	uint8_t edid[EDID_BLOCK_SIZE];
+	uint8_t edid[EDID_BLOCK_SIZE] = {0};
 	struct hdmi_mode *mode = NULL;
 	tegrabl_error_t status = TEGRABL_NO_ERROR;
 

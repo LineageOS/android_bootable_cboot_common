@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -8,23 +8,12 @@
  * license agreement from NVIDIA CORPORATION is strictly prohibited.
  */
 
-#ifndef INCLUDED_TEGRABL_SD_PARAM_H
-#define INCLUDED_TEGRABL_SD_PARAM_H
+#ifndef __TEGRABL_XUSBH_SOC_H
+#define __TEGRABL_XUSBH_SOC_H
 
 #include <stdint.h>
-#include <tegrabl_error.h>
 
-struct gpio_info {
-	uint32_t handle;
-	uint32_t pin;
-	uint32_t flags;
-};
-
-struct tegrabl_sd_platform_params {
-	uint32_t vmmc_supply;
-	struct gpio_info cd_gpio;
-	uint32_t en_vdd_sd_gpio;
-	uint32_t sd_instance;
-};
+#define PADCTL_DT_COMPATIBLE "nvidia,tegra18x-xusb-padctl"
+#define HOST_PORTS_NUM 3
 
 #endif

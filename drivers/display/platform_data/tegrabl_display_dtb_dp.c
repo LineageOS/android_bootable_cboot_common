@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -161,7 +161,13 @@ lt_data:
 	}
 
 	for (i = 0; i < ARRAY_SIZE(lt_data_name); i++) {
-		strncpy(dp_dtb->lt_data[i].name, lt_data_name[i], sizeof(dp_dtb->lt_data[i].name));
+		if (strlen(lt_data_name[i]) >= sizeof(dp_dtb->lt_data[i].name)) {
+			err = TEGRABL_ERROR(TEGRABL_ERR_NAME_TOO_LONG, 0);
+			pr_error("%s: lt_data node name is too long", __func__);
+			goto fail;
+		} else {
+			strncpy(dp_dtb->lt_data[i].name, lt_data_name[i], sizeof(dp_dtb->lt_data[i].name));
+		}
 
 		temp_offset = fdt_subnode_offset(fdt, dp_lt_data_offset, lt_data_name[i]);
 		if (temp_offset < 0) {

@@ -119,7 +119,7 @@ static status_t mount(const char *path, struct tegrabl_bdev *dev, const struct f
 
     mount = malloc(sizeof(struct fs_mount));
     if (mount == NULL) {
-        TRACEF("Failed to allocate memory for mount structure\n");
+        TRACEF("Failed to allocate memory for fs mount object\n");
         return ERR_NO_MEMORY;
     }
     mount->dev = dev;
@@ -128,7 +128,10 @@ static status_t mount(const char *path, struct tegrabl_bdev *dev, const struct f
     fscookie *cookie;
     status_t err = api->mount(mount->dev, start_sector, &cookie);
     if (err < 0) {
-        if (mount->dev) tegrabl_blockdev_close(mount->dev);
+        if (mount->dev) {
+            tegrabl_blockdev_close(mount->dev);
+            free(mount);
+        }
         return err;
     }
 

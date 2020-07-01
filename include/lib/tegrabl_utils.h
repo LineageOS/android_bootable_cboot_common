@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All Rights Reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -24,6 +24,7 @@
 #define SZ_2K   2048UL
 #define SZ_4K   4096UL
 #define SZ_8K   8192UL
+#define SZ_64K  (64UL * SZ_1K)
 #define SZ_1M   (1UL * SZ_1K * SZ_1K)
 #define SZ_2M   (2UL * SZ_1M)
 #define SZ_4M   (4UL * SZ_1M)

@@ -21,7 +21,8 @@ GLOBAL_INCLUDES += \
 	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/include/soc/$(TARGET) \
 	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/include/drivers \
 	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/nvtboot/common/soc/$(TARGET)/include \
-	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/nvtboot/bpmp/soc/$(TARGET)/include
+	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/nvtboot/bpmp/soc/$(TARGET)/include \
+	$(LOCAL_DIR)/../../../t18x/cboot/lib/lwip/include
 
 MODULE_DEPS += \
 	$(LOCAL_DIR)/../libfdt \
@@ -48,11 +49,14 @@ MODULE_SRCS += \
 	$(LOCAL_DIR)/dtb_update.c \
 	$(LOCAL_DIR)/dtb_overlay.c \
 	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/lib/linuxboot/$(TARGET)/linuxboot_helper.c \
-	$(LOCAL_DIR)/../../../common/lib/linuxboot/linuxboot_utils.c \
+	$(LOCAL_DIR)/linuxboot_utils.c \
+	$(LOCAL_DIR)/fixed_boot.c \
 	$(LOCAL_DIR)/linux_load.c
 
 ifneq ($(filter t19x, $(TARGET_FAMILY)),)
 MODULE_SRCS += \
+	$(LOCAL_DIR)/usb_sd_boot.c \
+	$(LOCAL_DIR)/net_boot.c \
 	$(LOCAL_DIR)/extlinux_boot.c
 endif
 

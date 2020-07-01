@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -85,6 +85,12 @@ tegrabl_error_t tegrabl_regulator_is_fixed(int32_t phandle, bool *is_fixed)
 		goto fail;
 	}
 
+	if (is_fixed_batt_connection(phandle) == true) {
+		pr_debug("%s not needed for requested rail\n", __func__);
+		*is_fixed = true;
+		goto fail;
+	}
+
 	/* find the regulator in the list */
 	if (regulator_lookup(phandle, &entry) != TEGRABL_NO_ERROR) {
 		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 0);
@@ -95,6 +101,43 @@ tegrabl_error_t tegrabl_regulator_is_fixed(int32_t phandle, bool *is_fixed)
 		*is_fixed = true;
 	else
 		*is_fixed = false;
+
+fail:
+	return err;
+}
+
+/**
+ * @brief api to check whether regulator is enabled or not
+ *
+ * @phandle handle of the dt entry
+ * @is_enabled ptr to return true/false
+ */
+tegrabl_error_t tegrabl_regulator_is_enabled(int32_t phandle, bool *is_enabled)
+{
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	tegrabl_regulator_t *entry;
+
+	if (!phandle) {
+		err = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, 0);
+		goto fail;
+	}
+
+	if (is_fixed_batt_connection(phandle) == true) {
+		pr_debug("%s not needed for requested rail\n", __func__);
+		*is_enabled = true;
+		goto fail;
+	}
+
+	/* find the regulator in the list */
+	if (regulator_lookup(phandle, &entry) != TEGRABL_NO_ERROR) {
+		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 0);
+		goto fail;
+	}
+
+	if (entry->is_enabled)
+		*is_enabled = true;
+	else
+		*is_enabled = false;
 
 fail:
 	return err;

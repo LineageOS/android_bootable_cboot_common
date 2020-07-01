@@ -46,7 +46,7 @@ static int ext2_dir_lookup(ext2_t *ext2, struct ext2fs_dinode *dir_inode, const 
 
     buf = malloc(E2FS_BLOCK_SIZE(ext2->super_blk));
     if (buf == NULL) {
-        TRACEF("Not enough memory\n");
+        TRACEF("Failed to allocate mmeory for super block\n");
         return ERR_NO_MEMORY;
     }
 

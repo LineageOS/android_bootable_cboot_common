@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -616,9 +616,9 @@ tegrabl_error_t xhci_init_usb2_padn(void);
 
 void xhci_init_pinmux(void);
 
-void xhci_vbus_override(void);
+void xhci_power_down_bias_pad(void);
 
-void xhci_enable_vbus(void);
+void xhci_power_down_usb2_padn(void);
 
 void xusbh_xhci_writel(uint32_t reg, uint32_t value);
 
@@ -627,6 +627,8 @@ uint32_t xusbh_xhci_readl(uint32_t reg);
 bool xhci_set_root_port(struct xusb_host_context *ctx);
 
 void xhci_release_ss_wakestate_latch(void);
+
+void xhci_usb3_phy_power_off(void);
 
 tegrabl_error_t xusbh_load_firmware(void);
 

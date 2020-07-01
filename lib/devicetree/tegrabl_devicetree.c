@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -209,9 +209,10 @@ tegrabl_error_t tegrabl_dt_get_child_with_name(const void *fdt,
 
 	tegrabl_dt_for_each_child(fdt, start_offset, sub_offset) {
 		sub_name = fdt_get_name(fdt, sub_offset, &len);
-		if (!sub_name || !len) {
+		if (!sub_name || !len || strlen(name) != (unsigned int)len) {
 			continue;
 		}
+
 		if (!strncmp(name, sub_name, len)) {
 			*res = sub_offset;
 			return TEGRABL_NO_ERROR;

@@ -261,7 +261,7 @@ static tegrabl_error_t param_value_override(char *cmdline, int *len,
 											char *param, char *value)
 {
 	char *p = param;
-	int cmd_len = *len;
+	int cmd_len;
 	char *c, *pre_end, *end;
 	int new_len, old_len;
 
@@ -270,6 +270,7 @@ static tegrabl_error_t param_value_override(char *cmdline, int *len,
 
 	if (*param == '\0')
 		return TEGRABL_NO_ERROR;
+	cmd_len = *len;
 
 	end = cmdline + strlen(cmdline);
 	for (; *cmdline != '\0'; cmdline++) {
@@ -890,9 +891,20 @@ tegrabl_error_t tegrabl_linuxboot_update_dtb(void *fdt)
 	return TEGRABL_NO_ERROR;
 }
 
+static void remove_substr(char *string, char *sub)
+{
+	char *match = string;
+	int len = strlen(sub);
+	while ((match = strstr(match, sub))) {
+		*match = '\0';
+		strcat(string, match+len);
+		match++;
+	}
+}
+
 int tegrabl_linuxboot_update_bootargs(void *fdt, char *boot_args)
 {
-	char buf[MAX_COMMAND_LINE_SIZE];
+	char buf[MAX_COMMAND_LINE_SIZE] = {'\0'};;
 	char *dtb_cmdline;
 	char *ptr;
 	int len;
@@ -913,12 +925,29 @@ int tegrabl_linuxboot_update_bootargs(void *fdt, char *boot_args)
 		dtb_cmdline = "";
 	}
 
+	pr_debug("%s: bootargs from extlinux APPEND = %s\n", __func__, boot_args);
+	pr_debug("%s: bootargs from DTB = %s\n", __func__, dtb_cmdline);
+
+	/*
+	 * Check for ${cbootargs} in extlinux boot_args, replace it with
+	 * DTB cmdline if found, preserving any other args in 'boot_args'.
+	 * If no ${cbootargs} in extlinux.conf, just use APPEND's arg as is.
+	 */
+	if (boot_args) {
+		ptr = strstr(boot_args, "${cbootargs}");
+		if (ptr) {			/* found cbootargs*/
+			remove_substr(boot_args, "${cbootargs}");
+		} else {
+			dtb_cmdline = "";	/* No cbootargs, scrap DTB cmdline */
+		}
+	}
+
 	/* Prepare bootargs */
 	ptr = buf;
 	len = tegrabl_snprintf(ptr, MAX_COMMAND_LINE_SIZE, "%s %s", dtb_cmdline, boot_args);
-	if (strlen(ptr) > MAX_COMMAND_LINE_SIZE) {
-		pr_warn("Some of the APPEND args is not included in DTB bootargs\n");
-	}
+	buf[len] = '\0';
+
+	pr_debug("%s: Final bootargs = %s\n", __func__, ptr);
 
 	/* Update bootargs */
 set_prop:

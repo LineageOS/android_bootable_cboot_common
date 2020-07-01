@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -84,7 +84,7 @@ static tegrabl_error_t nct_get_mac_addr(void *param)
 		goto fail;
 	}
 
-	if (is_valid_mac_addr(*(uint64_t *)data) == false) {
+	if (is_valid_mac_addr(data) == false) {
 		pr_warn("MAC addr invalid!\n");
 		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 1);
 		goto fail;

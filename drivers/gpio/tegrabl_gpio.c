@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -33,6 +33,10 @@
 #define TEGRA_GPIO_AON_DRIVER_NAME	GPIO_AON_NODE
 
 #define TEGRABL_MAX_GPIOS_PER_BANK 8
+
+#define PINMUX_TRISTATE_OFFSET           0x10
+#define PINMUX_E_INPUT_OFFSET            0x40
+#define PINMUX_GPIO_SF_SEL_OFFSET        0x400
 
 static bool s_is_gpio_initialised;
 
@@ -131,6 +135,19 @@ static void gpio_set_direction(const struct tegrabl_gpio_id *id,
 }
 
 /**
+ * @brief config gpio direction to input
+ *
+ * @param id controller id struct
+ * @param gpio gpio id
+ * @param state gpio config mode
+ */
+static inline void gpio_set_output_control(const struct tegrabl_gpio_id *id,
+							   uint32_t gpio, uint32_t state)
+{
+	NV_WRITE32(reg(id, gpio, GPIO_N_OUTPUT_CONTROL_00_0), state);
+}
+
+/**
  * @brief Tegra GPIO driver API for configuring a GPIO pin.
  *        Sets the pin mode either to INPUT or OUTPUT based on mode value.
  *
@@ -160,7 +177,10 @@ static tegrabl_error_t tegrabl_gpio_config(uint32_t gpio_num,
 	switch (mode) {
 	case GPIO_PINMODE_INPUT:
 	case GPIO_PINMODE_OUTPUT:
+		gpio_set_output_control(id, gpio_num, GPIO_OUT_CONTROL_DRIVEN);
 		gpio_set_direction(id, gpio_num, mode);
+		tegrabl_pinconfig_set(gpio_num,
+			~(PINMUX_TRISTATE_OFFSET | PINMUX_E_INPUT_OFFSET | PINMUX_GPIO_SF_SEL_OFFSET));
 		break;
 
 	default:

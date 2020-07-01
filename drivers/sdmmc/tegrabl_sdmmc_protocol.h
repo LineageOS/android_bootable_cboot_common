@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -19,7 +19,7 @@
 #define COMMAND_TIMEOUT_IN_US					100000U
 
 /* OCR register polling timeout */
-#define OCR_POLLING_TIMEOUT_IN_US				500000U
+#define OCR_POLLING_TIMEOUT_IN_US				1000000U
 
 /* Timeout from controller side for read to be completed */
 #define READ_TIMEOUT_IN_US						200000U
@@ -161,12 +161,16 @@ typedef uint32_t sdmmc_resp_type;
 #define SD_ACMD_SD_STATUS		13U
 #define SD_ACMD_SEND_NUM_WR_BLOCKS	22U
 #define SD_ACMD_SET_WR_BLK_ERASE_COUNT	23U
+#define SD_CMD_ERASE_BLK_START		32U
+#define SD_CMD_ERASE_BLK_END		33U
+#define SD_CMD_ERASE			38U
 #define SD_ACMD_SEND_OP_COND		41U
 #define SD_ACMD_SET_CLR_CARD_DETECT	42U
 #define SD_ACMD_SEND_SCR		51U
 #define SD_CMD_APPLICATION		55U
 #define SD_CMD_GENERAL			56U
 #define SD_ACMD_FORCE32		0x7FFFFFFFU
+#define SD_ERASE_TIMEOUT_IN_MS		100U
 typedef uint32_t sd_cmd;
 
 #define SKIP_NONE					0U

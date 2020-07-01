@@ -66,6 +66,10 @@ bcache_t bcache_create(struct tegrabl_bdev *dev, size_t block_size, int block_co
     struct bcache *cache;
 
     cache = malloc(sizeof(struct bcache));
+	if (cache == NULL) {
+		TRACEF("Failed to allocate memory for cache object\n");
+		goto exit;
+	}
 
     cache->dev = dev;
     cache->block_size = block_size;
@@ -77,16 +81,28 @@ bcache_t bcache_create(struct tegrabl_bdev *dev, size_t block_size, int block_co
     list_initialize(&cache->lru_list);
 
     cache->blocks = malloc(sizeof(struct bcache_block) * block_count);
+	if (cache->blocks == NULL) {
+		TRACEF("Failed to allocate memory for cache->blocks\n");
+		goto exit;
+	}
     int i;
     for (i=0; i < block_count; i++) {
         cache->blocks[i].ref_count = 0;
         cache->blocks[i].is_dirty = false;
         cache->blocks[i].ptr = malloc(block_size);
+		if (cache->blocks[i].ptr == NULL) {
+			TRACEF("Failed to allocate memory for cache->blocks[%u]->ptr\n", i);
+			goto exit;
+		}
         // add to the free list
         list_add_head(&cache->free_list, &cache->blocks[i].node);
     }
+	return (bcache_t)cache;
 
-    return (bcache_t)cache;
+exit:
+	free(cache->blocks);
+	free(cache);
+    return NULL;
 }
 
 static int flush_block(struct bcache *cache, struct bcache_block *block)

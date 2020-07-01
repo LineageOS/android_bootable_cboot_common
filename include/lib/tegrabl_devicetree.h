@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -27,7 +27,12 @@ typedef uint32_t tegrabl_dt_type_t;
 #define TEGRABL_DT_BL 0
 #define TEGRABL_DT_KERNEL 1
 #define TEGRABL_DT_CBO 2
+#if defined(CONFIG_ENABLE_L4T_RECOVERY)
+#define TEGRABL_DT_RECOVERY 3
+#define TEGRABL_DT_COUNT 4
+#else
 #define TEGRABL_DT_COUNT 3
+#endif
 
 /**
  * @brief Get the next node's offset

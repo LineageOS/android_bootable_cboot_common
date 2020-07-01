@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -99,5 +99,15 @@ tegrabl_error_t tegrabl_regulator_disable(int32_t phandle);
  * @return NO_ERROR on success otherwise error.
  */
 tegrabl_error_t tegrabl_regulator_is_fixed(int32_t phandle, bool *is_fixed);
+
+/**
+ * @brief api to check whether regulator is enabled or not
+ *
+ * @phandle handle of the dt entry
+ * @is_enabled ptr to return true/false
+ *
+ * @return NO_ERROR on success otherwise error.
+ */
+tegrabl_error_t tegrabl_regulator_is_enabled(int32_t phandle, bool *is_enabled);
 
 #endif /*TEGRABL_REGULATOR_H*/

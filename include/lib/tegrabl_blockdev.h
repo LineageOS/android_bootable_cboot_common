@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -76,8 +76,8 @@ struct tegrabl_blockdev_xfer_info {
 #define TEGRABL_STORAGE_SDMMC_RPMB	2UL
 #define TEGRABL_STORAGE_QSPI_FLASH	3UL
 #define TEGRABL_STORAGE_SATA		4UL
-#define TEGRABL_STORAGE_SDCARD		5UL
-#define TEGRABL_STORAGE_USB_MS		6UL
+#define TEGRABL_STORAGE_USB_MS		5UL
+#define TEGRABL_STORAGE_SDCARD		6UL
 #define TEGRABL_STORAGE_UFS		7UL
 #define TEGRABL_STORAGE_UFS_USER	8UL
 #define TEGRABL_STORAGE_UFS_RPMB	9UL

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -22,5 +22,8 @@
 * @return If success returns TEGRABL_NO_ERROR, otherwise error code
 */
 tegrabl_error_t sd_identify_card(struct tegrabl_sdmmc *hsdmmc);
+
+tegrabl_error_t sd_erase(tegrabl_bdev_t *dev, bnum_t block, bnum_t count,
+	struct tegrabl_sdmmc *hsdmmc, sdmmc_device device);
 
 #endif

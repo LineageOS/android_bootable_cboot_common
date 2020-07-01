@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -30,6 +30,9 @@ typedef uint32_t gpio_pin_mode_t;
 #define GPIO_PINMODE_INPUT 0 /* GPIO pin in INPUT mode */
 #define GPIO_PINMODE_OUTPUT 1 /* GPIO pin in OUTPUT mode */
 #define GPIO_PINMODE_SPIO 2/* Configure pin to SPIO mode */
+
+#define GPIO_OUT_CONTROL_DRIVEN 0 /* GPIO pin out control driven */
+#define GPIO_OUT_CONTROL_FLOATED 1 /* GPIO pin out control floated */
 
 /* It is mandatory for any GPIO driver to register these APIs.
  * Else the driver will not be registered to the GPIO core

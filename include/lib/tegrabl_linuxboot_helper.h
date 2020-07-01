@@ -249,6 +249,17 @@ tegrabl_error_t tegrabl_get_nct_load_addr(void **load_addr);
  */
 tegrabl_error_t tegrabl_get_boot_img_load_addr(void **load_addr);
 
+#if defined(CONFIG_ENABLE_L4T_RECOVERY)
+/**
+ * @brief Get recovery image load address
+ *
+ * @param load_addr ptr to load address of recovery image (output)
+ *
+ * @return TEGRABL_NO_ERROR if success; relevant error code in case of failure
+ */
+tegrabl_error_t tegrabl_get_recovery_img_load_addr(void **load_addr);
+#endif
+
 /**
  * @brief Get kernel load address
  *

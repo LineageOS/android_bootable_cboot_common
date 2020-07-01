@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -10,11 +10,11 @@
 
 #define MODULE TEGRABL_ERR_GPIO
 
-#include <tegrabl_gpio.h>
 #include <tegrabl_error.h>
 #include <tegrabl_debug.h>
 #include <sys/types.h>
 #include <list.h>
+#include <tegrabl_gpio.h>
 
 static bool s_is_gpio_framework_initialised;
 static struct list_node gpio_drivers; /* List of registered GPIO drivers */

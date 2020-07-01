@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -27,6 +27,7 @@
 #include <tegrabl_sd_card.h>
 #include <tegrabl_sd_param.h>
 #include <tegrabl_regulator.h>
+#include <tegrabl_gpio.h>
 
 #define TEGRABL_SD_BUF_ALIGN_SIZE	4U
 
@@ -113,6 +114,7 @@ tegrabl_error_t sd_bdev_open(uint32_t instance, struct tegrabl_sd_platform_param
 {
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 	struct tegrabl_sdmmc *hsdmmc = NULL;
+	struct gpio_driver *gpio_drv;
 
 	if (instance >= MAX_SDMMC_INSTANCES) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_NOT_SUPPORTED, 6);
@@ -145,14 +147,28 @@ tegrabl_error_t sd_bdev_open(uint32_t instance, struct tegrabl_sd_platform_param
 	/* Call sdmmc_init to proceed with initialization. */
 	pr_trace("sdmmc init\n");
 
-	error = tegrabl_regulator_enable(params->vmmc_supply);
-	if ((error != TEGRABL_NO_ERROR) && (TEGRABL_ERROR_REASON(error) != TEGRABL_ERR_NOT_SUPPORTED)) {
-		goto fail;
-	}
+	if (params->vmmc_supply) {
+		error = tegrabl_regulator_enable(params->vmmc_supply);
+		if ((error != TEGRABL_NO_ERROR) && (TEGRABL_ERROR_REASON(error) != TEGRABL_ERR_NOT_SUPPORTED)) {
+			goto fail;
+		}
 
-	error = tegrabl_regulator_set_voltage(params->vmmc_supply, 3300000, STANDARD_VOLTS);
-	if ((error != TEGRABL_NO_ERROR) && (TEGRABL_ERROR_REASON(error) != TEGRABL_ERR_NOT_SUPPORTED)) {
-		goto fail;
+		error = tegrabl_regulator_set_voltage(params->vmmc_supply, 3300000, STANDARD_VOLTS);
+		if ((error != TEGRABL_NO_ERROR) && (TEGRABL_ERROR_REASON(error) != TEGRABL_ERR_NOT_SUPPORTED)) {
+			goto fail;
+		}
+	} else if (params->en_vdd_sd_gpio) {
+		error = tegrabl_gpio_driver_get(TEGRA_GPIO_MAIN_CHIPID, &gpio_drv);
+		if (error != TEGRABL_NO_ERROR)
+			goto fail;
+
+		error = gpio_config(gpio_drv, params->en_vdd_sd_gpio, GPIO_PINMODE_OUTPUT);
+		if (error != TEGRABL_NO_ERROR)
+			goto fail;
+
+		error = gpio_write(gpio_drv, params->en_vdd_sd_gpio, GPIO_PIN_STATE_HIGH);
+		if (error != TEGRABL_NO_ERROR)
+			goto fail;
 	}
 
 	error = sdmmc_init(hsdmmc->controller_id, hsdmmc, false);

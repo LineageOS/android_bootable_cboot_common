@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -93,6 +93,8 @@ static tegrabl_error_t eeprom_get_mac_addr(void *param)
 	struct tegrabl_eeprom *cvm_eeprom = NULL;
 	struct eeprom_layout *eeprom;
 	uint8_t *data;
+	char *block_sig;
+	char *block_type;
 
 	static const char cust_sig[EEPROM_CUST_SIG_SIZE] = {'N', 'V', 'C', 'B'};
 	static const char cust_type_sig[EEPROM_CUST_TYPE_SIZE] = {'M', '1'};
@@ -115,8 +117,8 @@ static tegrabl_error_t eeprom_get_mac_addr(void *param)
 	eeprom = (struct eeprom_layout *)cvm_eeprom->data;
 
 	/* Check if signature and type matches the expected values */
-	char *block_sig = (char *)&eeprom->cust_blocksig;
-	char *block_type = (char *)&eeprom->cust_typesig;
+	block_sig = (char *)&eeprom->cust_blocksig;
+	block_type = (char *)&eeprom->cust_typesig;
 
 	diff1 = memcmp(cust_sig, block_sig, EEPROM_CUST_SIG_SIZE);
 	diff2 = memcmp(cust_type_sig, block_type, EEPROM_CUST_TYPE_SIZE);
@@ -132,7 +134,7 @@ static tegrabl_error_t eeprom_get_mac_addr(void *param)
 	if (!data)
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 
-	if (is_valid_mac_addr(*(uint64_t *)data) == false) {
+	if (is_valid_mac_addr(data) == false) {
 		pr_warn("MAC addr invalid!\n");
 		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 		goto fail;
@@ -200,6 +202,7 @@ static tegrabl_error_t create_pm_ids(struct board_id_info *id_info,
 	char *data;
 	uint32_t i = 0U;
 	int count;
+	uint32_t part_name_size;
 
 	if (id_info->count >= MAX_SUPPORTED_BOARDS) {
 		pr_error("Error: Reach maximum supported board count: %d\n",
@@ -272,7 +275,9 @@ static tegrabl_error_t create_pm_ids(struct board_id_info *id_info,
 
 	/* Store board name */
 	if (bl_eeprom->name != NULL) {
-		strcpy(id_info->part[id_info->count].name, bl_eeprom->name);
+		part_name_size = sizeof(id_info->part[id_info->count].name);
+		strncpy(id_info->part[id_info->count].name, bl_eeprom->name, part_name_size);
+		id_info->part[id_info->count].name[part_name_size - 1] = '\0';
 	}
 
 	/* Store all configs */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -316,7 +316,6 @@ tegrabl_error_t tegrabl_gpt_publish(tegrabl_bdev_t *dev,
 	uint8_t *buffer = NULL;
 	uint32_t size = 0;
 	struct tegrabl_gpt_entry *entries = NULL;
-	struct tegrabl_gpt_header *hdr = NULL;
 	uint32_t i = 0;
 	uint32_t j = 0;
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
@@ -338,8 +337,11 @@ tegrabl_error_t tegrabl_gpt_publish(tegrabl_bdev_t *dev,
 	}
 	entries =
 		(struct tegrabl_gpt_entry *)(buffer + TEGRABL_BLOCKDEV_BLOCK_SIZE(dev));
-	hdr = (struct tegrabl_gpt_header *)buffer;
-	num_entries = hdr->num_entries;
+	num_entries = 0;
+	for (i = 0; i < TEGRABL_GPT_MAX_PARTITION_ENTRIES; i++) {
+		if (entries[i].last_lba - entries[i].first_lba > 0)
+			num_entries++;
+	}
 
 	partitions = tegrabl_malloc(sizeof(struct tegrabl_partition_info) * num_entries);
 	if (partitions == NULL) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -26,6 +26,8 @@
 #include <tegrabl_malloc.h>
 #include <tegrabl_dmamap.h>
 #include <tegrabl_phy.h>
+#include <tegrabl_phy_marvell.h>
+#include <tegrabl_phy_realtek.h>
 #include <tegrabl_eqos.h>
 #include <tegrabl_devicetree.h>
 #include <tegrabl_gpio.h>
@@ -61,7 +63,6 @@ extern err_t low_level_input(void);
 #define GET_REG_FIELD_MASK(reg, fld)			BITFIELD_MASK(reg##_##fld##_##WIDTH, reg##_##fld##_##SHIFT)
 
 /************************************************************************************************************/
-#define PHY_ID											0
 #define PADCTL_CONN_SOC_GPIO09_0_TRISTATE				4
 #define PADCTL_CONN_SOC_GPIO08_0_TRISTATE				4
 
@@ -365,7 +366,7 @@ extern err_t low_level_input(void);
 
 #define RX_BUFFER_SIZE			(DESCRIPTORS_RX * MAX_PACKET_SIZE)
 
-#define GET_BIT(val, pos)		BITFIELD_GET(val, 1, pos)
+#define EQOS_GET_BIT(val, pos)		BITFIELD_GET(val, 1, pos)
 
 #define CALIBRATE_EQOS_PAD(reg)																	\
 	do {																						\
@@ -397,7 +398,6 @@ struct eqos_dev {
 	void *tx_dma_buf[DESCRIPTORS_TX];
 	void *rx_dma_buf[DESCRIPTORS_RX];
 	uint32_t tx_fifo_sz_bytes;
-	uint32_t phy_page;
 	struct phy_dev phy;
 };
 
@@ -532,7 +532,8 @@ fail:
 	return err;
 }
 
-static void tegrabl_eqos_mdio_write(uint32_t phy_reg, uint32_t data, uint32_t csr_clock_range)
+static void tegrabl_eqos_mdio_write(uint32_t phy_addr, uint32_t phy_reg, uint32_t data,
+									uint32_t csr_clock_range)
 {
 	uint32_t mdio_addr_val;
 
@@ -540,7 +541,7 @@ static void tegrabl_eqos_mdio_write(uint32_t phy_reg, uint32_t data, uint32_t cs
 	NV_WRITE32(MAC_MDIO_DATA, data);
 
 	/* Prepare MDIO address register */
-	mdio_addr_val = (PHY_ID						<<	MAC_MDIO_ADDR_PA_SHIFT)	 |
+	mdio_addr_val = (phy_addr					<<	MAC_MDIO_ADDR_PA_SHIFT)	 |
 					(phy_reg					<<	MAC_MDIO_ADDR_RDA_SHIFT) |
 					(csr_clock_range			<<	MAC_MDIO_ADDR_CR_SHIFT)	 |
 					(MAC_MDIO_ADDR_GOC_WRITE	<<	MAC_MDIO_ADDR_GOC_SHIFT);
@@ -551,17 +552,18 @@ static void tegrabl_eqos_mdio_write(uint32_t phy_reg, uint32_t data, uint32_t cs
 	/* Wait for MDIO transfer/operation to complete */
 	wait_for_bit(MAC_MDIO_ADDR, MAC_MDIO_ADDR_GB, RESET, MDIO_TRANSFER_TIMEOUT_USEC);
 
-	pr_trace("phy reg: %u, MDIO addr reg: 0x%08x, MDIO data reg: 0x%08x\n", phy_reg, mdio_addr_val, data);
+	pr_trace("phy addr: %u, phy reg: %u, MDIO addr reg: 0x%08x, MDIO data reg: 0x%08x\n",
+			 phy_addr, phy_reg, mdio_addr_val, data);
 }
 
-static uint16_t tegrabl_eqos_mdio_read(uint32_t phy_reg, uint32_t csr_clock_range)
+static uint16_t tegrabl_eqos_mdio_read(uint32_t phy_addr, uint32_t phy_reg, uint32_t csr_clock_range)
 {
 	uint32_t mdio_addr_val;
 	uint16_t mdio_data_val;
 	uint32_t val;
 
 	/* Prepare MDIO address register */
-	mdio_addr_val = (PHY_ID					<<	MAC_MDIO_ADDR_PA_SHIFT)	 |
+	mdio_addr_val = (phy_addr				<<	MAC_MDIO_ADDR_PA_SHIFT)	 |
 					(phy_reg				<<	MAC_MDIO_ADDR_RDA_SHIFT) |
 					(csr_clock_range		<<	MAC_MDIO_ADDR_CR_SHIFT)	 |
 					(MAC_MDIO_ADDR_GOC_READ	<<	MAC_MDIO_ADDR_GOC_SHIFT);
@@ -576,13 +578,13 @@ static uint16_t tegrabl_eqos_mdio_read(uint32_t phy_reg, uint32_t csr_clock_rang
 	val = NV_READ32(MAC_MDIO_DATA);
 	mdio_data_val = (uint16_t)(val & 0xFFFF);
 
-	pr_trace("phy reg: %u, MDIO addr reg: 0x%08x, MDIO data reg: 0x%08x\n", phy_reg, mdio_addr_val,
-			mdio_data_val);
+	pr_trace("phy addr: %u, phy reg: %u, MDIO addr reg: 0x%08x, MDIO data reg: 0x%08x\n",
+			 phy_addr, phy_reg, mdio_addr_val, mdio_data_val);
 
 	return mdio_data_val;
 }
 
-static uint16_t tegrabl_eqos_phy_read(uint32_t page, uint32_t reg)
+static uint16_t tegrabl_eqos_phy_read(uint32_t phy_addr, uint32_t page, uint32_t reg)
 {
 	uint16_t val;
 	uint32_t csr_clock_range;
@@ -592,19 +594,19 @@ static uint16_t tegrabl_eqos_phy_read(uint32_t page, uint32_t reg)
 	/* TODO: remove hardcoding */
 	csr_clock_range = 4; /* axi_cbb clk rate is 204 Mhz so the value is 4 */
 
-	if (eqos.phy_page != page) {
-		pr_trace("Set phy page\n");
-		tegrabl_eqos_mdio_write(REG_PHY_PAGE, page, csr_clock_range);
-		eqos.phy_page = page;
+	if (eqos.phy.curr_page != page) {
+		pr_trace("Set phy page: 0x%08x\n", page);
+		tegrabl_eqos_mdio_write(phy_addr, eqos.phy.page_sel_reg, page, csr_clock_range);
+		eqos.phy.curr_page = page;
 	}
 
-	val = tegrabl_eqos_mdio_read(reg, csr_clock_range);
+	val = tegrabl_eqos_mdio_read(phy_addr, reg, csr_clock_range);
 	pr_trace("\n");
 
 	return val;
 }
 
-static void tegrabl_eqos_phy_write(uint32_t page, uint32_t reg, uint32_t data)
+static void tegrabl_eqos_phy_write(uint32_t phy_addr, uint32_t page, uint32_t reg, uint32_t data)
 {
 	uint32_t csr_clock_range;
 
@@ -613,14 +615,14 @@ static void tegrabl_eqos_phy_write(uint32_t page, uint32_t reg, uint32_t data)
 	/* TODO: remove hardcoding */
 	csr_clock_range = 4; /* axi_cbb clk rate is 204 Mhz so the value is 4 */
 
-	if (eqos.phy_page != page) {
-		pr_trace("Set phy page\n");
-		tegrabl_eqos_mdio_write(REG_PHY_PAGE, page, csr_clock_range);
+	if (eqos.phy.curr_page != page) {
+		pr_trace("Set phy page: 0x%08x\n", page);
+		tegrabl_eqos_mdio_write(phy_addr, eqos.phy.page_sel_reg, page, csr_clock_range);
 		tegrabl_mdelay(20);
-		eqos.phy_page = page;
+		eqos.phy.curr_page = page;
 	}
 
-	tegrabl_eqos_mdio_write(reg, data, csr_clock_range);
+	tegrabl_eqos_mdio_write(phy_addr, reg, data, csr_clock_range);
 	pr_trace("\n");
 }
 
@@ -765,6 +767,8 @@ static tegrabl_error_t tegrabl_eqos_reset_phy(void)
 	uint8_t state;
 	uint32_t property[GPIO_PROP_MAX] = {0};
 	struct gpio_driver *gpio_drv = NULL;
+	const uint32_t *temp;
+	uint32_t delay;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	pr_trace("%s()\n", __func__);
@@ -807,7 +811,9 @@ static tegrabl_error_t tegrabl_eqos_reset_phy(void)
 	/*
 	 * Reset PHY
 	 * active high 1->0
+	 * in-between delay (if given in dtb)
 	 * active low  0->1
+	 * post delay (if given in dtb)
 	 */
 	state = !(GPIO_PIN_STATE_HIGH ^ property[GPIO_PROP_STATE]);
 	err = gpio_write(gpio_drv, property[GPIO_PROP_NUM], state);
@@ -815,11 +821,66 @@ static tegrabl_error_t tegrabl_eqos_reset_phy(void)
 		pr_error("Failed to configure gpio state to %u\n", state);
 		goto fail;
 	}
+	/* Add in-between reset delay */
+	temp = fdt_getprop(fdt, offset, "nvidia,phy-reset-duration", NULL);
+	if (temp != NULL) {
+		delay = fdt32_to_cpu(*temp);
+		pr_trace("in-between reset delay = %u\n", delay);
+		tegrabl_udelay(delay);
+	} else {
+		pr_trace("Failed to get property \"nvidia,phy-reset-duration\"\n");
+	}
 	err = gpio_write(gpio_drv, property[GPIO_PROP_NUM], !state);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_error("Failed to configure gpio state to %u\n", !state);
 		goto fail;
 	}
+	/* Add post reset delay */
+	temp = fdt_getprop(fdt, offset, "nvidia,phy-reset-post-delay", NULL);
+	if (temp != NULL) {
+		delay = fdt32_to_cpu(*temp);
+		pr_trace("post delay = %u\n", delay);
+		tegrabl_mdelay(delay);
+	} else {
+		pr_trace("Failed to get property \"nvidia,phy-reset-post-delay\"\n");
+	}
+
+fail:
+	return err;
+}
+
+static tegrabl_error_t tegrabl_eqos_get_phy_addr(uint32_t *phy_mdio_addr)
+{
+	void *fdt = NULL;
+	int32_t offset;
+	const uint32_t *temp;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+
+	pr_trace("%s()\n", __func__);
+
+	err = tegrabl_dt_get_fdt_handle(TEGRABL_DT_BL, &fdt);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("Failed to get dtb handle\n");
+		goto fail;
+	}
+	offset = fdt_node_offset_by_compatible(fdt, -1, "nvidia,eqos-mdio");
+	if (offset < 0) {
+		pr_error("Failed to find eqos-mdio node in dtb\n");
+		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 0);
+		goto fail;
+	}
+	offset = fdt_subnode_offset(fdt, offset, "ethernet-phy");
+	if (offset < 0) {
+		pr_error("ethernet-phy subnode not found\n");
+		goto fail;
+	}
+	temp = fdt_getprop(fdt, offset, "reg", NULL);
+	if (temp == NULL) {
+		pr_error("Failed to get \"ethernet-phy\" property \"reg\"\n");
+		goto fail;
+	}
+	*phy_mdio_addr = fdt32_to_cpu(*temp);
+	pr_trace("phy mdio addr = %u\n", *phy_mdio_addr);
 
 fail:
 	return err;
@@ -1141,12 +1202,16 @@ static void tegrabl_eqos_prepare_rx_desc(void)
 
 tegrabl_error_t tegrabl_eqos_init(void)
 {
+	uint32_t phy_oui;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	pr_info("EQoS: Init\n");
 
 	eqos.phy.read = tegrabl_eqos_phy_read;
 	eqos.phy.write = tegrabl_eqos_phy_write;
+	eqos.phy.page_sel_reg = 0;
+	/* Set current page to some random value so that first mdio rd/wr operation uses the given page no */
+	eqos.phy.curr_page = ~(0);
 
 	/* Program clocks */
 	err = tegrabl_eqos_program_pll();
@@ -1169,19 +1234,39 @@ tegrabl_error_t tegrabl_eqos_init(void)
 	NV_WRITE32(NV_ADDRESS_MAP_LIC_BASE + REG_INTR_CHANNEL0_SLICE5_IEP_CLASS_0, 0xF);
 	NV_WRITE32(NV_ADDRESS_MAP_LIC_BASE + REG_INTR_CHANNEL0_SLICE6_IEP_CLASS_0, 0xF);
 
-	/* Program PHY */
 	err = tegrabl_eqos_reset_phy();
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
-	tegrabl_phy_config(&eqos.phy);
-	err = tegrabl_phy_auto_neg(&eqos.phy);
+	err = tegrabl_eqos_get_phy_addr(&eqos.phy.mdio_addr);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+
+	/* Register PHY */
+	phy_oui = tegrabl_phy_get_oui(&eqos.phy);
+	if (phy_oui == PHY_MARVELL_OUI) {
+		eqos.phy.config = tegrabl_phy_marvell_config;
+		eqos.phy.auto_neg = tegrabl_phy_marvell_auto_neg;
+		eqos.phy.detect_link = tegrabl_phy_marvell_detect_link;
+	} else if (phy_oui == PHY_REALTEK_OUI) {
+		eqos.phy.config = tegrabl_phy_realtek_config;
+		eqos.phy.auto_neg = tegrabl_phy_realtek_auto_neg;
+		eqos.phy.detect_link = tegrabl_phy_realtek_detect_link;
+	} else {
+		pr_error("Unsupported PHY, OUI: 0x%08x\n", phy_oui);
+		goto fail;
+	}
+
+	/* Program PHY */
+	eqos.phy.config(&eqos.phy);
+	err = eqos.phy.auto_neg(&eqos.phy);
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
 
 	/* Detect link */
-	tegrabl_phy_detect_link(&eqos.phy);
+	eqos.phy.detect_link(&eqos.phy);
 	if (eqos.phy.is_link_up == false) {
 		pr_error("EQoS: link is down\n");
 		goto fail;
@@ -1310,7 +1395,7 @@ bool tegrabl_eqos_is_dma_rx_intr_occured(void)
 {
 	uint32_t val;
 	val = NV_READ32(DMA_CH0_STATUS);
-	return (bool)GET_BIT(val, DMA_CH0_STATUS_RI);
+	return (bool)EQOS_GET_BIT(val, DMA_CH0_STATUS_RI);
 }
 
 void tegrabl_eqos_clear_dma_rx_intr(void)
@@ -1366,7 +1451,7 @@ void tegrabl_eqos_deinit(void)
 	if (eqos.rx_descs != NULL) {
 		tegrabl_free(eqos.rx_descs);
 	}
-	if (eqos.rx_descs != NULL) {
+	if (eqos.tx_descs != NULL) {
 		tegrabl_free(eqos.tx_descs);
 	}
 }

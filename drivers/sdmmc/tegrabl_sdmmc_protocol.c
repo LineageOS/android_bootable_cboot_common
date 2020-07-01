@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -181,10 +181,13 @@ tegrabl_error_t sdmmc_send_command(sdmmc_cmd index, uint32_t arg,
 		goto fail;
 	}
 
-	/* Check if ready for transferring command. */
-	error  = sdmmc_cmd_txr_ready(hsdmmc);
-	if (error != TEGRABL_NO_ERROR) {
-		goto fail;
+	/* Some SD cards times out when waiting for cmd ready again */
+	if (hsdmmc->device_type != DEVICE_TYPE_SD) {
+		/* Check if ready for transferring command. */
+		error  = sdmmc_cmd_txr_ready(hsdmmc);
+		if (error != TEGRABL_NO_ERROR) {
+			goto fail;
+		}
 	}
 
 	if (resp_type == RESP_TYPE_R1B) {
@@ -410,22 +413,6 @@ tegrabl_error_t sdmmc_parse_csd(struct tegrabl_sdmmc *hsdmmc)
 	c_size = (sdmmc_resp[SD_SDHC_CSIZE_WORD] & SD_SDHC_CSIZE_MASK)
 					>> SD_SDHC_CSIZE_SHIFT;
 	hsdmmc->user_blocks = (c_size + 1U) * SD_SDHC_CSIZE_MULTIPLIER;
-
-	/* Enable max clock required for init. */
-	/*TODO: get card clock divisor from some API. */
-	if (hsdmmc->tran_speed == CSD_V4_3_TRAN_SPEED) {
-		error = sdmmc_set_card_clock(hsdmmc, MODE_INIT, 8);
-		if (error != TEGRABL_NO_ERROR) {
-			goto fail;
-		}
-	} else {
-		/*TODO: get card clock divisor from some API. */
-		error  = sdmmc_set_card_clock(hsdmmc, MODE_INIT, 8);
-		if (error != TEGRABL_NO_ERROR) {
-			goto fail;
-		}
-	}
-	pr_trace("sdmmc internal clock enabled\n");
 
 fail:
 	if (error != TEGRABL_NO_ERROR) {

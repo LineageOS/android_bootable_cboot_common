@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -12,23 +12,17 @@
 
 #include <tegrabl_error.h>
 #include <tegrabl_debug.h>
-#include <tegrabl_timer.h>
 #include <tegrabl_phy.h>
+#include <tegrabl_phy_marvell.h>
 
 /************************************************************************************************************/
 #define PHY_DEBUG										0
 
-#define SET												1
-#define RESET											0
-#define BIT(p)											(1UL << p)
-#define SET_BIT(val, p)									((val) | BIT(p))
-#define CLEAR_BIT(val, p)								((val) & (~BIT(p)))
-#define GET_BIT(val, pos)								((val >> pos) & 0x1)
-
 #define COPPER_RESET_TIMEOUT_MS							3000
 #define AUTO_NEG_TIMEOUT_MS								(15 * 1000)
 
-#define PRINT_REG(page, reg)	pr_info("Page: %2u, Reg: %2u, val: 0x%04x\n", page, reg, phy->read(page, reg))
+#define PRINT_REG(page, reg)	\
+			pr_info("Page: %2u, Reg: %2u, val: 0x%04x\n", page, reg, phy->read(phy->mdio_addr, page, reg))
 
 /************************************************************************************************************/
 #define PAGE_COPPER										0
@@ -68,6 +62,8 @@
 
 #define REG_COPPER_INTR_STATUS							19
 #define COPPER_INTR_STATUS_AUTO_NEG_COMPLETED			11
+
+#define REG_PAGE_ADDR									22
 
 /************************************************************************************************************/
 #define PAGE_MAC										2
@@ -214,39 +210,12 @@ struct tegrabl_phy_cp_spec_status_1_reg {
 
 /************************************************************************************************************/
 
-static tegrabl_error_t wait_for_bit(const struct phy_dev * const phy, uint32_t page, uint32_t reg_addr,
-									uint32_t pos, bool set, uint32_t timeout_ms)
-{
-	uint32_t val;
-	tegrabl_error_t err = TEGRABL_NO_ERROR;
-	time_t elapsed_time_ms = 0U;
-	time_t start_time_ms = tegrabl_get_timestamp_ms();
-
-	while (true) {
-
-		elapsed_time_ms = tegrabl_get_timestamp_ms() - start_time_ms;
-		if (elapsed_time_ms > timeout_ms) {
-			err = TEGRABL_ERROR(TEGRABL_ERR_TIMEOUT, 0);
-			goto fail;
-		}
-
-		val = phy->read(page, reg_addr);
-		if ((!!(val & BIT(pos))) == set) {
-			break;
-		}
-		tegrabl_mdelay(1000);
-	}
-
-fail:
-	return err;
-}
-
 #if PHY_DEBUG
 static void tegrabl_phy_print_advertisement(const struct phy_dev * const phy)
 {
 	struct tegrabl_phy_cp_auto_neg_adv_reg reg;
 
-	reg.val = phy->read(PAGE_COPPER, REG_COPPER_AUTO_NEG_ADVERTISEMENT);
+	reg.val = phy->read(phy->mdio_addr, PAGE_COPPER, REG_COPPER_AUTO_NEG_ADVERTISEMENT);
 	pr_info("\n");
 	pr_info("[ Local PHY advertisement ]\n");
 	pr_info("Remote fault           : %s\n", reg.remote_fault ? "yes" : "no");
@@ -267,10 +236,10 @@ static void tegrabl_phy_print_local_phy_status_n_abilities(const struct phy_dev 
 	struct tegrabl_phy_thsnd_base_reg thsnd_base_reg;
 	struct tegrabl_phy_cp_spec_status_1_reg cp_spec_status_1_reg;
 
-	cp_status_reg.val = phy->read(PAGE_COPPER, REG_COPPER_STATUS);
-	cp_auto_neg_exp_reg.val = phy->read(PAGE_COPPER, REG_COPPER_AUTO_NEG_EXPANSION);
-	thsnd_base_reg.val = phy->read(PAGE_COPPER, REG_1000_BASE_T_STATUS);
-	cp_spec_status_1_reg.val = phy->read(PAGE_COPPER, REG_COPPER_STATUS1);
+	cp_status_reg.val = phy->read(phy->mdio_addr, PAGE_COPPER, REG_COPPER_STATUS);
+	cp_auto_neg_exp_reg.val = phy->read(phy->mdio_addr, PAGE_COPPER, REG_COPPER_AUTO_NEG_EXPANSION);
+	thsnd_base_reg.val = phy->read(phy->mdio_addr, PAGE_COPPER, REG_1000_BASE_T_STATUS);
+	cp_spec_status_1_reg.val = phy->read(phy->mdio_addr, PAGE_COPPER, REG_COPPER_STATUS1);
 
 	pr_info("\n");
 	pr_info("[ Local PHY status and abilities ]\n");
@@ -311,9 +280,9 @@ static void tegrabl_phy_print_link_ptnr_phy_status_n_abilities(const struct phy_
 	struct tegrabl_phy_cp_auto_neg_exp_reg cp_auto_neg_exp_reg;
 	struct tegrabl_phy_thsnd_base_reg thsnd_base_reg;
 
-	cp_link_ptnr_ability_reg.val = phy->read(PAGE_COPPER, REG_COPPER_LINK_PARTNER_ABILITY);
-	cp_auto_neg_exp_reg.val = phy->read(PAGE_COPPER, REG_COPPER_AUTO_NEG_EXPANSION);
-	thsnd_base_reg.val = phy->read(PAGE_COPPER, REG_1000_BASE_T_STATUS);
+	cp_link_ptnr_ability_reg.val = phy->read(phy->mdio_addr, PAGE_COPPER, REG_COPPER_LINK_PARTNER_ABILITY);
+	cp_auto_neg_exp_reg.val = phy->read(phy->mdio_addr, PAGE_COPPER, REG_COPPER_AUTO_NEG_EXPANSION);
+	thsnd_base_reg.val = phy->read(phy->mdio_addr, PAGE_COPPER, REG_1000_BASE_T_STATUS);
 
 	pr_info("\n");
 	pr_info("[ Link partner PHY status and abilities ]\n");
@@ -336,9 +305,9 @@ static tegrabl_error_t tegrabl_phy_cp_reset(const struct phy_dev * const phy)
 	uint32_t val;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
-	val = phy->read(PAGE_COPPER, REG_COPPER_CONTROL);
+	val = phy->read(phy->mdio_addr, PAGE_COPPER, REG_COPPER_CONTROL);
 	val = SET_BIT(val, COPPER_CONTROL_RESET);
-	err = wait_for_bit(phy, PAGE_COPPER, REG_COPPER_CONTROL, COPPER_CONTROL_RESET, RESET,
+	err = tegrabl_phy_wait_for_bit(phy, PAGE_COPPER, REG_COPPER_CONTROL, COPPER_CONTROL_RESET, RESET,
 					   COPPER_RESET_TIMEOUT_MS);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_error("Software PHY reset couldn't complete within timeout (%u ms)\n", COPPER_RESET_TIMEOUT_MS);
@@ -347,14 +316,16 @@ static tegrabl_error_t tegrabl_phy_cp_reset(const struct phy_dev * const phy)
 	return err;
 }
 
-void tegrabl_phy_config(const struct phy_dev * const phy)
+void tegrabl_phy_marvell_config(struct phy_dev * const phy)
 {
 	uint32_t val;
 
 	pr_info("Configuring PHY\n");
 
+	phy->page_sel_reg = REG_PAGE_ADDR;
+
 	/* Program Page: 2, Register: 0 */
-	phy->write(PAGE_MAC, REG_COPPER_CONTROL, 0);
+	phy->write(phy->mdio_addr, PAGE_MAC, REG_COPPER_CONTROL, 0);
 
 	tegrabl_phy_cp_reset(phy);
 
@@ -363,33 +334,33 @@ void tegrabl_phy_config(const struct phy_dev * const phy)
 	val = SET_BIT(val, MAC_CONTROL1_ENABLE_RX_CLK);
 	val = SET_BIT(val, MAC_CONTROL1_PASS_ODD_NIBBLE_PREAMBLES);
 	val = SET_BIT(val, MAC_CONTROL1_RGMII_INTF_POWER_DOWN);
-	phy->write(PAGE_MAC, REG_MAC_CONTROL1, val);
+	phy->write(phy->mdio_addr, PAGE_MAC, REG_MAC_CONTROL1, val);
 
 	/* Program Page: 2, Register: 21 */
 	val = MAC_CONTROL2_DEFAULT_MAC_INTF_SPEED_1000_MBPS;   /* MAC interface speed during link down */
 	val = SET_BIT(val, MAC_CONTROL2_RGMII_RX_TIMING_CTRL);
 	val = SET_BIT(val, MAC_CONTROL2_RGMII_TX_TIMING_CTRL);
-	phy->write(PAGE_MAC, REG_MAC_CONTROL2, val);
+	phy->write(phy->mdio_addr, PAGE_MAC, REG_MAC_CONTROL2, val);
 
 	/* Program Page: 0, Register: 16 */
 	/* Automatically detect whether it needs to crossover between pairs or not */
 	val = COPPER_CONTROL1_ENABLE_AUTO_CROSSOVER;
-	phy->write(PAGE_COPPER, REG_COPPER_CONTROL1, val);
+	phy->write(phy->mdio_addr, PAGE_COPPER, REG_COPPER_CONTROL1, val);
 }
 
-tegrabl_error_t tegrabl_phy_auto_neg(const struct phy_dev * const phy)
+tegrabl_error_t tegrabl_phy_marvell_auto_neg(const struct phy_dev * const phy)
 {
 	uint32_t val;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	pr_info("Start auto-negotiation\n");
 
-	val = phy->read(PAGE_COPPER, REG_COPPER_CONTROL);
+	val = phy->read(phy->mdio_addr, PAGE_COPPER, REG_COPPER_CONTROL);
 	val = SET_BIT(val, COPPER_CONTROL_ENABLE_AUTO_NEG);
 	val = SET_BIT(val, COPPER_RESTART_AUTO_NEG);
-	phy->write(PAGE_COPPER, REG_COPPER_CONTROL, val | BIT(COPPER_CONTROL_RESET));
-	err = wait_for_bit(phy, PAGE_COPPER, REG_COPPER_CONTROL, COPPER_CONTROL_RESET, RESET,
-					   COPPER_RESET_TIMEOUT_MS);
+	phy->write(phy->mdio_addr, PAGE_COPPER, REG_COPPER_CONTROL, val | BIT(COPPER_CONTROL_RESET));
+	err = tegrabl_phy_wait_for_bit(phy, PAGE_COPPER, REG_COPPER_CONTROL, COPPER_CONTROL_RESET, RESET,
+								   COPPER_RESET_TIMEOUT_MS);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_error("Software PHY reset couldn't complete within timeout (%u ms)\n", COPPER_RESET_TIMEOUT_MS);
 		goto fail;
@@ -399,11 +370,11 @@ tegrabl_error_t tegrabl_phy_auto_neg(const struct phy_dev * const phy)
 	tegrabl_phy_print_advertisement(phy);
 #endif
 
-	pr_info("Wait till auto-negotiation completes...\n");
-	err = wait_for_bit(phy, PAGE_COPPER, REG_COPPER_INTR_STATUS, COPPER_INTR_STATUS_AUTO_NEG_COMPLETED, SET,
+	pr_info("Wait till it completes...\n");
+	err = tegrabl_phy_wait_for_bit(phy, PAGE_COPPER, REG_COPPER_INTR_STATUS, COPPER_INTR_STATUS_AUTO_NEG_COMPLETED, SET,
 					   AUTO_NEG_TIMEOUT_MS);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_error("Auto-negotiation couldn't complete within timeout (%u ms)\n", AUTO_NEG_TIMEOUT_MS);
+		pr_error("Couldn't complete within timeout (%u ms)\n", AUTO_NEG_TIMEOUT_MS);
 	}
 
 #if PHY_DEBUG
@@ -415,16 +386,16 @@ fail:
 	return err;
 }
 
-void tegrabl_phy_detect_link(struct phy_dev * const phy)
+void tegrabl_phy_marvell_detect_link(struct phy_dev * const phy)
 {
 	uint32_t val = 0;
 	uint32_t speed_code;
 
-	val = phy->read(PAGE_COPPER, REG_COPPER_STATUS1);
-
+	val = phy->read(phy->mdio_addr, PAGE_COPPER, REG_COPPER_STATUS1);
 	phy->is_link_up = GET_BIT(val, COPPER_STATUS1_LINK_STATUS);
 	phy->duplex_mode = GET_BIT(val, COPPER_STATUS1_DUPLEX_MODE);
 
+	/* Adjust MAC speed */
 	speed_code = BITFIELD_GET(val, COPPER_STATUS1_SPEED_WIDTH, COPPER_STATUS1_SPEED_SHIFT);
 	if (speed_code == COPPER_STATUS1_SPEED_1000_MBPS) {
 		phy->speed = 1000;

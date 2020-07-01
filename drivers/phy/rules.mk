@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2018-2020, NVIDIA CORPORATION.  All rights reserved.
 #
 # NVIDIA CORPORATION and its licensors retain all intellectual property
 # and proprietary rights in and to this software, related documentation
@@ -14,6 +14,9 @@ MODULE := $(LOCAL_DIR)
 
 GLOBAL_INCLUDES += $(LOCAL_DIR)
 
-MODULE_SRCS += $(LOCAL_DIR)/tegrabl_phy_marvell.c
+MODULE_SRCS +=	\
+	$(LOCAL_DIR)/tegrabl_phy.c \
+	$(LOCAL_DIR)/tegrabl_phy_marvell.c \
+	$(LOCAL_DIR)/tegrabl_phy_realtek.c
 
 include make/module.mk

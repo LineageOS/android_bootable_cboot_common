@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2019-2020, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -153,7 +153,7 @@ static int get_extents_blk(ext2_t *ext2, struct ext2fs_dinode *inode, uint32_t n
         buf2 = malloc(E2FS_BLOCK_SIZE(ext2->super_blk));
         if (buf2 == NULL) {
             err = ERR_NO_MEMORY;
-            TRACEF("Not enough memory\n");
+            TRACEF("Failed to allocate memory for super block\n");
             goto fail;
         }
         err = tegrabl_blockdev_read(ext2->dev, buf2, blk_addr, E2FS_BLOCK_SIZE(ext2->super_blk));
@@ -269,7 +269,7 @@ static ssize_t ext4_read_data_from_extent(ext2_t *ext2, struct ext2fs_dinode *in
             buf2 = malloc(E2FS_BLOCK_SIZE(ext2->super_blk));
             if (buf2 == NULL) {
                 err = ERR_NO_MEMORY;
-                TRACEF("Not enough memory\n");
+                TRACEF("Failed to allocate memory for super block\n");
                 goto fail;
             }
 
@@ -305,7 +305,7 @@ static int lookup_hashed_dir(ext2_t *ext2, struct ext2fs_dinode *dir_inode, cons
     uint32_t hash_entries_count;
     uint32_t namelen = strlen(name);
     struct dx_root *root;
-    struct dx_entry *entry;
+    struct dx_entry *entry = NULL;
     off_t entries_start_addr;
     bool file_entry_found = false;
     int err = 0;
@@ -324,6 +324,11 @@ static int lookup_hashed_dir(ext2_t *ext2, struct ext2fs_dinode *dir_inode, cons
 
     /* Get hash entries */
     entry = malloc(hash_entries_count * sizeof(struct dx_entry));
+    if (entry == NULL) {
+        TRACEF("Failed to allocate memory for hash entry\n");
+        err = ERR_NO_MEMORY;
+        goto fail;
+    }
     entry[0].hash = 0;
     entry[0].block = root->block;
     memcpy(&entry[1], (void *)entries_start_addr, (hash_entries_count - 1) * sizeof(struct dx_entry));
@@ -375,6 +380,9 @@ static int lookup_hashed_dir(ext2_t *ext2, struct ext2fs_dinode *dir_inode, cons
     }
 
 fail:
+    if (entry) {
+        free(entry);
+    }
     return err;
 }
 
@@ -457,7 +465,7 @@ int ext4_dir_lookup(ext2_t *ext2, struct ext2fs_dinode *dir_inode, const char *n
 
     buf = malloc(E2FS_BLOCK_SIZE(ext2->super_blk));
     if (buf == NULL) {
-        TRACEF("Not enough memory\n");
+        TRACEF("Failed to allocate memory for super block\n");
         err = ERR_NO_MEMORY;
         goto fail;
     }
@@ -492,7 +500,7 @@ status_t ext4_mount(struct tegrabl_bdev *dev, uint64_t start_sector, fscookie **
 
     ext2_t *ext2 = malloc(sizeof(ext2_t));
     if (ext2 == NULL) {
-        LTRACEF("Failed to allocate memory\n");
+        TRACEF("Failed to allocate memory for ext2 priv data object\n");
         err = ERR_NO_MEMORY;
         goto err;
     }
@@ -559,7 +567,7 @@ status_t ext4_mount(struct tegrabl_bdev *dev, uint64_t start_sector, fscookie **
     }
     ext2->grp_desc = malloc(gd_size * ext2->group_count);
     if (ext2->grp_desc == NULL) {
-        TRACEF("Failed to allocate memory for ext2 group descriptor structure\n");
+        TRACEF("Failed to allocate memory for group descriptor\n");
         err = ERR_NO_MEMORY;
         goto err;
     }
@@ -604,6 +612,10 @@ status_t ext4_mount(struct tegrabl_bdev *dev, uint64_t start_sector, fscookie **
 
     /* initialize the block cache */
     ext2->cache = bcache_create(ext2->dev, E2FS_BLOCK_SIZE(ext2->super_blk), 4, fs_offset);
+	if (ext2->cache == NULL) {
+		err = ERR_GENERIC;
+		goto err;
+	}
 
     /* load the first inode */
     err = ext2_load_inode(ext2, EXT2_ROOTINO, &ext2->root_inode);
@@ -639,7 +651,7 @@ int ext4_open_file(fscookie *cookie, const char *path, filecookie **fcookie)
     /* create the file object */
     file = malloc(sizeof(ext2_file_t));
     if (file == NULL) {
-        TRACEF("Not enough memory\n");
+        TRACEF("Failed to allocate memory for file object\n");
         err = ERR_NO_MEMORY;
         goto fail;
     }

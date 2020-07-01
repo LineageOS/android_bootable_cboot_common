@@ -1,4 +1,4 @@
-/* Copyright (c) 2018 NVIDIA Corporation.  All rights reserved.
+/* Copyright (c) 2018-2019 NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software and related documentation
@@ -241,6 +241,11 @@ tegrabl_error_t xusbh_load_firmware(void)
 	}
 
 	fw_header = (struct tegra_xhci_fw_cfgtbl *)tegrabl_alloc_align(TEGRABL_HEAP_DMA, 8, header_alloc_size);
+	if (fw_header == NULL) {
+		pr_error("Failed to allocate memory for fw header\n");
+		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
+		goto done;
+	}
 	err = tegrabl_partition_read(&part, fw_header, sizeof(struct tegra_xhci_fw_cfgtbl));
 	if (err != TEGRABL_NO_ERROR) {
 		pr_error("Error reading xusb fw header\n");
@@ -261,7 +266,10 @@ tegrabl_error_t xusbh_load_firmware(void)
 		goto done;
 	}
 
-	tegrabl_partition_seek(&part, 0, TEGRABL_PARTITION_SEEK_SET);
+	err = tegrabl_partition_seek(&part, 0, TEGRABL_PARTITION_SEEK_SET);
+	if (err != TEGRABL_NO_ERROR) {
+		goto done;
+	}
 	err = tegrabl_partition_read(&part, fw_data, fw_header->fwimg_len);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_error("Error reading xusb fw data\n");

@@ -37,6 +37,21 @@ struct tegrabl_fm_handle {
 tegrabl_error_t tegrabl_fm_publish(tegrabl_bdev_t *bdev, struct tegrabl_fm_handle **handle);
 
 /**
+ * @brief Read the file from partiton.
+ *
+ * @param bdev storage device pointer
+ * @param partition_name partition to read from in case if file read fails from filesystem.
+ * @param load_address address into which the partition needs to be loaded.
+ * @param size partition size read.
+ *
+ * @return TEGRABL_NO_ERROR if success, specific error if fails.
+ */
+tegrabl_error_t tegrabl_fm_read_partition(struct tegrabl_bdev *bdev,
+										  char *partition_name,
+										  void *load_address,
+										  uint32_t *size);
+
+/**
  * @brief Read the file from the filesystem if available, otherwise read form the partiton.
  *
  * @param handle pointer to file manager handle
@@ -51,7 +66,7 @@ tegrabl_error_t tegrabl_fm_publish(tegrabl_bdev_t *bdev, struct tegrabl_fm_handl
 tegrabl_error_t tegrabl_fm_read(struct tegrabl_fm_handle *handle,
 								char *file_path,
 								char *partition_name,
-								void **load_address,
+								void *load_address,
 								uint32_t *size,
 								bool *is_file_loaded_from_fs);
 

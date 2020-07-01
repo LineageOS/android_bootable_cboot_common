@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -12,6 +12,7 @@
 
 #include <string.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <tegrabl_clock.h>
 #include <tegrabl_timer.h>
 #include <tegrabl_io.h>
@@ -27,6 +28,9 @@
 #include <tegrabl_devicetree.h>
 #include <tegrabl_regulator.h>
 #include <tegrabl_gpio.h>
+#include <tegrabl_xusbh_soc.h>
+
+#define ENABLE_REGULATORS		0U
 
 void xusbh_xhci_writel(uint32_t reg, uint32_t value)
 {
@@ -656,6 +660,10 @@ void prepare_ep_ctx(struct xusb_host_context *ctx, uint32_t ep_index, enum xhci_
 	ep_context->dw2.tr_dequeue_ptr_lo = (U64_TO_U32_LO(ctx->ep_ring[ep_ring_index].dma) >> 4);
 	ep_context->dw3.tr_dequeue_ptr_hi = U64_TO_U32_HI(ctx->ep_ring[ep_ring_index].dma);
 	if ((ep_type == EP_TYPE_BULK_IN) || (ep_type == EP_TYPE_BULK_OUT)) {
+		if (ep_ring_index == 0UL) {
+			pr_warn("Invalid endpoint ring index %u\n", ep_ring_index);
+			return;
+		}
 		ep_context->dw1.max_packet_size = ctx->enum_dev.ep[ep_ring_index - 1].packet_size;
 		ep_context->dw4.average_trb_length = 0;
 	} else if (ep_type == EP_TYPE_CONTROL_BI) {
@@ -1094,32 +1102,18 @@ static void xhci_clk_rst_init(struct xusb_host_context *context)
 {
 }
 
-#define XHCI_DT_COMPATIBLE "nvidia,tegra194-xhci-padctl"
-#define VBUS_DT_COMPATIBLE "nvidia,tegra19x-xusb-padctl"
-
-struct regulator_tbl {
-	char *dt_compatible;
-	uint32_t cnt;
-	char *name[6];
-};
-
-static struct regulator_tbl tbl[] = {
-	{ VBUS_DT_COMPATIBLE, 1, {"vbus-supply"} },
-};
-
-static tegrabl_error_t xhci_regulator_init(uint32_t idx)
+static tegrabl_error_t xhci_regulator_init(void)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
+
 	void *fdt;
 	const uint32_t *temp;
 	int32_t xhci_node_offset = 0;
-	int32_t reg_node_offset = 0;
-	uint32_t reg_list_item = 0;
-	uint32_t reg_voltage = 0;
-	int32_t reg_phandle;
-
-	/* Do nothing for now as regulators are being enabled by default */
-	return err;
+	int32_t ports_node_offset = 0;
+	int32_t vbus_node_offset = 0;
+	int32_t reg_phandle = 0;
+	uint32_t i = 0;
+	bool is_available, is_enabled;
 
 	err = tegrabl_dt_get_fdt_handle(TEGRABL_DT_BL, &fdt);
 	if (err != TEGRABL_NO_ERROR) {
@@ -1127,51 +1121,63 @@ static tegrabl_error_t xhci_regulator_init(uint32_t idx)
 		return err;
 	}
 
-	err = tegrabl_dt_get_node_with_compatible(fdt, 0, tbl[idx].dt_compatible, &xhci_node_offset);
+	err = tegrabl_dt_get_node_with_compatible(fdt, 0, PADCTL_DT_COMPATIBLE, &xhci_node_offset);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_warn("%s %d failed\n", __func__, __LINE__);
 		return err;
 	}
 
-	for (reg_list_item = 0; reg_list_item < tbl[idx].cnt; reg_list_item++) {
-		temp = fdt_getprop(fdt, xhci_node_offset, tbl[idx].name[reg_list_item], NULL);
-		if (temp != NULL) {
-			reg_phandle = fdt32_to_cpu(*temp);
-		} else {
-			pr_warn("regulator %s is not found\n", tbl[idx].name[reg_list_item]);
-			continue;
+	ports_node_offset = fdt_subnode_offset(fdt, xhci_node_offset, "ports");
+	if (ports_node_offset < 0) {
+		pr_warn("%s %d failed\n", __func__, __LINE__);
+		return err;
+	}
+
+	for (i = 0; i < HOST_PORTS_NUM; i++) {
+		char prop_name[] = "usb2-X";
+
+		snprintf(prop_name, sizeof(prop_name), "usb2-%d", i);
+
+		/* get vbus node offset */
+		vbus_node_offset = fdt_subnode_offset(fdt, ports_node_offset, prop_name);
+		if (vbus_node_offset < 0) {
+			pr_warn("%s %d failed\n", __func__, __LINE__);
+			return err;
 		}
 
-		reg_node_offset = fdt_node_offset_by_phandle(fdt, reg_phandle);
-		temp = fdt_getprop(fdt, reg_node_offset, "regulator-max-microvolt", NULL);
-		if (temp != NULL) {
-			reg_voltage = fdt32_to_cpu(*temp);
-		} else {
-			pr_warn("regulator-max-microvolt of %s is not found\n", tbl[idx].name[reg_list_item]);
+		err = tegrabl_dt_is_device_available(fdt, vbus_node_offset, &is_available);
+		if (err != TEGRABL_NO_ERROR) {
+			pr_warn("%s %d failed\n", __func__, __LINE__);
+			return err;
+		}
+
+		if (!is_available)
 			continue;
+
+		/* get vbus-supply node property */
+		temp = fdt_getprop(fdt, vbus_node_offset, "vbus-supply", NULL);
+
+		if (temp == NULL)
+			continue;
+
+		reg_phandle = fdt32_to_cpu(*temp);
+
+		tegrabl_regulator_is_enabled(reg_phandle, &is_enabled);
+
+		if (is_enabled) {
+			pr_info("regulator of %s already enabled\n", prop_name);
+			tegrabl_regulator_disable(reg_phandle);
 		}
 
 		err = tegrabl_regulator_enable(reg_phandle);
 
-		err = tegrabl_regulator_set_voltage(reg_phandle, reg_voltage, STANDARD_VOLTS);
-		if (err != TEGRABL_NO_ERROR) {
-			pr_error("%s %d failed\n", __func__, __LINE__);
-		} else {
-			pr_error("regulator voltage set for item %d\n", reg_list_item);
-		}
 	}
-
 	return err;
 }
 
 tegrabl_error_t xhci_controller_init(struct xusb_host_context *context)
 {
 	tegrabl_error_t e = TEGRABL_NO_ERROR;
-
-	e = xhci_regulator_init(0);
-	if (e != TEGRABL_NO_ERROR) {
-		goto fail;
-	}
 
 	/* clock: Setup UTMIPLL under SW control. Section 7.1.3 of t194 Clocks IAS.
 	 * This is by default under SW control, nothing to be done.
@@ -1223,13 +1229,6 @@ tegrabl_error_t xhci_controller_init(struct xusb_host_context *context)
 	/* TODO: PINMUX: program pinmux registers to setup IO pins for usb 2.0 ports */
 	xhci_init_pinmux();
 
-	/* Local override for VBUS and ID status reporting.
-	 * Clear false reporting of VBUS and ID status changes.
-	 * Assign port capabilities for 2.0 and superspeed ports.
-	 * Disable over current signal mapping for 2.0 and SS ports.
-	 * */
-	xhci_vbus_override();
-
 	/* UPHY programming.
 	 * Expecting this to be done during BPMP-FW initialization.
 	 * */
@@ -1272,18 +1271,18 @@ tegrabl_error_t xhci_controller_init(struct xusb_host_context *context)
 	 * Expecting this to be done during BPMP-FW initialization.
 	 * */
 
-	/* Assign over current signal mapping for usb 2.0 and SS ports */
-	/* Clear false reporting of over current events */
-	/* Enable VBUS for the host ports */
-	xhci_enable_vbus();
-
 	/* Load XUSB FW */
 	e = xusbh_load_firmware();
 	if (e != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
 
-	tegrabl_mdelay(400);
+	e = xhci_regulator_init();
+	if (e != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+
+	tegrabl_mdelay(1000);
 
 	context->root_port_number = 0xff;
 	if (xhci_set_root_port(context) == false) {
@@ -1613,16 +1612,30 @@ tegrabl_error_t tegrabl_xhci_xfer_data(struct xusb_host_context *ctx,
 	return err;
 }
 
+void xhci_power_down_controller(void)
+{
+	xhci_power_down_bias_pad();
+	xhci_power_down_usb2_padn();
+	xhci_usb3_phy_power_off();
+}
+
 tegrabl_error_t tegrabl_usbh_close(void)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	/* Powergate XUSBA, XUSBC partitions and assert reset to XUAB PADCTL, XUABA, XUSBC
 	 * partitions before jumping to kernel */
-	tegrabl_car_rst_set(TEGRABL_MODULE_XUSB_PADCTL, 0);
 	tegrabl_car_rst_set(TEGRABL_MODULE_XUSB_HOST, 0);
 	tegrabl_car_rst_set(TEGRABL_MODULE_XUSB_SS, 0);
 	tegrabl_car_rst_set(TEGRABL_MODULE_XUSB_DEV, 0);
+
+	/*
+	 * Unfortunately, reset pad control is not an option due to we support virtualization
+	 * and bpmp will reject the reset request on t194.
+	 * Power down pads in bootloader before jumping to the kernel.
+	 */
+
+	xhci_power_down_controller();
 
 	err = tegrabl_usb_powergate();
 	if (err != TEGRABL_NO_ERROR) {

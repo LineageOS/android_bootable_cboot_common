@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2007-2015 Travis Geiselbrecht
- * Copyright (c) 2019, NVIDIA Corporation. All Rights Reserved.
+ * Copyright (c) 2019-2020, NVIDIA Corporation. All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files
@@ -128,7 +128,7 @@ status_t ext2_mount(struct tegrabl_bdev *dev, uint64_t start_sector, fscookie **
 
     ext2_t *ext2 = malloc(sizeof(ext2_t));
     if (ext2 == NULL) {
-        TRACEF("Failed to allocate memory for ext2 structure\n");
+        TRACEF("Failed to allocate memory for ext2 priv data\n");
         err = ERR_NO_MEMORY;
         goto err;
     }
@@ -187,7 +187,7 @@ status_t ext2_mount(struct tegrabl_bdev *dev, uint64_t start_sector, fscookie **
     }
     ext2->grp_desc = malloc(gd_size * ext2->group_count);
     if (ext2->grp_desc == NULL) {
-        TRACEF("Failed to allocate memory for ext2 group descriptor structure\n");
+        TRACEF("Failed to allocate memory for group descriptor\n");
         err = ERR_NO_MEMORY;
         goto err;
     }
@@ -217,6 +217,10 @@ status_t ext2_mount(struct tegrabl_bdev *dev, uint64_t start_sector, fscookie **
 
     /* initialize the block cache */
     ext2->cache = bcache_create(ext2->dev, E2FS_BLOCK_SIZE(ext2->super_blk), 4, fs_offset);
+	if (ext2->cache == NULL) {
+		err = ERR_GENERIC;
+		goto err;
+	}
 
     /* load the first inode */
     err = ext2_load_inode(ext2, EXT2_ROOTINO, &ext2->root_inode);

@@ -1,6 +1,6 @@
 
 /*
- * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 #include <tegrabl_error.h>
+#include <tegrabl_sd_param.h>
 
 /**
 * @brief Checks if the sdcard is present. If presents gives the sdmmc instance

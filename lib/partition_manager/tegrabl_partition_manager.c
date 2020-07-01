@@ -30,6 +30,8 @@
 #define AUX_INFO_PARTITION_BOOT_LOOKUP_ERR	21
 #define AUX_INFO_PARTITION_NOT_FOUND		22
 #define AUX_INFO_PARTITION_NOT_INIT			23
+#define AUX_INFO_PARTITION_GUID_NOT_FOUND	24
+
 /**
  * @brief Stores the partition list for storage devices
  */
@@ -183,10 +185,19 @@ tegrabl_error_t tegrabl_partition_boot_guid_lookup_bdev(char *pt_type_guid,
 		}
 	}
 
+	if (partition_info == NULL) {
+		pr_error("No partition found with matching boot GUID\n");
+		error = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, AUX_INFO_PARTITION_GUID_NOT_FOUND);
+		memset(partition, 0x0, sizeof(struct tegrabl_partition));
+		goto fail;
+	}
+
 	/* Fall back: assume 0th partition is boot partition*/
 	if (i >= num_partitions) {
-		pr_trace("Fallback: assuming 0th partition is boot\n");
+		pr_info("Fallback: assuming 0th partition is boot partition\n");
 		i = 0;
+	} else {
+		pr_info("Boot partition: %u\n", i);
 	}
 
 partition_found:

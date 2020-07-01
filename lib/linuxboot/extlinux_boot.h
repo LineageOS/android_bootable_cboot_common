@@ -11,6 +11,8 @@
 #ifndef INCLUDED_EXTLINUX_BOOT_H
 #define INCLUDED_EXTLINUX_BOOT_H
 
+#if defined(CONFIG_ENABLE_EXTLINUX_BOOT)
+
 #define MAX_BOOT_SECTION            5UL
 
 struct boot_section {
@@ -30,16 +32,56 @@ struct conf {
 };
 
 /**
- * @brief Get boot details by parsing extlinux.conf file
+ * @brief Load kernel and dtb through extlinux.conf
  *
- * @param handle pointer to file_manager handle
- * @param extlinux_conf pointer to extlinux conf structure
- * @param boot_entry entry to boot from extlinux.conf file
+ * @param fm_handle pointer to file manager handle
+ * @param boot_img_load_addr Ptr to the address where boot.img is loaded (output)
+ * @param dtb_load_addr Ptr to the address where dtb is loaded (output)
+ * @param kernel_size Ptr to the kernel size buffer (output)
  *
  * @return TEGRABL_NO_ERROR if success, specific error if fails
  */
-tegrabl_error_t get_boot_details(struct tegrabl_fm_handle * const fm_handle,
-								 struct conf * const extlinux_conf,
-								 uint32_t *boot_entry);
+tegrabl_error_t extlinux_boot_load_kernel_and_dtb(struct tegrabl_fm_handle *fm_handle,
+												  void **boot_img_load_addr,
+												  void **dtb_load_addr,
+												  uint32_t *kernel_size);
 
-#endif
+/**
+ * @brief Load ramdisk through extlinux.conf
+ *
+ * @param fm_handle pointer to file manager handle
+ * @param ramdisk_load_addr Ptr to the address where ramdisk is loaded (output)
+ * @param ramdisk_size Ptr to the ramdisk size bufer (output)
+ *
+ * @return TEGRABL_NO_ERROR if success, specific error if fails
+ */
+tegrabl_error_t extlinux_boot_load_ramdisk(struct tegrabl_fm_handle *fm_handle,
+										   void **ramdisk_load_addr,
+										   uint64_t *ramdisk_size);
+
+/**
+ * @brief Update kernel dtb with boot args from extlinux.conf
+ *
+ * @param kernel_dtb Address where kernel dtb is loaded
+ *
+ * @return TEGRABL_NO_ERROR if success, specific error if fails
+ */
+tegrabl_error_t extlinux_boot_update_bootargs(void *kernel_dtb);
+
+/**
+ * @brief Set extlinux boot status
+ *
+ * @param status Pass status as true if extlinux boot is success otherwise false
+ */
+void extlinux_boot_set_status(bool status);
+
+/**
+ * @brief Get extlinux boot status
+ *
+ * @return Return true if extlinux boot is success otherwise false
+ */
+bool extlinux_boot_get_status(void);
+
+#endif /* CONFIG_ENABLE_EXTLINUX_BOOT */
+
+#endif /* INCLUDED_EXTLINUX_BOOT_H */

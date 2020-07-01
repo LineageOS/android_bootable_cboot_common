@@ -41,7 +41,6 @@ struct ufdt *ufdt_construct(void *fdtp) {
   return res_ufdt;
 
 error:
-  if (res_ufdt) dto_free(res_ufdt);
   if (fdtps) dto_free(fdtps);
 
   return NULL;
@@ -269,13 +268,15 @@ int phandle_table_entry_cmp(const void *pa, const void *pb) {
 }
 
 struct ufdt_static_phandle_table build_phandle_table(struct ufdt *tree) {
+  int cur = 0;
   struct ufdt_static_phandle_table res;
   res.len = count_phandle_node(tree->root);
   res.data = dto_malloc(sizeof(struct ufdt_phandle_table_entry) * res.len);
-  int cur = 0;
+  if (res.data == NULL) goto error;
   set_phandle_table_entry(tree->root, res.data, &cur);
   dto_qsort(res.data, res.len, sizeof(struct ufdt_phandle_table_entry),
             phandle_table_entry_cmp);
+error:
   return res;
 }
 

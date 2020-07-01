@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -26,6 +26,10 @@
 #include <tegrabl_sdmmc_host.h>
 #include <inttypes.h>
 #include <tegrabl_blockdev.h>
+
+#if defined(CONFIG_ENABLE_SDCARD)
+#include <tegrabl_sd_protocol.h>
+#endif
 
 /*  The below variable is required to maintain the init status of each instance.
  */
@@ -114,13 +118,13 @@ fail:
 #endif
 
 #if !defined(CONFIG_ENABLE_BLOCKDEV_BASIC)
-static tegrabl_error_t sdmmc_bdev_xfer_wait(struct tegrabl_blockdev_xfer_info *xfer, time_t timeout,
+tegrabl_error_t sdmmc_bdev_xfer_wait(struct tegrabl_blockdev_xfer_info *xfer, time_t timeout,
 		uint8_t *status)
 {
 	return sdmmc_xfer_wait(xfer, timeout, status);
 }
 
-static tegrabl_error_t sdmmc_bdev_xfer(struct tegrabl_blockdev_xfer_info *xfer)
+tegrabl_error_t sdmmc_bdev_xfer(struct tegrabl_blockdev_xfer_info *xfer)
 {
 	tegrabl_bdev_t *dev = xfer->dev;
 	sdmmc_priv_data_t *priv_data = (sdmmc_priv_data_t *)dev->priv_data;
@@ -136,6 +140,7 @@ tegrabl_error_t sdmmc_bdev_erase(tegrabl_bdev_t *dev, bnum_t block,
 {
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 	sdmmc_priv_data_t *priv_data = (sdmmc_priv_data_t *)dev->priv_data;
+	struct tegrabl_sdmmc *hsdmmc;
 
 	TEGRABL_UNUSED(is_secure);
 	/* Please note it is the responsibility of the block device layer */
@@ -143,8 +148,14 @@ tegrabl_error_t sdmmc_bdev_erase(tegrabl_bdev_t *dev, bnum_t block,
 	/* This implementation interprets length & offset in terms of sectors. */
 
 	/* Call erase functionality implemented in protocol layer. */
-	error = sdmmc_erase(dev, block, count,
-				(struct tegrabl_sdmmc *)priv_data->context, priv_data->device);
+	hsdmmc = priv_data->context;
+
+#if defined(CONFIG_ENABLE_SDCARD)
+	if (hsdmmc->device_type == DEVICE_TYPE_SD)
+		error = sd_erase(dev, block, count, hsdmmc, priv_data->device);
+	else
+#endif
+		error = sdmmc_erase(dev, block, count, hsdmmc, priv_data->device);
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
 	}

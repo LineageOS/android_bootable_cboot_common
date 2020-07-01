@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -66,7 +66,7 @@ static tegrabl_error_t dpaux_init(dpaux_instance_t instance, struct tegrabl_dpau
 	struct dpaux_soc_info *hdpaux_info = NULL;
 	static bool is_initialized;
 	static bool is_dpaux_initialized[4];
-	tegrabl_error_t err;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	pr_debug("%s: entry\n", __func__);
 

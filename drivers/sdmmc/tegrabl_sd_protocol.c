@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors errain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -177,3 +177,97 @@ fail:
 	return err;
 }
 
+tegrabl_error_t sd_erase(tegrabl_bdev_t *dev, bnum_t block, bnum_t count,
+	struct tegrabl_sdmmc *hsdmmc, sdmmc_device device)
+{
+	tegrabl_error_t error = TEGRABL_NO_ERROR;
+	bnum_t blk_start;
+	bnum_t blk_end;
+	bnum_t erase_blk_end;
+	bnum_t dev_blk_end;
+	time_t start_time;
+	time_t end_time;
+
+	TEGRABL_UNUSED(device);
+
+	if ((dev == NULL) || (hsdmmc == NULL)) {
+		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 18);
+		goto fail;
+	}
+
+	/* Make sure erase won't exceed the dev's block_count */
+	erase_blk_end = block + count - 1U;
+	dev_blk_end = dev->block_count - 1U;
+	if (erase_blk_end > dev_blk_end) {
+		pr_warn("Limit sd_erase() to 0x%x (from 0x%x)\n", dev_blk_end, erase_blk_end);
+		erase_blk_end = dev_blk_end;
+	}
+
+	blk_start = block;
+	blk_end = blk_start + MAX_ERASABLE_SECTORS - 1U;
+
+	while (blk_start < erase_blk_end) {
+		if (blk_end > erase_blk_end)
+			blk_end = erase_blk_end;
+
+		pr_trace("Send erase block start command (start=0x%x)\n", blk_start);
+		error = sdmmc_send_command(SD_CMD_ERASE_BLK_START, blk_start, RESP_TYPE_R1, 0, hsdmmc);
+		if (error != TEGRABL_NO_ERROR) {
+			goto exit;
+		}
+
+		pr_trace("Send erase block end command (end=0x%x)\n", blk_end);
+		error = sdmmc_send_command(SD_CMD_ERASE_BLK_END,
+								   blk_end,
+								   RESP_TYPE_R1, 0, hsdmmc);
+		if (error != TEGRABL_NO_ERROR) {
+			goto exit;
+		}
+
+		pr_trace("Send erase command with arg=0\n");
+		error = sdmmc_send_command(SD_CMD_ERASE, 0, RESP_TYPE_R1B, 0, hsdmmc);
+		if (error != TEGRABL_NO_ERROR) {
+			goto exit;
+		}
+
+		/* Verify the response of the erase command. */
+		pr_trace("Verify the response\n");
+		error = sdmmc_verify_response(CMD_ERASE, 1, hsdmmc);
+		if (error != TEGRABL_NO_ERROR) {
+			goto exit;
+		}
+
+		/* Check if the card is in programming state or not. */
+		pr_trace("Send status command\n");
+		start_time = tegrabl_get_timestamp_ms();
+		do {
+			error = sdmmc_send_command(CMD_SEND_STATUS,
+						 hsdmmc->card_rca, RESP_TYPE_R1, 0, hsdmmc);
+			if (error != TEGRABL_NO_ERROR) {
+				goto exit;
+			}
+			if (sdmmc_verify_response(CMD_SEND_STATUS, 1, hsdmmc) != TEGRABL_NO_ERROR) {
+				continue;
+			} else {
+				break;
+			}
+			end_time = tegrabl_get_timestamp_ms();
+			if ((end_time - start_time) > SD_ERASE_TIMEOUT_IN_MS) {
+				error = TEGRABL_ERROR(TEGRABL_ERR_TIMEOUT, 22);
+				goto exit;
+			}
+			tegrabl_mdelay(1);
+		} while (true);
+
+		blk_start = blk_end + 1U;
+		blk_end += MAX_ERASABLE_SECTORS;
+	}
+
+exit:
+	if (error != TEGRABL_NO_ERROR) {
+		pr_error("Failed to erase blocks (0x%x : 0x%x)\n", blk_start, blk_end);
+	}
+
+fail:
+	return error;
+}

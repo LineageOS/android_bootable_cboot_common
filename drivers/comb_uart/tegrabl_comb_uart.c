@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -83,7 +83,7 @@ static tegrabl_error_t comb_uart_wait_tx_ack(void)
 static void comb_uart_rx_ack(uint32_t reg_val)
 {
 	/* ACK the RX by clearing 31st bit of Rx mailbox*/
-	NV_WRITE32(comb_uart.rx_addr, reg_val & !(BIT(INTR_TRIGGER_BIT)));
+	NV_WRITE32(comb_uart.rx_addr, reg_val & ~(BIT(INTR_TRIGGER_BIT)));
 }
 
 tegrabl_error_t tegrabl_comb_uart_rx(uint8_t *rx_buf, uint32_t len, uint32_t *bytes_received, time_t timeout)

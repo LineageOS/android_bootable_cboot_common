@@ -23,7 +23,7 @@
 #include <tegrabl_blockdev.h>
 #include <tegrabl_sdmmc_bdev.h>
 #include <tegrabl_mb2_bct.h>
-
+#include <tegrabl_sd_param.h>
 
 /**
  * @brief Map mb1 bct device type enum to storage device type enum
@@ -49,6 +49,7 @@ tegrabl_storage_type_t tegrabl_storage_map_to_storage_dev_from_mb1bct_dev(
 tegrabl_error_t tegrabl_storage_init_dev(
 						tegrabl_storage_type_t type, uint32_t instance,
 						struct tegrabl_mb1bct_device_params *const dev_params,
+						struct tegrabl_sd_platform_params *const sd_params,
 						bool sdmmc_skip_init, bool ufs_reinit);
 
 /**

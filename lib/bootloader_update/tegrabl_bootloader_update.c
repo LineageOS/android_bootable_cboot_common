@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2016-2019, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -190,7 +190,8 @@ static tegrabl_error_t partition_has_slot(const char *part_name, bool *has_slot)
 		goto done;
 	}
 
-	strcpy(partition_name, part_name);
+	strncpy(partition_name, part_name, sizeof(partition_name) - 1);
+	partition_name[sizeof(partition_name) - 1] = '\0';
 	err = get_full_part_name(1, partition_name);
 	if (err != TEGRABL_NO_ERROR) {
 		goto done;
@@ -292,7 +293,8 @@ static tegrabl_error_t write_a_b_partition(const char *part_name, uint8_t *data,
 	}
 
 	/* Update given slot */
-	strcpy(full_part_name, part_name);
+	strncpy(full_part_name, part_name, sizeof(full_part_name) - 1);
+	full_part_name[sizeof(full_part_name) - 1] = '\0';
 	status = get_full_part_name(update_slot, full_part_name);
 	if (status != TEGRABL_NO_ERROR) {
 		goto done;
@@ -318,7 +320,8 @@ static tegrabl_error_t write_a_b_partition(const char *part_name, uint8_t *data,
 			if (i == update_slot) {
 				continue;
 			}
-			strcpy(full_part_name, part_name);
+			strncpy(full_part_name, part_name, sizeof(full_part_name) - 1);
+			full_part_name[sizeof(full_part_name) - 1] = '\0';
 			status = get_full_part_name(i, full_part_name);
 			if (status != TEGRABL_NO_ERROR) {
 				goto done;
