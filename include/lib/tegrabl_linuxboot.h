@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2016, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2014-2019, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -96,6 +96,17 @@ void tegrabl_get_ramdisk_info(uint64_t *start, uint64_t *size);
  */
 
 char *tegrabl_get_bootimg_cmdline(void);
+
+/**
+ * @brief Update bootargs param in the dtb
+ *
+ * @param fdt pointer to the in-memory linux-kernel DTB
+ * @param boot_args pointer to additional boot args
+ *
+ * @return 0 on success, otherwise appropriate FDT error
+ */
+int tegrabl_linuxboot_update_bootargs(void *fdt, char *boot_args);
+
 #if defined(__cplusplus)
 }
 #endif

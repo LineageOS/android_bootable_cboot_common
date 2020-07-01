@@ -77,7 +77,7 @@ exit:
 
 #endif
 
-tegrabl_error_t qspi_flash_x4_enable_spansion(struct tegrabl_qspi_flash_driver_info *hqfdi, uint8_t bset, bool verify)
+tegrabl_error_t qspi_flash_x4_enable_spansion(struct tegrabl_qspi_flash_driver_info *hqfdi, uint8_t bset)
 {
 	struct tegrabl_qspi_transfer transfers[3];
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
@@ -185,15 +185,11 @@ tegrabl_error_t qspi_flash_x4_enable_spansion(struct tegrabl_qspi_flash_driver_i
 		} while ((reg_val & QSPI_FLASH_WIP_ENABLE) == QSPI_FLASH_WIP_ENABLE);
 		pr_debug("X4 enable Spansion: WIP is cleared\n");
 
-		if (verify) {
-			err = qspi_read_reg(hqfdi, QSPI_FLASH_CMD_RDCR, &reg_val);
+		err = qspi_read_reg(hqfdi, QSPI_FLASH_CMD_RDCR, &reg_val);
 
-			if (err != TEGRABL_NO_ERROR) {
-				pr_error("RDCR cmd failed, (err:0x%x)\n", err);
-				goto exit;
-			}
-		} else {
-			reg_val = input_cfg;
+		if (err != TEGRABL_NO_ERROR) {
+			pr_error("RDCR cmd fail (err:0x%x)\n", err);
+			goto exit;
 		}
 	} while ((reg_val & QSPI_FLASH_QUAD_ENABLE) != input_cfg);
 
@@ -205,6 +201,7 @@ exit:
 	return err;
 }
 
+#if !defined(CONFIG_DISABLE_QSPI_FLASH_WRITE_512B_PAGE)
 tegrabl_error_t qspi_flash_page_512bytes_enable_spansion(struct tegrabl_qspi_flash_driver_info *hqfdi)
 {
 	tegrabl_error_t err;
@@ -242,4 +239,5 @@ tegrabl_error_t qspi_flash_page_512bytes_enable_spansion(struct tegrabl_qspi_fla
 
 	return err;
 }
+#endif
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2018-2019, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -20,13 +20,15 @@
 #define NUM_SECONDARY_STORAGE_DEVICES 5
 
 /* specifies pluggable devices */
-#define BOOT_INVALID			   -1
 #define BOOT_DEFAULT				0 /*default is builtin*/
 #define BOOT_FROM_NETWORK			1
 #define BOOT_FROM_SD				2
 #define BOOT_FROM_USB				3
 /* Builtin storage specifies primary / secondary fixed storage where kernel is expected to be */
 #define BOOT_FROM_BUILTIN_STORAGE	4
+
+#define GUID_STR_LEN				36
+#define GUID_STR_SIZE				(GUID_STR_LEN + 1)
 
 struct ip_info {
 	bool is_dhcp_enabled;
@@ -37,8 +39,14 @@ struct ip_info {
 };
 
 struct cbo_info {
-	int8_t *boot_priority;
+	uint8_t *boot_priority;
 	struct ip_info ip_info;
+	char boot_pt_guid[GUID_STR_SIZE];
+};
+
+struct boot_devices {
+	char *name;
+	uint8_t device_id;
 };
 
 /**
@@ -51,18 +59,79 @@ struct cbo_info {
 tegrabl_error_t tegrabl_read_cbo(char *part_name);
 
 /**
-* @brief parse boot configuration from CBO partition data
+* @brief parse boot configuration from CBO partition or set to default
+*
+* @param is_cbo_read is CBO partition read or not
 *
 * @return TEGRABL_NO_ERROR if success. Error code in case of failure.
 */
-tegrabl_error_t tegrabl_cbo_parse_info(void);
+tegrabl_error_t tegrabl_cbo_parse_info(bool is_cbo_read);
+
+/**
+* @brief set/update boot order
+*
+* @param count number of boot devices
+* @param boot_order pointer to boot device strings in priority order
+*/
+void tegrabl_set_boot_order(uint32_t count, const char **boot_order);
+
+/**
+* @brief set/update ip info
+*
+* @param var_name name of variable to set/udpate
+* @param ip pointer to ip value
+* @param is_dhcp_enabled bool value of dhcp
+*/
+void tegrabl_set_ip_info(const char *var_name, uint8_t *ip, bool is_dhcp_enabled);
+
+/**
+ * @brief set/update boot partition GUID
+ *
+ * @param var_name name of variable to set/udpate
+ * @param guid pointer to GUID
+ */
+void tegrabl_set_boot_pt_guid(const char *var_name, const char *guid);
+
+/**
+* @brief clear boot order
+*/
+void tegrabl_clear_boot_order(void);
+
+/**
+* @brief clear ip info
+*
+* @param var_name name of variable to clear
+*/
+void tegrabl_clear_ip_info(const char *var_name);
+
+/**
+ * @brief clear boot partition GUID
+ */
+void tegrabl_clear_boot_pt_guid(void);
+
+/**
+* @brief print boot order
+*/
+void tegrabl_print_boot_order(void);
+
+/**
+* @brief print ip info
+*
+* @param var_name name of variable to print
+*/
+void tegrabl_print_ip_info(const char *var_name);
+
+/**
+ * @brief print boot partition GUID
+ */
+void tegrabl_print_boot_pt_guid(void);
 
 /**
 * @brief get new boot order
 *
 * @return pointer to the new boot order info or NULL in case of failure.
 */
-int8_t *tegrabl_get_boot_order(void);
+uint8_t *tegrabl_get_boot_order(void);
 
 /**
 * @brief get ip info
@@ -70,6 +139,22 @@ int8_t *tegrabl_get_boot_order(void);
 * @return ip_info struct containing all the ip's.
 */
 struct ip_info tegrabl_get_ip_info(void);
+
+/**
+ * @brief get boot partition GUID
+ *
+ * @return guid boot parition type GUID
+ */
+char *tegrabl_get_boot_pt_guid(void);
+
+/**
+* @brief check if given variable is boot_configuration variable
+*
+* @param var_name variable name to check
+*
+* @return true or false
+*/
+bool is_var_boot_cfg(const char *var_name);
 
 #endif /* INCLUDED_TEGRABL_CBO_H */
 

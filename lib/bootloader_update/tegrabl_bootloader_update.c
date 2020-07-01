@@ -25,6 +25,7 @@
 #define GPT_PART_NAME_LEN			36
 
 #define BR_BCT_PARTITION_NAME		"BCT"
+#define MB1_BCT_PARTITION_NAME		"MB1_BCT"
 #define MB2_BL_PARTITION_NAME		"mb2"
 #define MB1_PARTITION_NAME			"mb1"
 
@@ -221,6 +222,7 @@ static tegrabl_error_t is_always_ab_partition(const char *part_name,
 	return TEGRABL_NO_ERROR;
 }
 
+
 static tegrabl_error_t write_partition(const char *part_name, uint8_t *data,
 									   uint32_t size)
 {
@@ -232,6 +234,27 @@ static tegrabl_error_t write_partition(const char *part_name, uint8_t *data,
 	if (status != TEGRABL_NO_ERROR) {
 		goto end;
 	}
+#if defined(CONFIG_ENABLE_QSPI)
+	uint32_t storage_type;
+
+	storage_type = tegrabl_blockdev_get_storage_type(part.block_device);
+	if (storage_type == TEGRABL_STORAGE_QSPI_FLASH) {
+		status = tegrabl_partition_erase(&part, false);
+		if (status != TEGRABL_NO_ERROR) {
+			TEGRABL_SET_HIGHEST_MODULE(status);
+			goto end;
+		}
+	}
+#endif
+
+	if (!strncmp(part_name, BR_BCT_PARTITION_NAME,
+				 strlen(BR_BCT_PARTITION_NAME)) &&
+		callbacks.update_bct != NULL) {
+		pr_info("updating bCT\n");
+		status = callbacks.update_bct((uintptr_t)data, size);
+		goto end;
+	}
+
 	status = tegrabl_partition_write(&part, data, size);
 	if (status != TEGRABL_NO_ERROR) {
 		goto end;
@@ -365,14 +388,22 @@ static tegrabl_error_t update_partition(tegrabl_blob_handle bh,
 			goto end;
 		}
 
-		if (!strncmp(entry->partname, BR_BCT_PARTITION_NAME,
-					 strlen(BR_BCT_PARTITION_NAME)) &&
-			callbacks.update_bct != NULL) {
-			status = callbacks.update_bct((uintptr_t)data, size);
-			if (status != TEGRABL_NO_ERROR) {
-				goto end;
-			}
+#if defined(CONFIG_ENABLE_QSPI)
+	uint32_t storage_type;
+	struct tegrabl_partition part;
+	status = tegrabl_partition_open(entry->partname, &part);
+	if (status != TEGRABL_NO_ERROR) {
+		goto end;
+	}
+	storage_type = tegrabl_blockdev_get_storage_type(part.block_device);
+	if (storage_type == TEGRABL_STORAGE_QSPI_FLASH) {
+		status = tegrabl_partition_erase(&part, false);
+		if (status != TEGRABL_NO_ERROR) {
+			TEGRABL_SET_HIGHEST_MODULE(status);
+			goto end;
 		}
+	}
+#endif
 
 		/* Align data to BLKDEV_MEM_ALIGN byte */
 		if ((uintptr_t)data & (TEGRABL_BLOCKDEV_MEM_ALIGN_SIZE - 1U)) {

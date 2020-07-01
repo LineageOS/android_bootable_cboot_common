@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <list.h>
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_malloc.h>
 #include <tegrabl_debug.h>
 #include <tegrabl_clock.h>
@@ -36,17 +37,6 @@
  */
 static struct list_node i2c_list;
 
-struct tegrabl_i2c_prod_setting {
-	uint32_t num_settings;
-	uint32_t *settings;
-};
-
-#define I2C_INSTANCES_MAX	10UL
-#define I2C_MODES_MAX	4UL
-
-static struct tegrabl_i2c_prod_setting
-	i2c_prod_settings[I2C_INSTANCES_MAX][I2C_MODES_MAX];
-
 static inline void i2c_writel(struct tegrabl_i2c *hi2c, uint32_t reg,
 	uint32_t val)
 {
@@ -58,34 +48,6 @@ static inline uint32_t i2c_readl(struct tegrabl_i2c *hi2c,
 {
 	return NV_READ32(hi2c->base_addr + reg);
 }
-
-#if !defined(CONFIG_ENABLE_DEVICE_PRDD)
-tegrabl_error_t tegrabl_i2c_register_prod_settings(uint32_t instance,
-		uint32_t mode, uint32_t *settings, uint32_t num_settings)
-{
-	tegrabl_error_t error = TEGRABL_NO_ERROR;
-
-	if ((instance >= I2C_INSTANCES_MAX) || (mode >= I2C_MODES_MAX)) {
-		error = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER,
-				TEGRABL_I2C_REGISTER_PROD_SETTINGS_1);
-		TEGRABL_SET_ERROR_STRING(error, "instance: %d, mode: %d", instance, mode);
-		goto fail;
-	}
-
-	if ((settings == NULL) || (num_settings == 0U)) {
-		error = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER,
-				TEGRABL_I2C_REGISTER_PROD_SETTINGS_2);
-		TEGRABL_SET_ERROR_STRING(error, "settings: %p, num_settings: %d", settings, num_settings);
-		goto fail;
-	}
-
-	i2c_prod_settings[instance][mode].num_settings = num_settings;
-	i2c_prod_settings[instance][mode].settings = settings;
-
-fail:
-	return error;
-}
-#endif
 
 tegrabl_error_t tegrabl_i2c_set_bus_freq_info(uint32_t *freq, uint32_t num)
 {
@@ -111,7 +73,7 @@ tegrabl_error_t tegrabl_i2c_set_bus_freq_info(uint32_t *freq, uint32_t num)
 
 	while (num > 0UL) {
 		num--;
-		hi2c_info[num].mode = ((freq[num] != 0UL) ? (freq[num] * KHZ) : STD_SPEED);
+		hi2c_info[num].clk_freq = (freq[num] != 0UL) ? freq[num] : STD_SPEED;
 	}
 
 fail:
@@ -136,13 +98,27 @@ void tegrabl_i2c_unregister_instance(tegrabl_instance_i2c_t instance)
 	}
 }
 
+static uint32_t get_i2c_clock_divisor(uint32_t freq_in, uint32_t tlow, uint32_t thigh, uint32_t freq_out)
+{
+	uint32_t divisor;
+	uint32_t clk_divisor;
+
+	divisor = (tlow + thigh + 2UL) * freq_out;
+	clk_divisor = freq_in / divisor;
+
+	if (clk_divisor > 1UL) {
+		clk_divisor--;
+	}
+
+	return clk_divisor;
+}
+
 static tegrabl_error_t i2c_reset_controller(struct tegrabl_i2c *hi2c)
 {
-	uint32_t i2c_source_freq = 0;
-	uint32_t rate_set = 0;
 	uint32_t i2c_clk_divisor;
 	uint32_t reg;
 	uint32_t err = TEGRABL_NO_ERROR;
+	uint32_t tlow, thigh, source_rate;
 
 	TEGRABL_ASSERT(hi2c != NULL);
 
@@ -154,52 +130,31 @@ static tegrabl_error_t i2c_reset_controller(struct tegrabl_i2c *hi2c)
 	}
 #endif
 
-	if (hi2c->clk_freq < HS_SPEED) {
-		if (hi2c->clk_freq > FM_SPEED) {
-			i2c_clk_divisor = 0x10;
-		} else if (hi2c->clk_freq <= STD_SPEED) {
-			i2c_clk_divisor = 0x16;
-		} else {
-			i2c_clk_divisor = 0x19;
-		}
-
-		i2c_source_freq = hi2c->clk_freq * (i2c_clk_divisor + 1UL);
-		i2c_source_freq /= 1000UL;
-		/* if i2c_clk_divisor > 3 then Tlow + Thigh = 8
-		 * else Tlow + Thigh = 9. Currently i2c_clk_divisor > 3.
-		 */
-		i2c_source_freq = i2c_source_freq << 3;
-	} else {
-		i2c_clk_divisor = 0x02;
-		/* Tlow + Thigh = 13 */
-		i2c_source_freq = hi2c->clk_freq * (i2c_clk_divisor + 1UL) * 13UL;
-		i2c_source_freq /= 1000UL;
-	}
-
 	/* Assert reset to i2c */
 	err = tegrabl_car_rst_set(hi2c->module_id, (uint8_t)hi2c->instance);
 	if (err != TEGRABL_NO_ERROR) {
 		TEGRABL_SET_HIGHEST_MODULE(err);
-		TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_SET_FAILED, "assert reset", "instance %d", hi2c->instance);
 		goto fail;
 	}
 
 	/* Set the i2c controller clock source */
-	err = tegrabl_car_set_clk_src(hi2c->module_id, (uint8_t)hi2c->instance,
-				      TEGRABL_CLK_SRC_PLLP_OUT0);
+	err = tegrabl_car_set_clk_src(hi2c->module_id, (uint8_t)hi2c->instance, TEGRABL_CLK_SRC_PLLP_OUT0);
 	if (err != TEGRABL_NO_ERROR) {
 		TEGRABL_SET_HIGHEST_MODULE(err);
-		TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_SET_FAILED, "clock source", "instance %d", hi2c->instance);
 		goto fail;
 	}
 
-	/* Set the i2c controller frequency */
-	err = tegrabl_car_set_clk_rate(hi2c->module_id, (uint8_t)hi2c->instance,
-				       i2c_source_freq, &rate_set);
+	source_rate = tegrabl_i2c_get_clk_source_rate(hi2c);
+
+	err = tegrabl_car_set_clk_rate(hi2c->module_id, (uint8_t)hi2c->instance, source_rate, &source_rate);
 	if (err != TEGRABL_NO_ERROR) {
 		TEGRABL_SET_HIGHEST_MODULE(err);
-		TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_SET_FAILED, "controller frequency", "instance %d",
-				hi2c->instance);
+		goto fail;
+	}
+
+	if (source_rate == 0UL) {
+		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, I2C_RESET_CONTROLLER);
+		TEGRABL_PRINT_ERROR_STRING(err, "source rate %d", source_rate);
 		goto fail;
 	}
 
@@ -207,20 +162,35 @@ static tegrabl_error_t i2c_reset_controller(struct tegrabl_i2c *hi2c)
 	err = tegrabl_car_rst_clear(hi2c->module_id, (uint8_t)hi2c->instance);
 	if (err != TEGRABL_NO_ERROR) {
 		TEGRABL_SET_HIGHEST_MODULE(err);
-		TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_CLEAR_FAILED, "assert reset", "instance %d", hi2c->instance);
 		goto fail;
 	}
 
 	/* Wait for 5us delay after reset enable */
 	tegrabl_udelay(5);
 
-	reg = i2c_readl(hi2c, I2C_I2C_CLK_DIVISOR_REGISTER_0);
+	i2c_set_prod_settings(hi2c);
+
 	if (hi2c->clk_freq < HS_SPEED) {
+		reg = i2c_readl(hi2c, I2C_I2C_INTERFACE_TIMING_0_0);
+
+		tlow = NV_DRF_VAL(I2C, I2C_INTERFACE_TIMING_0, TLOW, reg);
+		thigh = NV_DRF_VAL(I2C, I2C_INTERFACE_TIMING_0, THIGH, reg);
+
+		i2c_clk_divisor = get_i2c_clock_divisor(source_rate, tlow, thigh, hi2c->clk_freq);
+
+		reg = i2c_readl(hi2c, I2C_I2C_CLK_DIVISOR_REGISTER_0);
 		reg = NV_FLD_SET_DRF_NUM(I2C, I2C_CLK_DIVISOR_REGISTER,
-				I2C_CLK_DIVISOR_STD_FAST_MODE, i2c_clk_divisor, reg);
+								 I2C_CLK_DIVISOR_STD_FAST_MODE, i2c_clk_divisor, reg);
 	} else {
-		reg = NV_FLD_SET_DRF_NUM(I2C, I2C_CLK_DIVISOR_REGISTER,
-				I2C_CLK_DIVISOR_HSMODE, i2c_clk_divisor, reg);
+		reg = i2c_readl(hi2c, I2C_I2C_HS_INTERFACE_TIMING_0_0);
+
+		tlow = NV_DRF_VAL(I2C, I2C_HS_INTERFACE_TIMING_0, HS_TLOW, reg);
+		thigh = NV_DRF_VAL(I2C, I2C_HS_INTERFACE_TIMING_0, HS_THIGH, reg);
+
+		i2c_clk_divisor = get_i2c_clock_divisor(source_rate, tlow, thigh, hi2c->clk_freq);
+
+		reg = i2c_readl(hi2c, I2C_I2C_CLK_DIVISOR_REGISTER_0);
+		reg = NV_FLD_SET_DRF_NUM(I2C, I2C_CLK_DIVISOR_REGISTER, I2C_CLK_DIVISOR_HSMODE, i2c_clk_divisor, reg);
 	}
 
 	i2c_writel(hi2c, I2C_I2C_CLK_DIVISOR_REGISTER_0, reg);
@@ -469,48 +439,6 @@ fail:
 	return error;
 }
 
-#if !defined(CONFIG_ENABLE_DEVICE_PROD)
-static void i2c_set_prod_settings(struct tegrabl_i2c *hi2c)
-{
-	uint32_t i = 0;
-	uint32_t reg = 0;
-	uint32_t mode;
-	struct tegrabl_i2c_prod_setting *setting = NULL;
-
-	TEGRABL_ASSERT(hi2c != NULL);
-
-#if defined(CONFIG_POWER_I2C_BPMPFW)
-	if (hi2c->is_enable_bpmpfw_i2c == true) {
-		return;
-	}
-#endif
-
-	if (hi2c->clk_freq > FM_PLUS_SPEED) {
-		mode = 3;
-	} else if (hi2c->clk_freq > FM_SPEED) {
-		mode = 2;
-	} else if (hi2c->clk_freq > STD_SPEED) {
-		mode = 1;
-	} else {
-		mode = 0;
-	}
-
-	setting = &i2c_prod_settings[hi2c->instance][mode];
-
-	if (setting->num_settings != 0U) {
-		/* Apply prod settings using <addr, mask, value> tuple */
-		for (i = 0; i < (setting->num_settings * 3U); i += 3U) {
-			reg = NV_READ32(setting->settings[i]);
-			reg &= (~setting->settings[i + 1UL]);
-			reg |= (setting->settings[i + 2UL] &
-					setting->settings[i + 1UL]);
-			NV_WRITE32(setting->settings[i], reg);
-		}
-	}
-	return;
-}
-#endif
-
 struct tegrabl_i2c *tegrabl_i2c_open(tegrabl_instance_i2c_t instance)
 {
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
@@ -543,7 +471,7 @@ struct tegrabl_i2c *tegrabl_i2c_open(tegrabl_instance_i2c_t instance)
 
 
 	hi2c->instance = instance;
-	hi2c->clk_freq = hi2c_info[instance].mode;
+	hi2c->clk_freq = hi2c_info[instance].clk_freq;
 	hi2c->base_addr = hi2c_info[instance].base_addr;
 	hi2c->is_cldvfs_required = hi2c_info[instance].is_cldvfs_required;
 	hi2c->is_bpmpfw_controlled = hi2c_info[instance].is_bpmpfw_controlled;
@@ -599,10 +527,6 @@ struct tegrabl_i2c *tegrabl_i2c_open(tegrabl_instance_i2c_t instance)
 	}
 #endif
 
-#if !defined(CONFIG_ENABLE_DEVICE_PROD)
-	i2c_set_prod_settings(hi2c);
-#endif
-
 	error = tegrabl_i2c_bus_clear(hi2c);
 	if (error != TEGRABL_NO_ERROR) {
 		TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_CLEAR_FAILED, "bus", "instance %d", hi2c->instance);
@@ -614,10 +538,6 @@ struct tegrabl_i2c *tegrabl_i2c_open(tegrabl_instance_i2c_t instance)
 		TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_RESET_FAILED, "instance %d", hi2c->instance);
 		goto fail;
 	}
-
-#if !defined(CONFIG_ENABLE_DEVICE_PROD)
-	i2c_set_prod_settings(hi2c);
-#endif
 
 	hi2c->is_initialized = true;
 	list_add_tail(&i2c_list, &hi2c->node);

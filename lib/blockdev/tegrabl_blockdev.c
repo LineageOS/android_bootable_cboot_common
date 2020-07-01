@@ -22,7 +22,7 @@
  */
 
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -47,19 +47,6 @@
 #include <tegrabl_compiler.h>
 
 static struct tegrabl_bdev_struct *bdevs;
-
-static const char * const storage_name[] = {
-	[TEGRABL_STORAGE_SDMMC_BOOT] = "SDMMC_BOOT",
-	[TEGRABL_STORAGE_SDMMC_USER] = "SDMMC_USER",
-	[TEGRABL_STORAGE_SDMMC_RPMB] = "SDMMC_RPMB",
-	[TEGRABL_STORAGE_QSPI_FLASH] = "QSPI_FLASH",
-	[TEGRABL_STORAGE_SATA] = "SATA",
-	[TEGRABL_STORAGE_SDCARD] = "SDCARD",
-	[TEGRABL_STORAGE_USB_MS] = "USB_MS",
-	[TEGRABL_STORAGE_UFS] = "UFS",
-	[TEGRABL_STORAGE_UFS_USER] = "UFS_USER",
-	[TEGRABL_STORAGE_UFS_RPMB] = "UFS_RPMB",
-};
 
 #if !defined(CONFIG_ENABLE_BLOCKDEV_BASIC)
 static uint32_t	xfer_id;
@@ -479,10 +466,11 @@ tegrabl_error_t tegrabl_blockdev_read(tegrabl_bdev_t *dev, void *buf,
 		goto fail;
 	}
 
-	pr_trace("dev '%d', buf %p, offset %"PRIu64", len %"PRIu64"\n",
-			 dev->device_id, buf, offset, len);
+	pr_trace("dev '%d', dev size %"PRIu64", buf %p, offset %"PRIu64", len %"PRIu64"\n",
+			 dev->device_id, dev->size, buf, offset, len);
 
 	if ((offset >= dev->size) || ((offset + len) > dev->size)) {
+		pr_error("Either offset or requested data size from that offset is beyond device size\n");
 		error = TEGRABL_ERROR(TEGRABL_ERR_OVERFLOW, 0);
 		goto fail;
 	}
@@ -704,7 +692,7 @@ tegrabl_error_t tegrabl_blockdev_xfer(struct tegrabl_blockdev_xfer_info *xfer)
 		goto fail;
 	}
 
-	if (dev->ref <= 0) {
+	if (dev->ref <= 0UL) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 23);
 		goto fail;
 	}
@@ -874,6 +862,19 @@ void tegrabl_blockdev_dump_devices(void)
 
 const char *tegrabl_blockdev_get_name(tegrabl_storage_type_t type)
 {
+	const char * const storage_name[TEGRABL_STORAGE_MAX] = {
+		[TEGRABL_STORAGE_SDMMC_BOOT] = "SDMMC_BOOT",
+		[TEGRABL_STORAGE_SDMMC_USER] = "SDMMC_USER",
+		[TEGRABL_STORAGE_SDMMC_RPMB] = "SDMMC_RPMB",
+		[TEGRABL_STORAGE_QSPI_FLASH] = "QSPI_FLASH",
+		[TEGRABL_STORAGE_SATA] = "SATA",
+		[TEGRABL_STORAGE_SDCARD] = "SDCARD",
+		[TEGRABL_STORAGE_USB_MS] = "USB_MS",
+		[TEGRABL_STORAGE_UFS] = "UFS",
+		[TEGRABL_STORAGE_UFS_USER] = "UFS_USER",
+		[TEGRABL_STORAGE_UFS_RPMB] = "UFS_RPMB",
+	};
+
 	TEGRABL_COMPILE_ASSERT(ARRAY_SIZE(storage_name) == TEGRABL_STORAGE_MAX, "missing storage-type in array");
 	if (type >= TEGRABL_STORAGE_MAX) {
 		return NULL;

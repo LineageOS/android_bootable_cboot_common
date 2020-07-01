@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -27,5 +27,7 @@
 #define TEGRABL_I2C_TRANSACTION 0xCU
 #define TEGRABL_I2C_BUS_CLEAR 0xDU
 #define TEGRABL_VIRTUAL_I2C_BPMP_XFER 0xEU
+#define TEGRABL_I2C_CLOSE 0xFU
+#define I2C_RESET_CONTROLLER 0x10U
 
 #endif

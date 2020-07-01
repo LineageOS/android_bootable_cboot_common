@@ -234,12 +234,12 @@ struct dme_cmd {
 #define dme_tc0replaytimeoutval		0xD042U
 #define dme_afc0reqtimeoutval		0xD043U
 
-#define vs_debugsaveconfigtime		0xD0A0U
-#define vs_debugsaveconfigtime_tref	0x6U
-#define vs_debugsaveconfigtime_st_sct	0x3U
+#define vs_debugsaveconfigtime		0xD0A0UL
+#define vs_debugsaveconfigtime_tref	0x6UL
+#define vs_debugsaveconfigtime_st_sct	0x3UL
 
-#define set_tref(x) (((x) & 0x7) << 2)
-#define set_st_sct(x) (((x) & 0x3) << 0)
+#define set_tref(x) (((x) & 0x7UL) << 2)
+#define set_st_sct(x) (((x) & 0x3UL) << 0)
 
 /** Unipro powerchange mode.
  * SLOW : PWM
@@ -266,8 +266,6 @@ struct dme_cmd {
 #define UPIU_RESPONSE_TRANSACTION	0x21U
 #define UPIU_QUERY_REQUEST_TRANSACTION	0x16U
 #define UPIU_QUERY_RESPONSE_TRANSACTION	0x36U
-
-/* TODO fill in other transactions */
 
 /** Define codes etc for different types of Query Requests*/
 #define UPIU_QUERY_FUNC_STD_READ	0x1U
@@ -314,7 +312,6 @@ struct dme_cmd {
 #define TSF_OPCODE_READ_FLAG		0x5U
 #define TSF_OPCODE_SET_FLAG			0x6U
 
-/* TODO fill in other query reqs */
 /** Define codes etc for different Attribute IDNs*/
 #define QUERY_ATTRB_BOOT_LUN_EN		0x0U
 #define QUERY_ATTRB_CURR_POWER_MODE	0x2U
@@ -329,8 +326,6 @@ struct dme_cmd {
 #define QUERY_DESC_CONF_DESC_IDN	0x1U
 #define QUERY_DESC_UNIT_DESC_IDN	0x2U
 #define QUERY_DESC_GEO_DESC_IDN		0x7U
-
-/* TODO fill in other descriptor ids*/
 
 /** Define offsets etc for different Descriptors*/
 #define UFS_DESC_MAX_SIZE		255U
@@ -622,8 +617,8 @@ union ucd_generic_resp_upiu
  *     --------------------
  * Structure itself should be aligned to 128 byte aligned
  * so pad accordingly to form array.
- * TODO implement MACRO if possible to complain if alignment not met
  */
+
 #define CMD_DESC_REQ_LENGTH 512U
 #define CMD_DESC_RESP_LENGTH 512U
 #define CMD_DESC_PRDT_LENGTH 512U

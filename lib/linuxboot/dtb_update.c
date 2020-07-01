@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2018, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2014-2019, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -27,6 +27,18 @@
 #include <tegrabl_devicetree.h>
 #include <tegrabl_board_info.h>
 #include <tegrabl_nct.h>
+#include <tegrabl_sdram_usage.h>
+
+#if defined(CONFIG_ENABLE_DISPLAY)
+#include <tegrabl_display.h>
+
+static char *fb_carveout_node[] = {
+	"fb0_carveout",
+	"fb1_carveout",
+	"fb2_carveout",
+	"fb3_carveout",
+};
+#endif
 
 #if defined(POPULATE_BOARDINFO)
 /* Add boardinfo under 'chosen' node in DTB. */
@@ -101,47 +113,29 @@ fail:
 /* Update/add primary memory base & size in 'memory' node of DTB */
 static tegrabl_error_t add_memory_info(void *fdt, int nodeoffset)
 {
-	uint32_t num_memory_chunks = 0, idx;
+	uint32_t num_memory_chunks = 0;
 	uint64_t buf[2 * MAX_MEM_CHUNKS];
-	uint64_t tmp;
-	struct tegrabl_linuxboot_memblock memblock;
+	struct tegrabl_linuxboot_memblock *blk_arr = NULL;
+	uint32_t blk_arr_cnt = 0;
 	tegrabl_error_t status = TEGRABL_NO_ERROR;
 	int err;
 	char *name;
 
 	TEGRABL_ASSERT(fdt);
 
-	for (idx = 0; idx < MAX_MEM_CHUNKS; idx++) {
-		status = tegrabl_linuxboot_helper_get_info(
-					TEGRABL_LINUXBOOT_INFO_MEMORY, &idx, &memblock);
+	status = tegrabl_get_memblk_info_array(&blk_arr_cnt, &blk_arr);
 
-		if ((status != TEGRABL_NO_ERROR) ||
-			(memblock.size == 0) ||
-			(num_memory_chunks >= MAX_MEM_CHUNKS)) {
-			break;
-		}
+	if (status != TEGRABL_NO_ERROR) {
+		pr_error("Failed to get memory blocks info array\n");
+		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 0);
+		goto fail;
+	}
 
-		/* Align start/base to 2MB */
-		tmp = ROUND_UP_POW2(memblock.base, 0x200000LLU);
-		if (tmp >= (memblock.base + memblock.size)) {
-			continue;
-		}
-
-		/* Adjust the size accordingly */
-		memblock.size -= (tmp - memblock.base);
-
-		/* kernel crashes if bootloader passed odd number of MBs */
-		memblock.size &= ~0x1FFFFFLLU;
-
-		memblock.base = tmp;
-
-		if (memblock.size > 0) {
-			buf[num_memory_chunks * 2 + 0] = cpu_to_fdt64(memblock.base);
-			buf[num_memory_chunks * 2 + 1] = cpu_to_fdt64(memblock.size);
-			pr_info("added [base:0x%"PRIx64", size:0x%"PRIx64"] to /memory\n",
-					memblock.base, memblock.size);
-			num_memory_chunks++;
-		}
+	for (num_memory_chunks = 0; num_memory_chunks < blk_arr_cnt; num_memory_chunks++) {
+		buf[num_memory_chunks * 2 + 0] = cpu_to_fdt64(blk_arr[num_memory_chunks].base);
+		buf[num_memory_chunks * 2 + 1] = cpu_to_fdt64(blk_arr[num_memory_chunks].size);
+		pr_info("added [base:0x%"PRIx64", size:0x%"PRIx64"] to /memory\n",
+			blk_arr[num_memory_chunks].base, blk_arr[num_memory_chunks].size);
 	}
 
 	/* Update the /memory node of DTB
@@ -512,7 +506,7 @@ static tegrabl_error_t tegrabl_add_serialno(void *fdt)
 		return err;
 	}
 
-	pr_info("Add serial number as DT property\n");
+	pr_info("Add serial number:%s as DT property\n", sno);
 	fdt_err = fdt_setprop_string(fdt, 0, "serial-number", sno);
 	if (fdt_err < 0) {
 		pr_error("Failed to add serialno in DT\n");
@@ -661,6 +655,72 @@ static tegrabl_error_t add_plugin_manager_ids(void *fdt, int nodeoffset)
 }
 #endif
 
+#if defined(CONFIG_ENABLE_DISPLAY)
+static tegrabl_error_t update_fb_carveout(void *fdt, int rm_offset,
+	struct tegrabl_display_unit_params *disp_params)
+{
+	int32_t offset = -1;
+	uint32_t instance;
+	static uint64_t buf[4];
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+
+	instance = disp_params->instance;
+
+	/*fb addr and size*/
+	buf[0] = cpu_to_fdt64(disp_params->addr);
+	buf[1] = cpu_to_fdt64(disp_params->size);
+	/*lut addr and size*/
+	buf[2] = cpu_to_fdt64(disp_params->lut_addr);
+	buf[3] = cpu_to_fdt64(disp_params->lut_size);
+
+	pr_debug("fb_addr = %#lx, fb_size= %#lx\n", buf[0], buf[1]);
+	pr_debug("lut_addr = %#lx, lut_size= %#lx\n", buf[2], buf[3]);
+
+	offset = tegrabl_add_subnode_if_absent(fdt, rm_offset, fb_carveout_node[instance]);
+	if (offset < 0) {
+		pr_error("%s: error in adding %s subnode in DT\n", __func__, fb_carveout_node[instance]);
+		goto fail;
+	}
+
+	/*add/update the reg property with fb.size & fb.addr, lut.size & lut.addr*/
+	err = fdt_setprop(fdt, offset, "reg", buf, sizeof(buf));
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("%s, error updating \"reg\" property in %s\n", __func__, fb_carveout_node[instance]);
+		goto fail;
+	}
+
+fail:
+	return err;
+}
+
+static tegrabl_error_t add_disp_param(void *fdt, int nodeoffset)
+{
+	uint32_t du_idx = 0;
+	struct tegrabl_display_unit_params disp_params;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+
+	for (du_idx = 0; du_idx < DISPLAY_OUT_MAX; du_idx++) {
+		err = tegrabl_display_get_params(du_idx, &disp_params);
+		if (err != TEGRABL_NO_ERROR) {
+			pr_error("%s: failed to get display params for du=%d\n", __func__, du_idx);
+			goto fail;
+		}
+
+		if (disp_params.size != 0) {
+			err = update_fb_carveout(fdt, nodeoffset, &disp_params);
+			if (err != TEGRABL_NO_ERROR) {
+				pr_error("%s, failed to update display params for du=%d\n", __func__, du_idx);
+				goto fail;
+			}
+		}
+	}
+
+fail:
+	/*Having no external display is not an error*/
+	return TEGRABL_NO_ERROR;
+}
+#endif
+
 static struct tegrabl_linuxboot_dtnode_info common_nodes[] = {
 	/* keep this sorted by the node_name field */
 	{ "bpmp", add_bpmp_info},
@@ -680,8 +740,69 @@ static struct tegrabl_linuxboot_dtnode_info common_nodes[] = {
 #endif
 #endif
 	{ "memory", add_memory_info},
+#if defined(CONFIG_ENABLE_DISPLAY)
+	{ "reserved-memory", add_disp_param},
+#endif
 	{ NULL, NULL},
 };
+
+static struct tegrabl_linuxboot_memblock memblock_info_array[MAX_MEM_CHUNKS];
+static uint32_t blk_info_array_cnt;
+
+tegrabl_error_t tegrabl_get_memblk_info_array(uint32_t *array_items_num,
+			struct tegrabl_linuxboot_memblock **blk_arr)
+{
+	uint64_t tmp;
+	uint32_t idx = 0;
+	struct tegrabl_linuxboot_memblock memblock;
+	tegrabl_error_t status = TEGRABL_NO_ERROR;
+
+	if ((NULL == array_items_num) || (NULL == blk_arr)) {
+		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+	}
+
+	if (blk_info_array_cnt > 0) {
+		*array_items_num = blk_info_array_cnt;
+		*blk_arr = memblock_info_array;
+		return TEGRABL_NO_ERROR;
+	}
+
+	for (idx = 0; idx < MAX_MEM_CHUNKS; idx++) {
+		status = tegrabl_linuxboot_helper_get_info(
+					TEGRABL_LINUXBOOT_INFO_MEMORY, &idx, &memblock);
+
+		if ((status != TEGRABL_NO_ERROR) || (memblock.size == 0) ||
+		(blk_info_array_cnt >= MAX_MEM_CHUNKS)) {
+			break;
+		}
+
+		/* Align start/base to 2MB */
+		tmp = ROUND_UP_POW2(memblock.base, 0x200000LLU);
+
+		if (tmp >= (memblock.base + memblock.size)) {
+			continue;
+		}
+
+		/* Adjust the size accordingly */
+		memblock.size -= (tmp - memblock.base);
+
+		/* kernel crashes if bootloader passed odd number of MBs */
+		memblock.size &= ~0x1FFFFFLLU;
+
+		memblock.base = tmp;
+
+		if (memblock.size > 0) {
+			memblock_info_array[blk_info_array_cnt].base = memblock.base;
+			memblock_info_array[blk_info_array_cnt].size = memblock.size;
+			blk_info_array_cnt++;
+		}
+	}
+
+	*array_items_num = blk_info_array_cnt;
+	*blk_arr = memblock_info_array;
+
+	return TEGRABL_NO_ERROR;
+}
 
 tegrabl_error_t tegrabl_linuxboot_update_dtb(void *fdt)
 {
@@ -769,3 +890,55 @@ tegrabl_error_t tegrabl_linuxboot_update_dtb(void *fdt)
 	return TEGRABL_NO_ERROR;
 }
 
+int tegrabl_linuxboot_update_bootargs(void *fdt, char *boot_args)
+{
+	char buf[MAX_COMMAND_LINE_SIZE];
+	char *dtb_cmdline;
+	char *ptr;
+	int len;
+	int node_offset;
+	int err = 0;
+
+	pr_trace("%s(): %u\n", __func__, __LINE__);
+
+	/* Get bootargs */
+	node_offset = fdt_path_offset(fdt, "/chosen");
+	if (node_offset < 0) {
+		err = node_offset;
+		pr_error("Couldn't find offset for node /chosen (%s)\n", fdt_strerror(err));
+		goto fail;
+	}
+	dtb_cmdline = (char *)fdt_getprop(fdt, node_offset, "bootargs", &len);
+	if (len <= 0) {
+		dtb_cmdline = "";
+	}
+
+	/* Prepare bootargs */
+	ptr = buf;
+	len = tegrabl_snprintf(ptr, MAX_COMMAND_LINE_SIZE, "%s %s", dtb_cmdline, boot_args);
+	if (strlen(ptr) > MAX_COMMAND_LINE_SIZE) {
+		pr_warn("Some of the APPEND args is not included in DTB bootargs\n");
+	}
+
+	/* Update bootargs */
+set_prop:
+	err = fdt_setprop(fdt, node_offset, "bootargs", ptr, MAX_COMMAND_LINE_SIZE);
+	if (err == -FDT_ERR_NOSPACE) {
+		err = tegrabl_dt_create_space(fdt, SZ_512, DTB_MAX_SIZE);
+		pr_trace("Increased FDT blob size by %u bytes\n", SZ_512);
+		if (err == TEGRABL_NO_ERROR) {
+			goto set_prop;       /* retry setprop */
+		} else {
+			pr_info("Failed to increase blob size: %s\n", fdt_strerror(err));
+			goto fail;
+		}
+	} else if (err < 0) {
+		pr_error("Failed to set bootargs in DTB (%s)\n", fdt_strerror(err));
+		goto fail;
+	} else {
+		/* Do nothing */
+	}
+
+fail:
+	return err;
+}

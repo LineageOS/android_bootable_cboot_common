@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2018-2019, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -12,6 +12,7 @@
 
 #include <tegrabl_error.h>
 #include <tegrabl_debug.h>
+#include <tegrabl_ar_macro.h>
 #include <arpadctl_EQOS.h>
 #include <arpadctl_CONN.h>
 #include <argpio_sw.h>
@@ -29,6 +30,7 @@
 #include <tegrabl_devicetree.h>
 #include <tegrabl_gpio.h>
 #include <lwip/netif.h>
+#include <tegrabl_io.h>
 
 extern err_t low_level_input(void);
 
@@ -392,15 +394,14 @@ struct eqos_dev {
 	struct eqos_desc *rx_descs;
 	uint32_t tx_desc_id;
 	uint32_t rx_desc_id;
-	void *tx_dma_buf;
-	void *rx_dma_buf;
+	void *tx_dma_buf[DESCRIPTORS_TX];
+	void *rx_dma_buf[DESCRIPTORS_RX];
 	uint32_t tx_fifo_sz_bytes;
 	uint32_t phy_page;
 	struct phy_dev phy;
 };
 
 static struct eqos_dev eqos = {0};
-
 static void print_reg(char *str, uint32_t addr)
 {
 #if EQOS_DEBUG
@@ -461,7 +462,7 @@ static void print_debug_registers(uint32_t flags)
 		print_reg("Curr App: Rx desc ", 0x02490000 + 0x114C);
 		print_reg("Curr App: Rx buff ", 0x02490000 + 0x115C);
 
-		for (i = 0; i < 4; i++) {
+		for (i = 0; i < DESCRIPTORS_RX; i++) {
 			pr_info("\n");
 			pr_info("Rx desc %u\n", i);
 			desc = &(eqos.rx_descs[i]);
@@ -847,6 +848,7 @@ static tegrabl_error_t tegrabl_eqos_auto_calib(void)
 
 static tegrabl_error_t tegrabl_eqos_alloc_resources(void)
 {
+	uint32_t i;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	pr_trace("%s()\n", __func__);
@@ -865,27 +867,39 @@ static tegrabl_error_t tegrabl_eqos_alloc_resources(void)
 	}
 	memset(eqos.rx_descs, 0, RX_DESCRIPTORS_SIZE);
 
-	eqos.tx_dma_buf = tegrabl_alloc_align(TEGRABL_HEAP_DMA, CACHE_LINE, MAX_PACKET_SIZE);
-	if (eqos.tx_dma_buf == NULL) {
-		pr_error("Failed to alloc memory for Tx buffer\n");
-		goto fail_free_rx_descs;
+	for (i = 0; i < DESCRIPTORS_TX; i++) {
+		eqos.tx_dma_buf[i] = tegrabl_alloc_align(TEGRABL_HEAP_DMA, CACHE_LINE, MAX_PACKET_SIZE);
+		if (eqos.tx_dma_buf[i] == NULL) {
+			pr_error("Failed to alloc memory for Tx buffer: %u\n", i);
+			goto fail_free_rx_descs;
+		}
 	}
 
-	eqos.rx_dma_buf = tegrabl_alloc_align(TEGRABL_HEAP_DMA, CACHE_LINE, MAX_PACKET_SIZE);
-	if (eqos.rx_dma_buf == NULL) {
-		pr_error("Failed to alloc memory for Rx buffer\n");
-		goto fail_free_tx_dma_buf;
+	for (i = 0; i < DESCRIPTORS_RX; i++) {
+		eqos.rx_dma_buf[i] = tegrabl_alloc_align(TEGRABL_HEAP_DMA, CACHE_LINE, MAX_PACKET_SIZE);
+		if (eqos.rx_dma_buf[i] == NULL) {
+			pr_error("Failed to alloc memory for Rx buffer: %u\n", i);
+			goto fail_free_tx_dma_buf;
+		}
 	}
 
 	pr_trace("tx descs addr: %p\n", eqos.tx_descs);
 	pr_trace("rx descs addr: %p\n", eqos.rx_descs);
-	pr_trace("tx buf addr  : 0x%p\n", eqos.tx_dma_buf);
-	pr_trace("rx buf addr  : 0x%p\n", eqos.rx_dma_buf);
+	pr_trace("tx buf addr  :\n");
+	for (i = 0; i < DESCRIPTORS_TX; i++) {
+		pr_trace("%p\n", eqos.tx_dma_buf[i]);
+	}
+	pr_trace("rx buf addr  :\n");
+	for (i = 0; i < DESCRIPTORS_RX; i++) {
+		pr_trace("%p\n", eqos.rx_dma_buf[i]);
+	}
 
 	goto done;
 
 fail_free_tx_dma_buf:
-	tegrabl_free(eqos.tx_dma_buf);
+	for (i = 0; i < DESCRIPTORS_TX; i++) {
+		tegrabl_free(eqos.tx_dma_buf[i]);
+	}
 fail_free_rx_descs:
 	tegrabl_free(eqos.rx_descs);
 fail_free_tx_descs:
@@ -952,7 +966,6 @@ static tegrabl_error_t tegrabl_eqos_dma_init(void)
 
 	/* Reset DMA */
 	SET_REG_BIT(DMA_MODE, SWR);
-
 	/* Wait till DMA reset completes */
 	err = wait_for_bit(DMA_MODE, DMA_MODE_SWR, RESET, DMA_RESET_TIMEOUT_USEC);
 	if (err != TEGRABL_NO_ERROR) {
@@ -975,7 +988,6 @@ static tegrabl_error_t tegrabl_eqos_dma_init(void)
 	SET_REG_BIT(DMA_CH0_TX_CONTROL, OSP);
 
 	SET_REG_BIT_FIELD_NUM(DMA_CH0_TX_CONTROL, TXPBL, 32); /* TODO: add reason for harcoding */
-
 	SET_REG_BIT_FIELD_NUM(DMA_CH0_RX_CONTROL, RXPBL, 8);  /* TODO: add reason for harcoding */
 
 fail:
@@ -1066,8 +1078,7 @@ static void tegrabl_eqos_mac_init(void)
 				 SET_BIT_FIELD_DEF(MAC_CONFIGURATION_IPG, 40_BIT_TIMES));
 
 	/* Filter broadcast packets */
-	SET_REG_BITS(MAC_PACKET_FILTER,
-				 BIT(MAC_PACKET_FILTER_HPF) | BIT(MAC_PACKET_FILTER_DBF) | BIT(MAC_PACKET_FILTER_PM));
+	SET_REG_BITS(MAC_PACKET_FILTER, BIT(MAC_PACKET_FILTER_HPF) | BIT(MAC_PACKET_FILTER_PM));
 
 	/* Enable RX queue 0 for DCB or generic */
 	SET_REG_BIT_FIELD_DEF(MAC_RXQ_CTRL0, RXQ0EN, DCB_ENABLED);
@@ -1077,6 +1088,55 @@ static void tegrabl_eqos_mac_init(void)
 
 	/* Enable tx and rx */
 	SET_REG_BITS(MAC_CONFIGURATION, BIT(MAC_CONFIGURATION_TE) | BIT(MAC_CONFIGURATION_RE));
+}
+
+static void tegrabl_eqos_prepare_tx_desc(size_t len)
+{
+	struct eqos_desc *tx_desc = NULL;
+	dma_addr_t p_tx_desc;
+	dma_addr_t p_tx_dma_buf;
+
+	p_tx_dma_buf = tegrabl_dma_map_buffer(TEGRABL_MODULE_EQOS, 0, (void *)eqos.tx_dma_buf[eqos.tx_desc_id],
+										  len, TEGRABL_DMA_TO_DEVICE);
+
+	/* Program descriptor */
+	tx_desc = &(eqos.tx_descs[eqos.tx_desc_id]);
+	tx_desc->des0 = (uintptr_t)p_tx_dma_buf;
+	tx_desc->des1 = 0;
+	tx_desc->des2 = len;
+	tx_desc->des3 = TDES3_OWN_DMA | TDES3_FD | TDES3_LD | TDES3_CPC_INSERT_CRC_AND_PAD | len;
+
+	/* Flush cache */
+	p_tx_desc = tegrabl_dma_map_buffer(TEGRABL_MODULE_EQOS, 0, (void *)tx_desc, DESCRIPTOR_SIZE,
+									   TEGRABL_DMA_TO_DEVICE);
+
+	/* Program descriptor registers */
+	NV_WRITE32(DMA_CH0_TXDESC_LIST_HIGH_ADDR, 0x0);
+	NV_WRITE32(DMA_CH0_TXDESC_LIST_ADDR, (uintptr_t)p_tx_desc);
+	NV_WRITE32(DMA_CH0_TXDESC_TAIL_POINTER, (uintptr_t)((struct eqos_desc *)p_tx_desc + 1));
+
+}
+
+static void tegrabl_eqos_prepare_rx_desc(void)
+{
+	struct eqos_desc *rx_desc = NULL;
+	dma_addr_t p_rx_desc;
+
+	/* Setup descriptor */
+	rx_desc = &(eqos.rx_descs[eqos.rx_desc_id]);
+	rx_desc->des0 = (uintptr_t)eqos.rx_dma_buf[eqos.rx_desc_id];
+	rx_desc->des1 = 0;
+	rx_desc->des2 = 0;
+	rx_desc->des3 = RDES3_OWN_DMA | RDES3_IOC | RDES3_BUF1V;
+
+	p_rx_desc = tegrabl_dma_map_buffer(TEGRABL_MODULE_EQOS, 0, (void *)rx_desc, DESCRIPTOR_SIZE,
+									   TEGRABL_DMA_TO_DEVICE);
+	TEGRABL_UNUSED(p_rx_desc);
+
+	/* Setup descriptor registers */
+	NV_WRITE32(DMA_CH0_RXDESC_LIST_HIGH_ADDR, 0x0);
+	NV_WRITE32(DMA_CH0_RXDESC_LIST_ADDR, (uintptr_t)p_rx_desc);
+	NV_WRITE32(DMA_CH0_RXDESC_TAIL_POINTER, (uintptr_t)((struct eqos_desc *)p_rx_desc + 1));
 }
 
 tegrabl_error_t tegrabl_eqos_init(void)
@@ -1132,11 +1192,6 @@ tegrabl_error_t tegrabl_eqos_init(void)
 		goto fail;
 	}
 
-	eqos.tx_desc_id = 0;
-	eqos.rx_desc_id = 0;
-	NV_WRITE32(DMA_CH0_TXDESC_RING_LENGTH, DESCRIPTORS_TX);
-	NV_WRITE32(DMA_CH0_RXDESC_RING_LENGTH, DESCRIPTORS_RX);
-
 	/* Initialize EQoS */
 	err = tegrabl_eqos_dma_init();
 	if (err != TEGRABL_NO_ERROR) {
@@ -1153,58 +1208,18 @@ tegrabl_error_t tegrabl_eqos_init(void)
 		pr_error("Failed to allocate resources\n");
 		goto fail;
 	}
+	eqos.tx_desc_id = 0;
+	eqos.rx_desc_id = 0;
+	NV_WRITE32(DMA_CH0_TXDESC_RING_LENGTH, DESCRIPTORS_TX-1);
+	NV_WRITE32(DMA_CH0_RXDESC_RING_LENGTH, DESCRIPTORS_RX-1);
+
+	tegrabl_eqos_prepare_rx_desc();
+
+	/* Start Rx of DMA */
+	SET_REG_BIT(DMA_CH0_RX_CONTROL, SR);
 
 fail:
 	return err;
-}
-
-static void tegrabl_eqos_prepare_tx_desc(size_t len)
-{
-	struct eqos_desc *tx_desc = NULL;
-	dma_addr_t p_tx_desc;
-	dma_addr_t p_tx_dma_buf;
-
-	p_tx_dma_buf = tegrabl_dma_map_buffer(TEGRABL_MODULE_EQOS, 0, (void *)eqos.tx_dma_buf, len,
-										  TEGRABL_DMA_TO_DEVICE);
-
-	/* Program descriptor */
-	tx_desc = &(eqos.tx_descs[eqos.tx_desc_id]);
-	tx_desc->des0 = (uintptr_t)p_tx_dma_buf;
-	tx_desc->des1 = 0;
-	tx_desc->des2 = len;
-	tx_desc->des3 = TDES3_OWN_DMA | TDES3_FD | TDES3_LD | TDES3_CPC_INSERT_CRC_AND_PAD | len;
-
-	/* Flush cache */
-	p_tx_desc = tegrabl_dma_map_buffer(TEGRABL_MODULE_EQOS, 0, (void *)tx_desc, DESCRIPTOR_SIZE,
-									   TEGRABL_DMA_TO_DEVICE);
-
-	/* Program descriptor registers */
-	NV_WRITE32(DMA_CH0_TXDESC_LIST_HIGH_ADDR, 0x0);
-	NV_WRITE32(DMA_CH0_TXDESC_LIST_ADDR, (uintptr_t)p_tx_desc);
-	NV_WRITE32(DMA_CH0_TXDESC_TAIL_POINTER, (uintptr_t)((struct eqos_desc *)p_tx_desc + 1));
-
-}
-
-static void tegrabl_eqos_prepare_rx_desc(void)
-{
-	struct eqos_desc *rx_desc = NULL;
-	dma_addr_t p_rx_desc;
-
-	/* Setup descriptor */
-	rx_desc = &(eqos.rx_descs[eqos.rx_desc_id]);
-	rx_desc->des0 = (uintptr_t)eqos.rx_dma_buf;
-	rx_desc->des1 = 0;
-	rx_desc->des2 = 0;
-	rx_desc->des3 = RDES3_OWN_DMA | RDES3_IOC | RDES3_BUF1V;
-
-	p_rx_desc = tegrabl_dma_map_buffer(TEGRABL_MODULE_EQOS, 0, (void *)rx_desc, DESCRIPTOR_SIZE,
-									   TEGRABL_DMA_TO_DEVICE);
-	TEGRABL_UNUSED(p_rx_desc);
-
-	/* Setup descriptor registers */
-	NV_WRITE32(DMA_CH0_RXDESC_LIST_HIGH_ADDR, 0x0);
-	NV_WRITE32(DMA_CH0_RXDESC_LIST_ADDR, (uintptr_t)p_rx_desc);
-	NV_WRITE32(DMA_CH0_RXDESC_TAIL_POINTER, (uintptr_t)((struct eqos_desc *)p_rx_desc + 1));
 }
 
 void tegrabl_eqos_send(void *packet, size_t len)
@@ -1215,18 +1230,14 @@ void tegrabl_eqos_send(void *packet, size_t len)
 	CLR_REG_BIT(DMA_CH0_TX_CONTROL, ST);
 
 	/* Copy packet to DMA buffer */
-	memset(eqos.tx_dma_buf, 0, len);
-	memcpy(eqos.tx_dma_buf, packet, len);
-	print_buffer(eqos.tx_dma_buf, len, "Tx buffer");
+	memset(eqos.tx_dma_buf[eqos.tx_desc_id], 0, len);
+	memcpy(eqos.tx_dma_buf[eqos.tx_desc_id], packet, len);
+	print_buffer(eqos.tx_dma_buf[eqos.tx_desc_id], len, "Tx buffer");
 
 	tegrabl_eqos_prepare_tx_desc(len);
-	tegrabl_eqos_prepare_rx_desc();
 
 	/* Start Tx of DMA */
 	SET_REG_BIT(DMA_CH0_TX_CONTROL, ST);
-
-	/* Start Rx of DMA */
-	SET_REG_BIT(DMA_CH0_RX_CONTROL, SR);
 
 	/* Wait till DMA transfers the data */
 	tx_desc = &(eqos.tx_descs[eqos.tx_desc_id]);
@@ -1271,13 +1282,14 @@ void tegrabl_eqos_receive(void *packet, size_t *len)
 	*len = (rx_desc->des3 & (0x7FFF));
 
 	/* Transfer packet to network layer */
-	tegrabl_dma_unmap_buffer(TEGRABL_MODULE_EQOS, 0, (void *)eqos.rx_dma_buf, *len, TEGRABL_DMA_FROM_DEVICE);
-	memcpy(packet, eqos.rx_dma_buf, *len);
+	tegrabl_dma_unmap_buffer(TEGRABL_MODULE_EQOS, 0, (void *)eqos.rx_dma_buf[eqos.rx_desc_id], *len,
+							 TEGRABL_DMA_FROM_DEVICE);
+	memcpy(packet, eqos.rx_dma_buf[eqos.rx_desc_id], *len);
 
 	/* Unicast */
-	if ((*(uint8_t *)eqos.rx_dma_buf & 1U) == 0U) {
+	if ((*(uint8_t *)eqos.rx_dma_buf[eqos.rx_desc_id] & 1U) == 0U) {
 		pr_trace("Rx packet: %u, len = %d, desc cnt: %u\n", total_rx_pkt_cnt++, (int32_t)*len, eqos.rx_desc_id);
-		print_buffer(eqos.rx_dma_buf, *len, "Rx buffer");
+		print_buffer(eqos.rx_dma_buf[eqos.rx_desc_id], *len, "Rx buffer");
 	}
 
 	/* Disable Rx of DMA (till next set of descriptor is ready) */
@@ -1330,6 +1342,8 @@ void tegrabl_eqos_set_mac_addr(uint8_t * const addr)
 
 void tegrabl_eqos_deinit(void)
 {
+	uint32_t i;
+
 	/* Stop Tx of DMA */
 	CLR_REG_BIT(DMA_CH0_TX_CONTROL, ST);
 	/* Stop Tx and Rx of MAC */
@@ -1339,11 +1353,15 @@ void tegrabl_eqos_deinit(void)
 
 	tegrabl_eqos_disable_clks();
 
-	if (eqos.rx_dma_buf != NULL) {
-		tegrabl_free(eqos.rx_dma_buf);
+	for (i = 0; i < DESCRIPTORS_RX; i++) {
+		if (eqos.rx_dma_buf[i] != NULL) {
+			tegrabl_free(eqos.rx_dma_buf[i]);
+		}
 	}
-	if (eqos.tx_dma_buf != NULL) {
-		tegrabl_free(eqos.tx_dma_buf);
+	for (i = 0; i < DESCRIPTORS_TX; i++) {
+		if (eqos.tx_dma_buf[i] != NULL) {
+			tegrabl_free(eqos.tx_dma_buf[i]);
+		}
 	}
 	if (eqos.rx_descs != NULL) {
 		tegrabl_free(eqos.rx_descs);

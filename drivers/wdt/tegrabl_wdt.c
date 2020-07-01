@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017 NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2018 NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software and related documentation
@@ -13,6 +13,7 @@
 #include <string.h>
 #include <tegrabl_error.h>
 #include <tegrabl_debug.h>
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_addressmap.h>
 #include <tegrabl_timer.h>
 #include <tegrabl_io.h>
@@ -97,6 +98,7 @@ static tegrabl_error_t tegrabl_wdt_configure(tegrabl_wdt_instance_t instance,
 {
 	uint32_t val;
 	uint32_t cycles_per_sec = 0;
+	uint32_t expiry_val = expiry;
 	uint32_t wdt_to_tmr_src[TEGRABL_WDT_SRC_MAX] = {
 		[TEGRABL_WDT_SRC_USECCNT] = SRC_USECCNT,
 		[TEGRABL_WDT_SRC_OSCCNT] = SRC_OSCCNT,
@@ -104,7 +106,7 @@ static tegrabl_error_t tegrabl_wdt_configure(tegrabl_wdt_instance_t instance,
 		[TEGRABL_WDT_SRC_TSCCNT_41_12] = SRC_TSCCNT_41_12,
 	};
 
-	TEGRABL_UNUSED(expiry);
+	TEGRABL_UNUSED(expiry_val);
 	TEGRABL_UNUSED(period);
 
 	if (clk_src == TEGRABL_WDT_SRC_USECCNT) {
@@ -141,15 +143,15 @@ static tegrabl_error_t tegrabl_wdt_configure(tegrabl_wdt_instance_t instance,
 	val = NV_TKE_READ(instance, wdtcr[instance]);
 	val = NV_FLD_SET_DRF_NUM(TKE_BPMP, WDT0_WDTCR, TimerSource, 0, val);
 	val = NV_FLD_SET_DRF_NUM(TKE_BPMP, WDT0_WDTCR, LocalInterruptEnable,
-			IS_EXPIRY(expiry, 0), val);
+			IS_EXPIRY(expiry_val, 0), val);
 	val = NV_FLD_SET_DRF_NUM(TKE_BPMP, WDT0_WDTCR, LocalFIQEnable,
-			IS_EXPIRY(expiry, 1), val);
+			IS_EXPIRY(expiry_val, 1), val);
 	val = NV_FLD_SET_DRF_NUM(TKE_BPMP, WDT0_WDTCR, RemoteInterruptEnable,
-			IS_EXPIRY(expiry, 2), val);
+			IS_EXPIRY(expiry_val, 2), val);
 	val = NV_FLD_SET_DRF_NUM(TKE_BPMP, WDT0_WDTCR, SystemDebugResetEnable,
-			IS_EXPIRY(expiry, 3), val);
+			IS_EXPIRY(expiry_val, 3), val);
 	val = NV_FLD_SET_DRF_NUM(TKE_BPMP, WDT0_WDTCR, SystemPOResetEnable,
-			IS_EXPIRY(expiry, 4), val);
+			IS_EXPIRY(expiry_val, 4), val);
 	NV_TKE_WRITE(instance, wdtcr[instance], val);
 #endif
 

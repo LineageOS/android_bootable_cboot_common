@@ -22,8 +22,7 @@
 #include <tegrabl_linuxboot.h>
 #include <tegrabl_linuxboot_helper.h>
 #include <tegrabl_odmdata_lib.h>
-
-#ifdef CONFIG_ENABLE_DISPLAY
+#if defined(CONFIG_ENABLE_DISPLAY)
 #include <tegrabl_display.h>
 #endif
 
@@ -39,7 +38,6 @@ static char s_cmdline[COMMAND_LINE_SIZE];
 #define ODMDATA_FIELD(field) \
 	(void *)((uintptr_t)((ODMDATA_##field##_SHIFT << 16) | \
 				(ODMDATA_##field##_WIDTH)))
-
 
 static int tegrabl_linuxboot_add_carveout(char *cmdline, int len,
 										  char *param, void *priv)
@@ -172,9 +170,8 @@ int tegrabl_linuxboot_add_number(char *cmdline, int len,
 		return -1;
 }
 
-#ifdef CONFIG_ENABLE_DISPLAY
-static int tegrabl_linuxboot_add_disp_param(char *cmdline, int len, char *param,
-											void *priv)
+#if defined(CONFIG_ENABLE_DISPLAY)
+static int tegrabl_linuxboot_add_disp_param(char *cmdline, int len, char *param, void *priv)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	struct tegrabl_display_unit_params disp_params;
@@ -187,8 +184,7 @@ static int tegrabl_linuxboot_add_disp_param(char *cmdline, int len, char *param,
 	for (du_idx = 0; du_idx < DISPLAY_OUT_MAX; du_idx++) {
 		err = tegrabl_display_get_params(du_idx, &disp_params);
 		if (err != TEGRABL_NO_ERROR) {
-			pr_error("%s, du %d failed to get display params\n",
-					 __func__, du_idx);
+			pr_error("%s, du %d failed to get display params\n", __func__, du_idx);
 			goto fail;
 		}
 
@@ -198,14 +194,12 @@ static int tegrabl_linuxboot_add_disp_param(char *cmdline, int len, char *param,
 						"lut_mem=0x%x@0x%08"PRIx64" ", param,
 						disp_params.size, disp_params.addr,
 						disp_params.lut_size, disp_params.lut_addr);
-			} else if (!strcmp(param, "tegra_fbmem2") &&
-					(disp_params.instance == 1)) {
+			} else if (!strcmp(param, "tegra_fbmem2") && (disp_params.instance == 1)) {
 				return tegrabl_snprintf(cmdline, len, "%s=0x%x@0x%08"PRIx64" "
 						"lut_mem2=0x%x@0x%08"PRIx64" ", param, disp_params.size,
 						disp_params.addr, disp_params.lut_size,
 						disp_params.lut_addr);
-			} else if (!strcmp(param, "tegra_fbmem3") &&
-					(disp_params.instance == 2)) {
+			} else if (!strcmp(param, "tegra_fbmem3") && (disp_params.instance == 2)) {
 				return tegrabl_snprintf(cmdline, len, "%s=0x%x@0x%08"PRIx64" "
 						"lut_mem3=0x%x@0x%08"PRIx64" ", param, disp_params.size,
 						disp_params.addr, disp_params.lut_size,
@@ -256,7 +250,7 @@ static struct tegrabl_linuxboot_param common_params[] = {
 	{ "earlycon", tegrabl_linuxboot_add_earlycon, NULL},
 	{ "nvdumper_reserved", tegrabl_linuxboot_add_nvdumper_info, NULL },
 	{ "gpt", tegrabl_linuxboot_add_string, NULL },
-#ifdef CONFIG_ENABLE_DISPLAY
+#if defined(CONFIG_ENABLE_DISPLAY)
 	{ "tegra_fbmem", tegrabl_linuxboot_add_disp_param, NULL },
 	{ "tegra_fbmem2", tegrabl_linuxboot_add_disp_param, NULL },
 	{ "tegra_fbmem3", tegrabl_linuxboot_add_disp_param, NULL },

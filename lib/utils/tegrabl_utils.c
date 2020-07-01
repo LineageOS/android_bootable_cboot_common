@@ -12,6 +12,7 @@
 #include <tegrabl_utils.h>
 #include <stdbool.h>
 #include <tegrabl_debug.h>
+#include <ctype.h>
 
 /**
  * Pre calculated modulo 2 division remainder for 256 bytes combination
@@ -133,80 +134,130 @@ uint32_t tegrabl_utils_convert_to_binary(void *byte_ptr)
 	return byte_num;
 }
 
-unsigned long tegrabl_utils_strtoul(const char *nptr, char **endptr, int base)
+static inline bool check_overflow(unsigned long acc, uint32_t val, int base)
 {
-	const char *s;
-	unsigned long acc, cutoff;
-	unsigned char c;
-	int neg, any;
-	uint32_t cutlim;
-	signed long temp;
-	/*
-	 * See strtol for comments as to the logic used.
-	 */
-	if ((base < 0) || (base == 1) || (base > 36)) {
-		if (endptr != 0) {
-			*endptr = (char *)nptr;
-		}
-		return 0;
-	}
-
-	s = nptr;
-	do {
-		c = (unsigned char) *s++;
-	} while (IS_SPACE(c));
-	if (c == '-') {
-		neg = 1;
-		c = (unsigned char) *s++;
-	} else {
-		neg = 0;
-		if (c == '+') {
-			c = (unsigned char) *s++;
-		}
-	}
-	if (((base == 0) || (base == 16)) &&
-	    (c == '0') && ((*s == 'x') || (*s == 'X'))) {
-		c = (unsigned char)s[1];
-		s += 2;
-		base = 16;
-	}
-	if (base == 0) {
-		base = ((c == '0') ? 8 : 10);
-	}
+	unsigned long cutoff;
+	unsigned long cutlim;
 
 	cutoff = ((unsigned long)ULONG_MAX) / ((unsigned long)base);
 	cutlim = ((unsigned long)ULONG_MAX) % ((unsigned long)base);
-	for (acc = 0, any = 0;; c = (unsigned char) *s++) {
-		if (IS_DIGITAL(c)) {
-			c -= '0';
-		} else if ((IS_ALPHA(c))) {
-			c -= IS_UPPER(c) ? ('A' - 10) : ('a' - 10);
+
+	return ((acc > cutoff) || ((acc == cutoff) && (val > cutlim)));
+}
+
+static unsigned long tegrabl_utils_strtoul_parse(const char *s, const char *nptr,
+							 char **endptr, int base, int neg)
+{
+	unsigned long acc;
+	char c;
+	int any;
+	signed long temp;
+	int32_t temp1;
+
+	c = *s;
+	any = 0;
+
+	for (acc = 0;; c = *s) {
+		s++;
+
+		if ((c >= '0') && (c <= '9')) {
+			temp1 = c - '0';
+		} else if ((c >= 'A') && (c <= 'Z')) {
+			temp1 = c - 'A' + 10;
+		} else if ((c >= 'a') && (c <= 'z')) {
+			temp1 = c - 'a' + 10;
 		} else {
+			temp1 = base;
+		}
+
+		if (temp1 >= base) {
 			break;
 		}
-		if (c >= ((unsigned char)base)) {
-			break;
-		}
+
 		if (any < 0) {
 			continue;
 		}
-		if (acc > cutoff || (acc == cutoff && c > cutlim)) {
+		if (check_overflow(acc, (uint32_t)temp1, base)) {
 			any = -1;
 			acc = (unsigned long)ULONG_MAX;
 		} else {
 			any = 1;
 			acc *= (unsigned long)base;
-			acc += c;
+			acc += (uint32_t)temp1;
 		}
 	}
+
 	if ((neg != 0) && (any > 0)) {
 		temp = ((signed long)acc) * (-1L);
-		acc = (unsigned long) temp;
+		acc = (unsigned long)temp;
 	}
+
 	if (endptr != 0) {
 		*endptr = (char *) ((any != 0) ? (s - 1) : nptr);
 	}
+
 	return acc;
+}
+
+static inline const char *remove_spaces(const unsigned char *s)
+{
+	while (isspace((int)*s) == 1) {
+		s++;
+	};
+
+	return (const char *)s;
+}
+
+static inline bool is_valid_base(int base)
+{
+	return !((base < 0) || (base == 1) || (base > 36));
+}
+
+static inline bool has_hex_base_chars(const char *s)
+{
+	return (s[0] == '0') && ((s[1] == 'x') || (s[1] == 'X'));
+}
+
+unsigned long tegrabl_utils_strtoul(const char *nptr, char **endptr, int base)
+{
+	const char *s;
+	int neg = 0;
+	const unsigned char *s_copy;
+
+	if (!is_valid_base(base)) {
+		if (endptr != 0) {
+			*endptr = (char *)nptr;
+		}
+		return 0UL;
+	}
+
+	s_copy = (const unsigned char *)nptr;
+
+	s = remove_spaces(s_copy);
+
+	switch (*s) {
+	case '-':
+		neg = 1;
+		s++;
+		break;
+	case '+':
+		s++;
+		break;
+	default:
+		/* Do Nothing */
+		break;
+	}
+
+	if (((base == 0) || (base == 16)) && has_hex_base_chars(s)) {
+		base = 16;
+		s += 2;
+	}
+
+	if (base == 0) {
+		base = ((s[0] == '0') ? 8 : 10);
+	}
+
+	return tegrabl_utils_strtoul_parse(s, nptr, endptr, base, neg);
 }
 
 void tegrabl_utils_dump_mem(uintptr_t addr, uint32_t size)
@@ -244,10 +295,11 @@ uint32_t le32tobe32(uint32_t data)
 		uint8_t bytes[4];
 	} result;
 
-	result.bytes[0] = (data >> 24) & 0xFF;
-	result.bytes[1] = (data >> 16) & 0xFF;
-	result.bytes[2] = (data >> 8) & 0xFF;
-	result.bytes[3] = data & 0xFF;
+	result.bytes[0] = (uint8_t)(uint32_t)((data >> 24) & 0xFFU);
+	result.bytes[1] = (uint8_t)(uint32_t)((data >> 16) & 0xFFU);
+	result.bytes[2] = (uint8_t)(uint32_t)((data >> 8) & 0xFFU);
+	result.bytes[3] = (uint8_t)(uint32_t)(data & 0xFFU);
 
 	return result.dword;
 }
+

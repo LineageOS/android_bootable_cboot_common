@@ -10,5 +10,10 @@
 
 #ifndef INCLUDED_TEGRABL_NVTYPES_H
 #define INCLUDED_TEGRABL_NVTYPES_H
+#ifdef DEBUG
+ #define NV_DEBUG 1
+#else
+ #define NV_DEBUG 0
+#endif
 #include <nvcommon.h>
 #endif /* INCLUDED_TEGRABL_NVTYPES_H */

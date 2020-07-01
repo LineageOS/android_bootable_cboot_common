@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -8,8 +8,8 @@
  * license agreement from NVIDIA Corporation is strictly prohibited.
  */
 
-#ifndef __I2C_BPMP_H__
-#define __I2C_BPMP_H__
+#ifndef I2C_BPMP_H
+#define I2C_BPMP_H
 
 #include <tegrabl_power_i2c.h>
 

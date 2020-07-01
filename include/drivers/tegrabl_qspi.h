@@ -237,6 +237,65 @@ struct qspi_clk_data {
 	uint32_t clk_divisor;
 };
 
+/*
+ * QSPI context structure
+ */
+struct tegrabl_qspi_ctxt {
+	tegrabl_dmatype_t dma_type;
+	tegrabl_gpcdma_handle_t dma_handle;
+};
+
+struct tegrabl_qspi_info {
+	uint32_t base_address;
+	uint8_t instance_id;
+	uint8_t dma_chan_id;
+	tegrabl_dmaio_t gpcdma_req;
+	tegrabl_dmaio_t bpmpdma_req;
+	uint32_t open_count;
+};
+
+struct tegrabl_qspi_handle {
+	struct tegrabl_qspi_info *qspi;
+	struct tegrabl_qspi_device_property *device;
+	struct tegrabl_qspi_platform_params *param;
+	struct tegrabl_qspi_ctxt qspi_context;
+	struct tegrabl_dma_xfer_params dma_params;
+	struct qspi_soc_info *qspi_info;
+	uint32_t dev_index;
+	uint32_t xfer_start_time;
+	uint32_t xfer_timeout;
+	uint32_t requested_bytes;
+	uint32_t remain_packet;
+	uint32_t req_dma_packet;
+	uint32_t req_pio_1w_packet;
+	uint32_t req_pio_4w_packet;
+	uint32_t ramain_dma_packet;
+	uint32_t ramain_pio_packet;
+	uint32_t ramain_pio_1w_packet;
+	uint32_t ramain_pio_4w_packet;
+	uint32_t req_pio_1w_bytes;
+	uint32_t req_pio_4w_bytes;
+	uint32_t req_dma_bytes;
+	uint32_t cur_req_dma_packet;
+	uint32_t cur_remain_dma_packet;
+	uint32_t cur_req_pio_packet;
+	uint32_t cur_remain_pio_packet;
+	uint32_t bits_pw;
+	uint32_t bytes_pw;
+	uint8_t *cur_buf;
+	uint64_t buf_addr;
+	uint32_t buf_len;
+	bool is_transmit;
+	uint32_t cur_xfer_index;
+	struct tegrabl_qspi_transfer *cur_xfer;
+	struct tegrabl_qspi_transfer *req_xfer;
+	uint32_t req_xfer_count;
+	bool cur_xfer_is_dma;
+	bool xfer_is_progress;
+	bool is_async;
+	qspi_op_mode_t curr_op_mode;
+};
+
 /**
  * @brief: Initialize the QSPI controller for data transfer like setting
  * pinmux, clock rates etc, allocate the qspi handle to caller so that
@@ -441,6 +500,85 @@ tegrabl_error_t tegrabl_qspi_check_transfer_status(
 						struct tegrabl_qspi_handle *qspi_handle,
 						uint32_t timeout_us, bool is_abort);
 
+/**
+ * @brief: tegrabl_qspi_xfer_wait() - This API waits for the
+ *				ongoing transfer to be completed and only called in the case
+ *				of async io. The timeout in microseconds
+ *				is provided by the caller to define the wait time. Value of
+ *				parameter timeout_us and is_abort decide the behavior of the
+ *				API.
+ *
+ *	If timeout_us =0 and is_abort = false:
+ *			  - If controller is idle after transfer and waiting for next
+ *				configuration then it configures for next transfer and return
+ *				to caller as BUSY.
+ *			  -	If controller is still busy for transfer then it returns BUSY.
+ *			  - If all transfer is completed and controller is idle then return
+ *				TRANSFER_DONE. In this case, new transfer can be started.
+ * If timeout_us = 0 and is_abort = true;
+ *			  - If controller is idle after transfer and waiting for next
+ *				configuration then it aborts the transfer, make QSPI in idle
+ *				state for next transfer and return the ABORT to the caller.
+ *			  - If controller is still busy for transfer then it stops
+ *				transfer, make controller status to idle so that new
+ *				transfer can be started and return ABORT to the caller.
+ *			  -	If all transfer is completed and controller is idle then
+ *				return TRANSFER_DONE. New transfer can be started after this.
+ * If timeout_us = non-zero and is_abort = false
+ *			 -	If controller is idle after transfer and waiting for next
+ *				configuration for remaining transfer then it configures
+ *				for next transfer and waits for the timeout for completion.
+ *			 -  If all transfer completed before timeout then it returns
+ *				TRANSFR_DONE.
+ *			 -  If transfer does not complete in given timeout then returns
+ *				TIMEOUT. It will not abort the transfer.
+ *			 -  If controller is still busy in current transfer then it waits
+ *				for the timeout for completion.
+ *					  - If all transfer completed before timeout then it returns
+ *						TRANSFR_DONE.
+ *					  - If transfer does not complete in given timeout then
+ *						returns TIMEOUT. It will not abort the transfer.
+ *					  - If all transfer is completed and controller is idle
+ *						then return TRANSFER_DONE. In this case, new transfer
+ *						can be started.
+ *
+ * If timeout_us = non-zero and is_abort = true
+ *			  - If controller is idle after transfer and waiting for next
+ *				configuration for remaining transfer then it configures for
+ *				next transfer and waits for the timeout for completion.
+ *			  - If all transfer completed before timeout then it returns
+ *				TRANSFR_DONE.
+ *			  - If transfer does not complete in given timeout then it
+ *				aborts transfer, make QSPI controller to idle state for
+ *				next transfer start and returns TIMEOUT. New transfer
+ *				can be started after this.
+ *			  - If controller is still busy in current transfer then it waits
+ *				for the timeout for completion.
+ *					  - If all transfer completed before timeout then it
+ *						returns TRANSFR_DONE.
+ *					  - If transfer does not complete in given timeout then
+ *						it aborts transfer, make QSPI controller to idle state
+ *						for next transfer start and returns TIMEOUT. New
+ *						transfer can be started after this.
+ *					  - If all transfer is completed and controller is idle
+ *						then return TRANSFER_DONE. In this case, new transfer
+ *						can be started.
+ *
+ * Pre-requisites: API tegrabl_qspi_start_transfer() has to be called with
+ *				   zero timeout.
+ * @qspi_handle: Pointer to the QSPI handle which is allocated by call
+ *			tegrabl_qspi_get().
+ * @timeout_us: Timeout in microseconds.
+ * @is_abort: Transfer need to be aborted or not before returning from
+ *			APIs if transfer is in progress. If true then it aborts the
+ *			transfer.
+ *
+ * This function returns following values:
+ *		NO_ERROR: Operation is success and there is no error found on QSPI
+ *		TRANSFER_DONE: When all transfer completed.
+ */
+tegrabl_error_t tegrabl_qspi_xfer_wait(struct tegrabl_qspi_handle *qspi_handle,
+									uint32_t timeout_us, bool is_abort);
 #if defined(__cplusplus)
 }
 #endif

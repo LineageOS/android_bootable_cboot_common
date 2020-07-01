@@ -13,6 +13,7 @@
 #include <tegrabl_debug.h>
 #include <tegrabl_error.h>
 #include <tegrabl_clock.h>
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_malloc.h>
 #include <tegrabl_timer.h>
 #include <tegrabl_drf.h>
@@ -21,6 +22,7 @@
 #include <address_map_new.h>
 #include <tegrabl_hdmi.h>
 #include <tegrabl_sor.h>
+#include <tegrabl_edid.h>
 #include <string.h>
 #include <tegrabl_i2c_dev.h>
 #include <kernel/thread.h>
@@ -57,7 +59,7 @@ static tegrabl_error_t hdmi_init(struct tegrabl_nvdisp *nvdisp, struct tegrabl_d
 		goto fail;
 	}
 
-	hdmi = tegrabl_malloc(sizeof(struct hdmi));
+	hdmi = tegrabl_calloc(1, sizeof(struct hdmi));
 	if (!hdmi) {
 		pr_error("%s, memory allocation failed\n", __func__);
 		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
@@ -77,6 +79,7 @@ static tegrabl_error_t hdmi_init(struct tegrabl_nvdisp *nvdisp, struct tegrabl_d
 	hdmi->sor = sor;
 	hdmi->nvdisp = nvdisp;
 	hdmi->hdmi_dtb = &pdata->hdmi_dtb;
+	hdmi->is_panel_hdmi = tegrabl_edid_is_panel_hdmi();
 	nvdisp->out_data = hdmi;
 
 	memcpy(sor->xbar_ctrl, pdata->sor_dtb.xbar_ctrl, XBAR_CNT * sizeof(uint32_t));
@@ -114,6 +117,7 @@ static void hdmi_config(struct hdmi *hdmi)
 	max_ac = (hblank - rekey - 18) / 32;
 
 	val = 0;
+	val |= hdmi->is_panel_hdmi ? NV_DRF_DEF(SOR_NV_PDISP, SOR_HDMI_CTRL, ENABLE, EN) : 0x0;
 	val |= NV_SOR_HDMI_CTRL_REKEY(rekey);
 	val |= NV_SOR_HDMI_CTRL_MAX_AC_PACKET(max_ac);
 	sor_writel(sor, SOR_NV_PDISP_SOR_HDMI_CTRL_0, val);
@@ -209,6 +213,10 @@ static void hdmi_avi_infoframe(struct hdmi *hdmi)
 {
 	struct sor_data *sor = hdmi->sor;
 
+	if (!hdmi->is_panel_hdmi) {
+		return;
+	}
+
 	pr_debug("%s: entry\n", __func__);
 
 	/* disable avi infoframe before configuring */
@@ -254,6 +262,10 @@ static void hdmi_vendor_infoframe_update(struct hdmi *hdmi)
 static void hdmi_vendor_infoframe(struct hdmi *hdmi)
 {
 	struct sor_data *sor = hdmi->sor;
+
+	if (!hdmi->is_panel_hdmi) {
+		return;
+	}
 
 	pr_debug("%s: entry\n", __func__);
 

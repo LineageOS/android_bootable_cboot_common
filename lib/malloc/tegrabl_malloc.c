@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -61,8 +61,13 @@ typedef struct tegrabl_heap_alloc_block {
  */
 static tegrabl_heap_free_block_t *tegrabl_heap_free_list[TEGRABL_HEAP_TYPE_MAX];
 
-tegrabl_error_t tegrabl_heap_init(tegrabl_heap_type_t heap_type,
-			size_t start, size_t size)
+/**
+ * @brief Maximum size of heap. Same as size of heap at the time of initialization.
+ */
+static size_t max_heap_size[TEGRABL_HEAP_TYPE_MAX];
+
+tegrabl_error_t tegrabl_heap_init(tegrabl_heap_type_t heap_type, size_t start,
+			size_t size)
 {
 	tegrabl_heap_free_block_t *free_list;
 
@@ -84,6 +89,8 @@ tegrabl_error_t tegrabl_heap_init(tegrabl_heap_type_t heap_type,
 	free_list->magic = FREE_MAGIC;
 
 	tegrabl_heap_free_list[heap_type] = free_list;
+	max_heap_size[heap_type] = size;
+
 	return TEGRABL_NO_ERROR;
 }
 
@@ -173,9 +180,13 @@ static void *tegrabl_generic_malloc(tegrabl_heap_free_block_t *free_list,
 	}
 	free_block = free_list;
 
-	size = ROUND_UP(size, sizeof(uintptr_t));
+	alloc_size = ROUND_UP(size, sizeof(uintptr_t));
+	alloc_size = alloc_size + sizeof(tegrabl_heap_alloc_block_t);
 
-	alloc_size = size + sizeof(tegrabl_heap_alloc_block_t);
+	/* Ensure addition didn't wrap the value. */
+	if (alloc_size < size) {
+		return NULL;
+	}
 
 	/* Minimum size to allocate is the size required to store
 	 * free block information. This will ensure sufficient
@@ -206,6 +217,10 @@ static void *tegrabl_generic_malloc(tegrabl_heap_free_block_t *free_list,
 
 void *tegrabl_malloc(size_t size)
 {
+	if (size > max_heap_size[TEGRABL_HEAP_DEFAULT]) {
+		return NULL;
+	}
+
 	return tegrabl_generic_malloc(tegrabl_heap_free_list[TEGRABL_HEAP_DEFAULT],
 								   size);
 }
@@ -214,6 +229,11 @@ void *tegrabl_alloc(tegrabl_heap_type_t heap_type, size_t size)
 {
 	if ((heap_type == TEGRABL_HEAP_DMA) &&
 		(tegrabl_heap_free_list[TEGRABL_HEAP_DMA] != NULL)) {
+
+		if (size > max_heap_size[TEGRABL_HEAP_DMA]) {
+			return NULL;
+		}
+
 		return tegrabl_generic_malloc(tegrabl_heap_free_list[TEGRABL_HEAP_DMA],
 									  size);
 	} else {
@@ -365,12 +385,61 @@ void tegrabl_free(void *ptr)
 void *tegrabl_calloc(size_t nmemb, size_t size)
 {
 	void *mem;
+	size_t total_size = size * nmemb;
 
-	mem = tegrabl_malloc(size * nmemb);
-	if (mem != NULL) {
-		memset(mem, 0x0, size * nmemb);
+	if (size == 0) {
+		return NULL;
 	}
+
+	/* Ensure multiplication didn't wrap the value. */
+	if (nmemb > (max_heap_size[TEGRABL_HEAP_DEFAULT] / size)) {
+		return NULL;
+	}
+
+	TEGRABL_ASSERT((total_size / size) == nmemb);
+
+	mem = tegrabl_malloc(total_size);
+	if (mem)
+		memset(mem, 0x0, total_size);
 	return mem;
+}
+
+/**
+ * @brief Boundary and overflow checks for alignment and size
+ *
+ * @param heap_type Type of heap
+ * @param alignment Requested alignment
+ * @param size Requested size
+ *
+ * @retval true if all checks pass
+ * @retval false if one of the checks fails
+ */
+static bool is_size_alignment_valid(tegrabl_heap_type_t heap_type, size_t alignment, size_t size)
+{
+	size_t max_size = size + alignment;
+
+	if (size > max_heap_size[heap_type]) {
+		return false;
+	}
+
+	if (alignment > max_heap_size[heap_type]) {
+		return false;
+	}
+
+	if (max_size > max_heap_size[heap_type]) {
+		return false;
+	}
+
+	/* Ensure addition didn't wrap the value. */
+	if (max_size < size) {
+		return false;
+	}
+
+	if (max_size < alignment) {
+		return false;
+	}
+
+	return true;
 }
 
 static void *tegrabl_memalign_generic(
@@ -385,6 +454,11 @@ static void *tegrabl_memalign_generic(
 	if (size == 0UL) {
 		return NULL;
 	}
+
+	if (!is_size_alignment_valid(heap_type, alignment, size)) {
+		return NULL;
+	}
+
 	size = ROUND_UP(size, sizeof(uintptr_t));
 	alloc_size = size + sizeof(tegrabl_heap_alloc_block_t);
 	/* Minimum size to allocate is the size required to store

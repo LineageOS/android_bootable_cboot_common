@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2016-2019, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -24,14 +24,22 @@
 #include <tegrabl_sdram_usage.h>
 #include <linux_load.h>
 #include <tegrabl_devicetree.h>
-#include <tegrabl_partition_loader.h>
 #include <tegrabl_decompress.h>
 #include <tegrabl_malloc.h>
 #include <dtb_overlay.h>
-#include <tegrabl_partition_manager.h>
 #include <tegrabl_cbo.h>
 #include <tegrabl_usbh.h>
 #include <tegrabl_cpubl_params.h>
+#include <tegrabl_file_manager.h>
+#include <tegrabl_partition_manager.h>
+#include <tegrabl_auth.h>
+#include <tegrabl_exit.h>
+#if defined(CONFIG_ENABLE_EXTLINUX_BOOT)
+#include <extlinux_boot.h>
+#endif
+#if defined(CONFIG_OS_IS_L4T)
+#include <tegrabl_auth.h>
+#endif
 
 #if defined(CONFIG_ENABLE_BOOT_DEVICE_SELECT)
 #include <config_storage.h>
@@ -41,24 +49,24 @@
 #include <net_boot.h>
 #endif
 
+#define KERNEL_IMAGE			"boot.img"
+#define KERNEL_DTB				"tegra194-p2888-0001-p2822-0000.dtb"
+#define KERNEL_DTBO_PART_SIZE	(1024 * 1024 * 1)
+#define FDT_SIZE_BL_DT_NODES	(4048 + 4048)
+
 static uint64_t ramdisk_load;
 static uint64_t ramdisk_size;
 static char *bootimg_cmdline;
 
-#define KERNEL_DTBO_PART_SIZE	(1024 * 1024 * 1)
+#if defined(CONFIG_OS_IS_ANDROID)
+static union tegrabl_bootimg_header *android_hdr;
+#endif
 
-#define FDT_SIZE_BL_DT_NODES (4048 + 4048)
-
-#if defined(CONFIG_ENABLE_BOOT_DEVICE_SELECT)
-
-static int8_t g_boot_order[NUM_SECONDARY_STORAGE_DEVICES] = {
-	/* Specified in the order of priority from top to bottom */
-	BOOT_FROM_SD,
-	BOOT_FROM_USB,
-	BOOT_FROM_BUILTIN_STORAGE,
-	BOOT_FROM_NETWORK,
-	BOOT_DEFAULT,
-};
+static uint32_t kernel_size;
+#if defined(CONFIG_ENABLE_EXTLINUX_BOOT)
+static uint32_t kernel_dtb_size;
+static struct conf extlinux_conf;
+static uint32_t boot_entry;
 #endif
 
 void tegrabl_get_ramdisk_info(uint64_t *start, uint64_t *size)
@@ -75,6 +83,18 @@ char *tegrabl_get_bootimg_cmdline(void)
 {
 	return bootimg_cmdline;
 }
+
+#ifdef CONFIG_OS_IS_ANDROID
+tegrabl_error_t tegrabl_get_os_version(union android_os_version *os_version)
+{
+	if (!android_hdr) {
+		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+	}
+
+	*os_version = (union android_os_version)android_hdr->os_version;
+	return TEGRABL_NO_ERROR;
+}
+#endif
 
 /* Sanity checks the kernel image extracted from Android boot image */
 static tegrabl_error_t validate_kernel(union tegrabl_bootimg_header *hdr,
@@ -118,41 +138,48 @@ fail:
 /* Extract kernel from an Android boot image, and return the address where it is installed in memory */
 static tegrabl_error_t extract_kernel(void *boot_img_load_addr, void **kernel_load_addr)
 {
-	uint64_t kernel_offset = 0; /* Offset of 1st kernel byte in boot.img */
-	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	uint32_t hdr_crc = 0;
 	bool is_compressed = false;
 	decompressor *decomp = NULL;
 	uint32_t decomp_size = 0; /* kernel size after decompressing */
 	union tegrabl_bootimg_header *hdr = NULL;
+	uint64_t payload_addr;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
 
+	TEGRABL_UNUSED(hdr);
+	TEGRABL_UNUSED(hdr_crc);
+
+#if defined(CONFIG_ENABLE_EXTLINUX_BOOT)
+	payload_addr = (uintptr_t)boot_img_load_addr;
+	/* kernel_size variable gets set in tegrabl_load_from_fixed_storage() */
+#else
 	hdr = (union tegrabl_bootimg_header *)boot_img_load_addr;
-	kernel_offset = hdr->pagesize;
+	payload_addr = (uintptr_t)hdr + hdr->pagesize;
+	kernel_size = hdr->kernelsize;
 
 	err = validate_kernel(hdr, &hdr_crc);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_error("Error %u failed to validate kernel\n", err);
 		return err;
 	}
+#endif
 
 	*kernel_load_addr = (void *)tegrabl_get_kernel_load_addr();
 	pr_trace("%u: kernel load addr: %p\n", __LINE__, *kernel_load_addr);
 
-	is_compressed = is_compressed_content((uint8_t *)hdr + kernel_offset, &decomp);
-
+	is_compressed = is_compressed_content((uint8_t *)payload_addr, &decomp);
 	if (!is_compressed) {
 		pr_info("Copying kernel image (%u bytes) from %p to %p ... ",
-				hdr->kernelsize, (char *)hdr + kernel_offset, *kernel_load_addr);
-		memmove(*kernel_load_addr, (char *)hdr + kernel_offset, hdr->kernelsize);
+				kernel_size, (char *)payload_addr, *kernel_load_addr);
+		memmove(*kernel_load_addr, (char *)payload_addr, kernel_size);
 	} else {
 		pr_info("Decompressing kernel image (%u bytes) from %p to %p ... ",
-				hdr->kernelsize, (char *)hdr + kernel_offset, *kernel_load_addr);
+				kernel_size, (char *)payload_addr, *kernel_load_addr);
 
 		decomp_size = MAX_KERNEL_IMAGE_SIZE;
-		err = do_decompress(decomp, (uint8_t *)hdr + kernel_offset,
-							hdr->kernelsize, *kernel_load_addr, &decomp_size);
+		err = do_decompress(decomp, (uint8_t *)payload_addr, kernel_size, *kernel_load_addr, &decomp_size);
 		if (err != TEGRABL_NO_ERROR) {
 			pr_error("\nError %d decompress kernel\n", err);
 			return err;
@@ -166,14 +193,40 @@ static tegrabl_error_t extract_kernel(void *boot_img_load_addr, void **kernel_lo
 
 static tegrabl_error_t extract_ramdisk(void *boot_img_load_addr)
 {
-	union tegrabl_bootimg_header *hdr = NULL;
-	uint64_t ramdisk_offset = (uint64_t)NULL; /* Offset of 1st ramdisk byte in boot.img */
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
 
 	ramdisk_load = tegrabl_get_ramdisk_load_addr();
 	pr_trace("%u: ramdisk load addr: 0x%"PRIx64"\n", __LINE__, ramdisk_load);
+
+#if defined(CONFIG_ENABLE_EXTLINUX_BOOT)
+	struct tegrabl_fm_handle *fm_handle = tegrabl_file_manager_get_handle();
+	void *load_addr = (void *)ramdisk_load;
+	uint32_t file_size = RAMDISK_MAX_SIZE;
+
+	if (extlinux_conf.section[boot_entry].initrd_path == NULL) {
+		pr_warn("Ramdisk image path not found\n");
+		goto fail;
+	}
+
+	pr_info("Loading ramdisk ...\n");
+	err = tegrabl_fm_read(fm_handle,
+						  extlinux_conf.section[boot_entry].initrd_path,
+						  NULL,
+						  &load_addr,
+						  &file_size,
+						  NULL);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+	ramdisk_size = file_size;
+
+fail:
+	return err;
+#else
+	union tegrabl_bootimg_header *hdr = NULL;
+	uint64_t ramdisk_offset = (uint64_t)NULL; /* Offset of 1st ramdisk byte in boot.img */
 
 	hdr = (union tegrabl_bootimg_header *)boot_img_load_addr;
 	ramdisk_offset = ROUND_UP_POW2(hdr->pagesize + hdr->kernelsize, hdr->pagesize);
@@ -189,11 +242,14 @@ static tegrabl_error_t extract_ramdisk(void *boot_img_load_addr)
 	bootimg_cmdline = (char *)hdr->cmdline;
 
 	return err;
+#endif
 }
 
 #if !defined(CONFIG_DT_SUPPORT)
 static tegrabl_error_t extract_kernel_dtb(void **kernel_dtb, void *kernel_dtbo)
 {
+	TEGRABL_UNUSED(kernel_dtb);
+	TEGRABL_UNUSED(kernel_dtbo);
 	return TEGRABL_NO_ERROR;
 }
 #else
@@ -202,6 +258,8 @@ static tegrabl_error_t extract_kernel_dtb(void **kernel_dtb, void *kernel_dtbo)
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
+
+	TEGRABL_UNUSED(kernel_dtbo);
 
 	err = tegrabl_dt_create_space(*kernel_dtb, FDT_SIZE_BL_DT_NODES, DTB_MAX_SIZE);
 	if (err != TEGRABL_NO_ERROR) {
@@ -220,7 +278,14 @@ static tegrabl_error_t extract_kernel_dtb(void **kernel_dtb, void *kernel_dtbo)
 		goto fail;
 	}
 
-	pr_debug("kernel-dtbo @ %p\n", kernel_dtbo);
+#if defined(CONFIG_ENABLE_EXTLINUX_BOOT)
+	err = tegrabl_linuxboot_update_bootargs(*kernel_dtb, extlinux_conf.section[boot_entry].boot_args);
+	if (err != 0) {
+		pr_warn("Failed to update DTB bootargs with extlinux.conf\n");
+	}
+#endif
+
+	pr_trace("kernel-dtbo @ %p\n", kernel_dtbo);
 #if defined(CONFIG_ENABLE_DTB_OVERLAY)
 	err = tegrabl_dtb_overlay(kernel_dtb, kernel_dtbo);
 	if (err != TEGRABL_NO_ERROR) {
@@ -234,49 +299,165 @@ fail:
 }
 #endif /* end of CONFIG_DT_SUPPORT */
 
+#if defined(CONFIG_ENABLE_BOOT_DEVICE_SELECT)
+#if defined(CONFIG_OS_IS_L4T)
+static tegrabl_error_t tegrabl_validate_binary(uint32_t bin_type, uint32_t bin_max_size, void *load_addr)
+{
+	char *bin_name;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+
+	pr_trace("%s(): %u\n", __func__, __LINE__);
+
+	if (!tegrabl_do_ratchet_check(bin_type, load_addr)) {
+		goto fail;
+	}
+
+	if (bin_type == TEGRABL_BINARY_KERNEL) {
+		bin_name = "kernel";
+	} else if (bin_type == TEGRABL_BINARY_KERNEL_DTB) {
+		bin_name = "kernel-dtb";
+	} else {
+		bin_name = "";
+	}
+	err = tegrabl_auth_payload(bin_type, bin_name, load_addr, bin_max_size);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+
+fail:
+	return err;
+}
+#endif
+#endif
+
 static tegrabl_error_t tegrabl_load_from_fixed_storage(bool load_from_storage,
 													   void **boot_img_load_addr,
 													   void **dtb_load_addr,
 													   void **kernel_dtbo,
 													   void *data)
 {
+	uint32_t file_size;
+	bool is_file_loaded_from_fs = false;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
 
 	TEGRABL_UNUSED(kernel_dtbo);
+	TEGRABL_UNUSED(file_size);
+	TEGRABL_UNUSED(is_file_loaded_from_fs);
 
-	/* Load boot image */
-	if (load_from_storage) {
-		pr_info("Loading kernel/boot.img from built-in storage ...\n");
-		err = tegrabl_load_binary(TEGRABL_BINARY_KERNEL, boot_img_load_addr, NULL);
-		if (err != TEGRABL_NO_ERROR) {
-			goto fail;
-		}
-
-	} else {
-		pr_info("Loading kernel/boot.img from memory ...\n");
+	/* Load boot image from memory */
+	if (!load_from_storage) {
+		pr_info("Loading kernel from memory ...\n");
 		if (!data) {
 			err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 1);
 			pr_error("Found no kernel in memory\n");
 			goto fail;
 		}
 		*boot_img_load_addr = data;
+		goto boot_image_load_done;
 	}
 
+	/* Load and parse extlinux.conf */
+#if defined(CONFIG_ENABLE_EXTLINUX_BOOT)
+	uint8_t device_instance;
+	uint8_t device_type;
+	struct tegrabl_bdev *bdev = NULL;
+	struct tegrabl_fm_handle *fm_handle;
 
+	device_type = TEGRABL_STORAGE_SDMMC_USER;		/* TODO: remove hardcoding */
+	device_instance = 3;							/* TODO: remove hardcoding */
+	bdev = tegrabl_blockdev_open(device_type, device_instance);
+	if (bdev == NULL) {
+		err = TEGRABL_ERROR(TEGRABL_ERR_OPEN_FAILED, 0);
+		goto fail;
+	}
+	err = tegrabl_fm_publish(bdev, &fm_handle);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("Error %u\n", err);
+		goto fail;
+	}
+
+	err = get_boot_details(fm_handle, &extlinux_conf, &boot_entry);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+#endif
+
+#if defined(CONFIG_ENABLE_EXTLINUX_BOOT)
+	/* Get load address for boot image and dtb */
+	err = tegrabl_get_boot_img_load_addr(boot_img_load_addr);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+	file_size = BOOT_IMAGE_MAX_SIZE;
+	pr_info("Loading kernel from storage ...\n");
+	err = tegrabl_fm_read(fm_handle,
+						  extlinux_conf.section[boot_entry].linux_path,
+						  NULL,
+						  boot_img_load_addr,
+						  &file_size,
+						  &is_file_loaded_from_fs);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+	kernel_size = file_size;
+#else
+	pr_info("Loading kernel from partition ...\n");
+	err = tegrabl_load_binary(TEGRABL_BINARY_KERNEL, boot_img_load_addr, NULL);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+#endif
+
+#if defined(CONFIG_ENABLE_BOOT_DEVICE_SELECT)
+#if defined(CONFIG_OS_IS_L4T)
+	if (!is_file_loaded_from_fs) {
+		err = tegrabl_validate_binary(TEGRABL_BINARY_KERNEL, BOOT_IMAGE_MAX_SIZE, *boot_img_load_addr);
+		if (err != TEGRABL_NO_ERROR) {
+			goto fail;
+		}
+	}
+#endif /* CONFIG_OS_IS_L4T */
+#endif /* CONFIG_ENABLE_BOOT_DEVICE_SELECT */
+
+boot_image_load_done:
 	/* Load kernel_dtb if not already loaded in memory */
 #if defined(CONFIG_DT_SUPPORT)
 	err = tegrabl_dt_get_fdt_handle(TEGRABL_DT_KERNEL, dtb_load_addr);
 	if ((err != TEGRABL_NO_ERROR) || (*dtb_load_addr == NULL)) {
-
+#if defined(CONFIG_ENABLE_EXTLINUX_BOOT)
+		pr_info("Loading dtb from storage ...\n");
 		*dtb_load_addr = (void *)tegrabl_get_dtb_load_addr();
-		pr_trace("%u: dtb load addr: %p\n", __LINE__, *dtb_load_addr);
-
+		file_size = DTB_MAX_SIZE;
+		err = tegrabl_fm_read(fm_handle,
+							  extlinux_conf.section[boot_entry].dtb_path,
+							  "kernel-dtb",
+							  dtb_load_addr,
+							  &file_size,
+							  &is_file_loaded_from_fs);
+		if (err != TEGRABL_NO_ERROR) {
+			goto fail;
+		}
+		kernel_dtb_size = file_size;
+#else
+		pr_info("Loading kernel-dtb from partition ...\n");
 		err = tegrabl_load_binary(TEGRABL_BINARY_KERNEL_DTB, dtb_load_addr, NULL);
 		if (err != TEGRABL_NO_ERROR) {
 			goto fail;
 		}
+#endif /* CONFIG_ENABLE_EXTLINUX_BOOT */
+
+#if defined(CONFIG_ENABLE_BOOT_DEVICE_SELECT)
+#if defined(CONFIG_OS_IS_L4T)
+		if (!is_file_loaded_from_fs) {
+			err = tegrabl_validate_binary(TEGRABL_BINARY_KERNEL_DTB, DTB_MAX_SIZE, *dtb_load_addr);
+			if (err != TEGRABL_NO_ERROR) {
+				goto fail;
+			}
+		}
+#endif /* CONFIG_OS_IS_L4T */
+#endif /* CONFIG_ENABLE_BOOT_DEVICE_SELECT */
 	}
 #endif /* CONFIG_DT_SUPPORT */
 
@@ -311,29 +492,45 @@ static tegrabl_error_t tegrabl_load_from_removable_storage(struct tegrabl_bdev *
 														   void **boot_img_load_addr,
 														   void **dtb_load_addr)
 {
+	struct tegrabl_fm_handle *fm_handle;
+	uint32_t file_size;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
 
-	err = tegrabl_load_binary_bdev(TEGRABL_BINARY_KERNEL, boot_img_load_addr, NULL, bdev);
+	/* Get load address for boot image and dtb */
+	err = tegrabl_get_boot_img_load_addr(boot_img_load_addr);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_error("\nError (0x%x) loading kernel\n", err);
 		goto fail;
 	}
-
 	*dtb_load_addr = (void *)tegrabl_get_dtb_load_addr();
 
-	err = tegrabl_load_binary_bdev(TEGRABL_BINARY_KERNEL_DTB, dtb_load_addr, NULL, bdev);
+	pr_info("Loading kernel ...\n");
+	fm_handle = tegrabl_file_manager_get_handle();
+	file_size = BOOT_IMAGE_MAX_SIZE;
+	err = tegrabl_fm_read(fm_handle, "/"KERNEL_IMAGE, "kernel", boot_img_load_addr, &file_size, NULL);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_error("\nError (0x%x) loading kernel-dtb\n", err);
 		goto fail;
 	}
+#if defined(CONFIG_OS_IS_L4T)
+	err = tegrabl_validate_binary(TEGRABL_BINARY_KERNEL, BOOT_IMAGE_MAX_SIZE, *boot_img_load_addr);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+#endif
 
-	err = tegrabl_dt_set_fdt_handle(TEGRABL_DT_KERNEL, *dtb_load_addr);
+	pr_info("Loading dtb ...\n");
+	file_size = DTB_MAX_SIZE;
+	err = tegrabl_fm_read(fm_handle, "/"KERNEL_DTB, "kernel-dtb", dtb_load_addr, &file_size, NULL);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_error("\nError (0x%x) initializing kernel\n", err);
 		goto fail;
 	}
+#if defined(CONFIG_OS_IS_L4T)
+	err = tegrabl_validate_binary(TEGRABL_BINARY_KERNEL_DTB, DTB_MAX_SIZE, *dtb_load_addr);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+#endif
 
 fail:
 	return err;
@@ -349,15 +546,14 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 	void *kernel_dtbo = NULL;
 	struct tegrabl_bdev *bdev = NULL;
 	bool is_load_done = false;
-	bool boot_from_builtin = false;
+	bool boot_from_builtin_done = false;
 	uint32_t i = 0;
 	uint8_t device_instance = 0;
 	uint8_t device_type = 0;
 	struct tegrabl_device_config_params device_config = {0};
-	struct tegrabl_partition kernel_partition = {0};
-	struct tegrabl_partition kernel_dtb_partition = {0};
-	int8_t *boot_order;
+	uint8_t *boot_order;
 	void *boot_img_load_addr = NULL;
+	struct tegrabl_fm_handle *fm_handle;
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
 
@@ -368,19 +564,9 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 
 	/* Get boot order from cbo.dtb */
 	boot_order = tegrabl_get_boot_order();
-	if (boot_order == NULL) {
-		boot_order = g_boot_order;
-		pr_debug("%s: using default boot order\n", __func__);
-	} else {
-		pr_debug("%s: using boot order from CBO Partition\n", __func__);
-	}
 
 	/* Try loading boot image and dtb from devices as per boot order */
-	for (i = 0; (boot_order[i] != BOOT_DEFAULT) && (!is_load_done) && (!boot_from_builtin); i++) {
-
-		if (boot_order[i] == BOOT_INVALID) {
-			continue;
-		}
+	for (i = 0; (boot_order[i] != BOOT_DEFAULT) && (!is_load_done); i++) {
 
 		switch (boot_order[i]) {
 
@@ -392,11 +578,21 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 				continue;
 			}
 			err = net_boot_load_kernel_images(&boot_img_load_addr, kernel_dtb);
-			if (err == TEGRABL_NO_ERROR) {
-				is_load_done = true;
-			} else {
+			if (err != TEGRABL_NO_ERROR) {
 				pr_error("Error (%u) network load failed for kernel & kernel-dtb\n", err);
+				continue;
 			}
+#if defined(CONFIG_OS_IS_L4T)
+			err = tegrabl_validate_binary(TEGRABL_BINARY_KERNEL, BOOT_IMAGE_MAX_SIZE, boot_img_load_addr);
+			if (err != TEGRABL_NO_ERROR) {
+				continue;
+			}
+			err = tegrabl_validate_binary(TEGRABL_BINARY_KERNEL_DTB, DTB_MAX_SIZE, *kernel_dtb);
+			if (err != TEGRABL_NO_ERROR) {
+				continue;
+			}
+#endif
+			is_load_done = true;
 			break;
 #endif
 
@@ -423,54 +619,58 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 			if (bdev == NULL) {
 				continue;
 			}
-			tegrabl_partition_publish(bdev, 0);
 
-			/* Find if kernel partition is present and on which device */
-			err = tegrabl_partition_lookup_bdev("kernel", &kernel_partition, bdev);
-			if (err != TEGRABL_NO_ERROR) {
-				pr_error("Error: kernel partition not found\n");
-				tegrabl_partitions_unpublish(bdev);
-				continue;
-			}
-
-			/* Find if kernel-dtb partition is present and on which device */
-			err = tegrabl_partition_lookup_bdev("kernel-dtb", &kernel_dtb_partition, bdev);
-			if (err != TEGRABL_NO_ERROR) {
-				pr_error("Error: kernel-dtb partition not found\n");
-				tegrabl_partitions_unpublish(bdev);
-				continue;
-			}
-
+			tegrabl_fm_publish(bdev, &fm_handle);
 			err = tegrabl_load_from_removable_storage(bdev, &boot_img_load_addr, kernel_dtb);
 			if (err == TEGRABL_NO_ERROR) {
 				is_load_done = true;
 			} else {
 				pr_error("Error (%u) removable storage load failed for kernel & kernel-dtb\n", err);
-				tegrabl_partitions_unpublish(bdev);
 			}
-
+			tegrabl_fm_close(fm_handle);
+			err = tegrabl_partitions_unpublish(bdev);
+			if (err != TEGRABL_NO_ERROR) {
+				pr_error("Failed to unpublish partitions from removable storage\n");
+			}
+			tegrabl_blockdev_close(bdev);
 			break;
 
 		case BOOT_FROM_BUILTIN_STORAGE:
 		default:
-			boot_from_builtin = true;
+			err = tegrabl_load_from_fixed_storage(kernel->load_from_storage, &boot_img_load_addr,
+												  kernel_dtb, &kernel_dtbo, data);
+			if (err == TEGRABL_NO_ERROR) {
+				is_load_done = true;
+			} else {
+				pr_error("Error (%u) builtin kernel/dtb load failed\n", err);
+#if defined(CONFIG_ENABLE_A_B_SLOT)
+				pr_error("A/B loader failure\n");
+				pr_trace("Trigger SoC reset\n")
+				tegrabl_reset();
+				goto fail;
+#endif
+			}
+			boot_from_builtin_done = true;
 			break;
 		}
 	}
 
-	/* try builtin, if not already done & if booting from other options failed */
-	if (boot_from_builtin) {
+	if (!is_load_done) {
+		/* try builtin, if not already tried or if booting from all other options failed */
+		if (boot_from_builtin_done) {
+			goto fail;
+		}
 		err = tegrabl_load_from_fixed_storage(kernel->load_from_storage, &boot_img_load_addr, kernel_dtb,
 											  &kernel_dtbo, data);
 		if (err != TEGRABL_NO_ERROR) {
-			pr_error("Error (%u) builtin load failed for kernel & kernel-dtb\n", err);
+			pr_error("Error (%u) builtin kernel/dtb load failed\n", err);
+#if defined(CONFIG_ENABLE_A_B_SLOT)
+			pr_error("A/B loader failure\n");
+			pr_trace("Trigger SoC reset\n")
+			tegrabl_reset();
+#endif
 			goto fail;
 		}
-		is_load_done = true;
-	}
-
-	if (is_load_done == false) {
-		goto fail;
 	}
 
 	pr_info("Kernel hdr @%p\n", boot_img_load_addr);
@@ -498,11 +698,11 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 		goto fail;
 	}
 
-	pr_debug("%s: Done\n", __func__);
+	pr_info("%s: Done\n", __func__);
 
 fail:
 	tegrabl_free(kernel_dtbo);
-	err = tegrabl_usbh_close();
+	tegrabl_usbh_close();
 
 	return err;
 }
@@ -528,12 +728,35 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 	err = tegrabl_load_from_fixed_storage(kernel->load_from_storage, &boot_img_load_addr, kernel_dtb,
 										  &kernel_dtbo, data);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_error("Error (%u) builtin load failed for kernel & kernel-dtb\n", err);
+		pr_error("Error (%u) builtin kernel/dtb load failed\n", err);
 		goto fail;
 	}
 
+#if defined(CONFIG_OS_IS_ANDROID)
+	android_hdr = boot_img_load_addr;
+#endif
+
 	pr_info("Kernel hdr @%p\n", boot_img_load_addr);
 	pr_info("Kernel dtb @%p\n", *kernel_dtb);
+
+#if defined(CONFIG_OS_IS_L4T)
+	if (!tegrabl_do_ratchet_check(TEGRABL_BINARY_KERNEL, boot_img_load_addr)) {
+		goto fail;
+	}
+	if (!tegrabl_do_ratchet_check(TEGRABL_BINARY_KERNEL_DTB, *kernel_dtb)) {
+		goto fail;
+	}
+
+	err = tegrabl_auth_payload(TEGRABL_BINARY_KERNEL, KERNEL_IMAGE, boot_img_load_addr, BOOT_IMAGE_MAX_SIZE);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+	err = tegrabl_auth_payload(TEGRABL_BINARY_KERNEL_DTB, KERNEL_DTB, *kernel_dtb, DTB_MAX_SIZE);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("Kernel-dtb: authentication failed\n");
+		goto fail;
+	}
+#endif
 
 	if (callbacks != NULL && callbacks->verify_boot != NULL) {
 		callbacks->verify_boot(boot_img_load_addr, *kernel_dtb, kernel_dtbo);
@@ -557,7 +780,7 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 		goto fail;
 	}
 
-	pr_debug("%s: Done\n", __func__);
+	pr_info("%s: Done\n", __func__);
 
 fail:
 	tegrabl_free(kernel_dtbo);

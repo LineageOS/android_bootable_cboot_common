@@ -13,12 +13,13 @@
 #include <stdbool.h>
 #include <string.h>
 #include <tegrabl_drf.h>
-
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_error.h>
 #include <tegrabl_timer.h>
 #include <tegrabl_debug.h>
 #include <tegrabl_addressmap.h>
 #include <tegrabl_malloc.h>
+#include <tegrabl_io.h>
 
 #include <tegrabl_usbf.h>
 #include <tegrabl_transport_usbf.h>

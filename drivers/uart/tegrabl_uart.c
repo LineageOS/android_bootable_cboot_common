@@ -12,6 +12,7 @@
 
 #include <stdint.h>
 #include <tegrabl_error.h>
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_uart.h>
 #include <tegrabl_uart_soc_local.h>
 #include <aruart.h>

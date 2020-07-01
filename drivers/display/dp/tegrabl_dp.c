@@ -16,6 +16,7 @@
 #include <tegrabl_clock.h>
 #include <tegrabl_malloc.h>
 #include <tegrabl_timer.h>
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_dp.h>
 #include <tegrabl_sor.h>
 #include <tegrabl_dpaux.h>
@@ -592,7 +593,7 @@ static tegrabl_error_t tegrabl_dp_init(struct tegrabl_nvdisp *nvdisp, struct teg
 	struct tegrabl_display_sor_dtb *sor_dtb = &(pdata->sor_dtb);
 	tegrabl_error_t ret = TEGRABL_NO_ERROR;
 
-	dp = tegrabl_malloc(sizeof(struct tegrabl_dp));
+	dp = tegrabl_calloc(1, sizeof(struct tegrabl_dp));
 	if (!dp) {
 		pr_error("%s, memory allocation failed\n", __func__);
 		ret = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);

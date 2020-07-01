@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2015-2019, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -199,6 +199,19 @@ typedef uint32_t tegrabl_tos_type_t;
 #define TEGRABL_TOS_TYPE_TRUSTY 2
 
 /**
+ * @brief A Wrapper Function to get the memory blocks info Array and do the
+ * trivial work such as Align etc.
+ *
+ * @param array_items_num - the number of items of blk_arr
+ * @param blk_arr - output array store the memory block info
+ *
+ *
+ * @returns TEGRABL_NO_ERROR if successful, otherwise appropriate error
+ */
+tegrabl_error_t tegrabl_get_memblk_info_array(uint32_t *array_items_num,
+			struct tegrabl_linuxboot_memblock **blk_arr);
+
+/**
  * @brief Calculates the list of free dram regions by excluding permanent
  * carveouts from DRAM
  *
@@ -256,6 +269,44 @@ uint64_t tegrabl_get_dtb_load_addr(void);
  * @return ramdisk load address
  */
 uint64_t tegrabl_get_ramdisk_load_addr(void);
+
+/**
+ * @brief Check if fw/binary ratchet level is greater than or equal to minimum required level
+ *
+ * @param bin_type Type of binary
+ * @param addr BCH header address
+ *
+ * @return true if fw level is greater than or equal to minimum level otherwise false
+ */
+bool tegrabl_do_ratchet_check(uint8_t bin_type, void * const addr);
+
+#if defined(CONFIG_DYNAMIC_LOAD_ADDRESS)
+/**
+ * @brief Obtain address from free_dram_block.
+ * free_dram_block contains free DRAM regions without blacklisted pages.
+ *
+ * @param size Size of free dram region required
+ *
+ * @return physical address of the free dram address
+ */
+uint64_t tegrabl_get_free_dram_address(uint64_t size);
+
+/**
+ * @brief Free up all memory allocated for accounting free dram region.
+ * This memory gets allocated from heap in tegrabl_get_free_dram_address
+ *
+ */
+void tegrabl_dealloc_free_dram_region(void);
+
+/**
+ * @brief Reserve memory for U-Boot to relocate at the top of 4GB address space
+ *
+ * @param size Memory size required for U-Boot
+ *
+ * @return TEGRABL_NO_ERROR if memory was available; relevant error code in case of failure
+ */
+tegrabl_error_t tegrabl_alloc_u_boot_top(uint64_t size);
+#endif
 
 #if defined(__cplusplus)
 }

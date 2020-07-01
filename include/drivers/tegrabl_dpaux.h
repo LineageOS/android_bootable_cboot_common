@@ -15,8 +15,8 @@
  * @b Description: This file declares APIs for dpaux module configuration
  */
 
-#ifndef __TEGRABL_DPAUX__
-#define __TEGRABL_DPAUX__
+#ifndef TEGRABL_DPAUX
+#define TEGRABL_DPAUX
 
 #include <stdbool.h>
 #include <tegrabl_error.h>

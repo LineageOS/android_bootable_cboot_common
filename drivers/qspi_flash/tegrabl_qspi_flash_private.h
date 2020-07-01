@@ -13,6 +13,7 @@
 
 #include "build_config.h"
 #include <stdint.h>
+#include <tegrabl_qspi.h>
 
 #if defined(__cplusplus)
 extern "C"
@@ -122,7 +123,6 @@ extern "C"
 #define MANUFACTURE_ID_WINBOND				0xEFU
 #define MANUFACTURE_ID_MICRON				0x20U
 #define MANUFACTURE_ID_MACRONIX				0xC2U
-#define MANUFACTURE_ID_DEFAULT				0xFFU
 
 #define DEVICE_ID_LEN						3U
 
@@ -151,11 +151,14 @@ extern "C"
 #define AUX_INFO_INVALID_PARAMS8 8
 #define AUX_INFO_IOCTL_NOT_SUPPORTED 9
 #define AUX_INFO_NOT_INITIALIZED 10
-#define AUX_INFO_NO_MEMORY 11 /* 0xB */
-#define AUX_INFO_WIP_TIMEOUT 12
-#define AUX_INFO_WEN_TIMEOUT 13
-#define AUX_INFO_FLAG_TIMEOUT 14 /* 0xE */
-#define AUX_INFO_NOT_ALIGNED 15
+#define AUX_INFO_NO_MEMORY_1 11 /* 0xB */
+#define AUX_INFO_NO_MEMORY_2 12
+#define AUX_INFO_NO_MEMORY_3 13
+#define AUX_INFO_NO_MEMORY_4 14
+#define AUX_INFO_WIP_TIMEOUT 15 /* 0xF*/
+#define AUX_INFO_WEN_TIMEOUT 16
+#define AUX_INFO_FLAG_TIMEOUT 17 /* 0x11 */
+#define AUX_INFO_NOT_ALIGNED 18
 
 struct tegrabl_qspi_flash_chip_info {
 	uint32_t flash_size_log2;
@@ -176,6 +179,9 @@ struct tegrabl_qspi_flash_driver_info {
 	struct tegrabl_qspi_flash_platform_params plat_params;
 	struct tegrabl_qspi_flash_chip_info chip_info;
 	struct tegrabl_qspi_handle *hqspi;
+	struct tegrabl_qspi_transfer *transfers;
+	uint8_t *address_data;
+	uint8_t *cmd;
 };
 
 struct device_info {

@@ -640,7 +640,7 @@ tegrabl_error_t tegrabl_ufs_bdev_open(bool reinit, struct tegrabl_ufs_platform_p
 	memset(context, 0x0, sizeof(struct tegrabl_ufs_context));
 	tegrabl_ufs_get_params(0, ufs_params, &params);
 	if (init_done) {
-		context->init_done = init_done;
+		context->init_done = 1UL;
 	}
 
 	error = tegrabl_ufs_init(params, context);

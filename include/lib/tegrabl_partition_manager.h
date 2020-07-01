@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -26,6 +26,7 @@
 struct tegrabl_partition_info {
 	char name[MAX_PARTITION_NAME];
 	char guid[PART_GUID_STR_LEN];
+	char ptype_guid[PART_GUID_STR_LEN];
 	uint64_t start_sector;
 	uint64_t num_sectors;
 	uint64_t total_size;
@@ -102,6 +103,20 @@ tegrabl_error_t tegrabl_partition_open(const char *partition_name, struct tegrab
  */
 tegrabl_error_t tegrabl_partition_lookup_bdev(const char *partition_name, struct tegrabl_partition *partition,
 											  tegrabl_bdev_t *bdev);
+
+/**
+ * @brief Looks up the partition type GUID into published partitions of given block device
+ * and updates the partition handle.
+ *
+ * @param pt_type_guid Partition type GUID.
+ * @param partition Handle of the partition.
+ * @param bdev block device to be looked into.
+ *
+ * @return TEGRABL_NO_ERROR if successful else appropriate error.
+ */
+tegrabl_error_t tegrabl_partition_boot_guid_lookup_bdev(char *pt_type_guid,
+														struct tegrabl_partition *partition,
+														tegrabl_bdev_t *bdev);
 
 /**
  * @brief Closes the partition. After this call same variable

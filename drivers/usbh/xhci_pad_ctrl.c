@@ -12,6 +12,7 @@
 
 #include <string.h>
 #include <stdbool.h>
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_drf.h>
 #include <tegrabl_error.h>
 #include <tegrabl_debug.h>
@@ -21,6 +22,7 @@
 #include <arxusb_padctl.h>
 #include <xhci_priv.h>
 #include <tegrabl_timer.h>
+#include <tegrabl_io.h>
 
 #define NV_XUSB_PADCTL_READ(reg, value) \
 	value = NV_READ32((NV_ADDRESS_MAP_XUSB_PADCTL_BASE + XUSB_PADCTL_##reg##_0))

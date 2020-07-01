@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2018, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2014-2019, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -101,6 +101,30 @@ union android_os_version {
 		uint32_t major_version:7; /* bits[31:25] */
 	};
 };
+
+#if defined(CONFIG_DYNAMIC_LOAD_ADDRESS)
+/*
+ * U-Boot binary header
+ * @param b_instr Holds instruction that branches to kernel code
+ * @reserved
+ * @kernel_offset Holds the relative offset of kernel
+ * @kernel_size	Holds binary size including BSS
+ * @kernel_flags Holds informative flags
+ * @reserved_64bit[3]
+ * @magic[5] Holds string to identify the binary
+ * @reserved
+ */
+struct tegrabl_uboot_header {
+	uint32_t b_instr;
+	uint32_t reserved;
+	uint64_t kernel_offset;
+	uint64_t kernel_size;
+	uint64_t kernel_flags;
+	uint64_t reserved2[3];
+	char magic[5];
+	uint32_t reserved3;
+};
+#endif
 
 #define CRC32_SIZE  (sizeof(uint32_t))
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, NVIDIA CORPORATION.  All Rights Reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -13,6 +13,12 @@
 /* Use GCC's version */
 #include_next "stdbool.h"
 
+/* Data type of true/false in GCC's version is signed int. Redefine them. */
+#undef true
+#undef false
+
+#define false (1 == 0)
+#define true (!false)
 #else
 
 #ifndef INCLUDED_STDBOOL_H
@@ -23,11 +29,11 @@ typedef unsigned char bool;
 #endif
 
 #ifndef true
-#define true 1
+#define true 1U
 #endif
 
 #ifndef false
-#define false 0
+#define false 0U
 #endif
 
 #endif /* INCLUDED_STDBOOL_H */

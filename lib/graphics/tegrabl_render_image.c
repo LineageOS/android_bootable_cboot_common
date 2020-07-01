@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -126,16 +126,17 @@ static tegrabl_error_t parse_bmp(uint8_t *buf, uint32_t len,
 		goto fail;
 	}
 
-	if ((bmf->bfh.file_size < 0) || (bmf->bih.image_size < 0)) {
+	if (bmf->bih.image_size == 0)
+		bmf->bih.image_size = bmf->bfh.file_size - bmf->bfh.start_offset;
+
+	if ((bmf->bfh.file_size < 0) || (bmf->bih.image_size < 0) ||
+		((bmf->bfh.start_offset + bmf->bih.image_size) >
+		 (uint32_t)bmf->bfh.file_size) || ((uint32_t)bmf->bfh.file_size > len)) {
 		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 2);
 		goto fail;
 	}
 
-	if (bmf->bih.image_size == 0) {
-		bmf->bih.image_size = bmf->bfh.file_size - BMP_HEADER_LENGTH;
-	}
-
-	bmf->bitmap_data = buf + BMP_HEADER_LENGTH;
+	bmf->bitmap_data = buf + bmf->bfh.start_offset;
 
 fail:
 	if (err != TEGRABL_NO_ERROR) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -13,6 +13,7 @@
 #include "build_config.h"
 #include <string.h>
 #include <stdbool.h>
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_io.h>
 #include <tegrabl_drf.h>
 #include <tegrabl_error.h>
@@ -32,6 +33,7 @@
 #include <ardev_t_fpci_xusb_dev_0.h>
 #include <ardev_t_xusb_dev_xhci.h>
 #include <tegrabl_soc_misc.h>
+#include <tegrabl_xusbf_err_aux.h>
 
 #if defined(CONFIG_ENABLE_XUSBF_SS)
 #include <libfdt.h>
@@ -293,8 +295,8 @@ static tegrabl_error_t tegrabl_init_transfer_ring(uint8_t ep_index)
 		memset((void *)&p_txringep1out[0], 0,
 			   NUM_TRB_TRANSFER_RING * sizeof(struct event_trb));
 	} else {
-		e = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
-		pr_critical("Given endpoint is not supported\n");
+		e = TEGRABL_ERROR(TEGRABL_ERR_NOT_SUPPORTED, AUX_INFO_INIT_TRANSFER_RING);
+		TEGRABL_SET_CRITICAL_STRING(e, "endpoint %u", ep_index);
 	}
 
 	return e;
@@ -304,18 +306,22 @@ static tegrabl_error_t tegrabl_poll_field(uint32_t reg_addr, uint32_t mask,
 		uint32_t expected_value, uint32_t timeout)
 {
 	uint32_t reg_data;
+	tegrabl_error_t e = TEGRABL_NO_ERROR;
 
 	do {
 		reg_data = NV_READ32(reg_addr);
 
 		if ((reg_data & mask) == expected_value) {
-			return TEGRABL_NO_ERROR;
+			return e;
 		}
 		tegrabl_udelay(1);
 		timeout--;
 	} while (timeout != 0U);
 
-	return TEGRABL_ERROR(TEGRABL_ERR_TIMEOUT, 0);
+	e =  TEGRABL_ERROR(TEGRABL_ERR_TIMEOUT, AUX_INFO_POLL_FIELD);
+	reg_data = NV_READ32(reg_addr);
+	TEGRABL_SET_ERROR_STRING(e, "pending interrupt", "0x%08x", reg_data);
+	return e;
 }
 
 static tegrabl_error_t tegrabl_disable_ep(uint8_t ep_index)
@@ -327,7 +333,8 @@ static tegrabl_error_t tegrabl_disable_ep(uint8_t ep_index)
 
 	/* Cannot disable endpoint 0. */
 	if (ep_index == EP0_IN || ep_index == EP0_OUT) {
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		e = TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_DISABLE_EP);
+		return e;
 	}
 
 	ep_info = &p_ep_context[ep_index];
@@ -345,7 +352,9 @@ static tegrabl_error_t tegrabl_disable_ep(uint8_t ep_index)
 		mask,
 		expected_value,
 		1000);
-
+	if (e != TEGRABL_NO_ERROR) {
+		e = TEGRABL_ERROR(TEGRABL_ERR_TIMEOUT, AUX_INFO_DISABLE_EP);
+	}
 	return e;
 }
 
@@ -441,8 +450,9 @@ static tegrabl_error_t tegrabl_queue_trb(uint8_t ep_index,
 
 		p_xusb_dev_context->bulkin_epenqueue_ptr = (uintptr_t)p_next_trb;
 	} else {
-		e = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		e = TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_QUEUE_TRB);
 	}
+
 	/* Ring Doorbell */
 	if (ring_doorbell != 0U) {
 		reg_data = NV_DRF_NUM(XUSB_DEV_XHCI,
@@ -497,8 +507,9 @@ static tegrabl_error_t tegrabl_init_epcontext(uint8_t ep_index)
 	TEGRABL_UNUSED(reg_data);
 
 	if (ep_index > EP1_IN) {
-		pr_critical("invalid endpoint en no: 0x%d\n", ep_index);
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		e = TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_INIT_EPCONTEXT);
+		TEGRABL_SET_CRITICAL_STRING(e, "endpoint %u", ep_index);
+		return e;
 	}
 
 	p_xusb_dev_context = &s_xusb_device_context;
@@ -704,15 +715,15 @@ static tegrabl_error_t tegrabl_initep(uint8_t ep_index, bool reinit)
 
 	e = tegrabl_init_transfer_ring(ep_index);
 	if (e != TEGRABL_NO_ERROR) {
-		pr_critical("%s:Transfer ring init failed 0x%d\n", __func__, ep_index);
-		return e;
+		e = TEGRABL_ERROR(TEGRABL_ERR_INIT_FAILED, AUX_INFO_INITEP);
+		TEGRABL_SET_CRITICAL_STRING(e, "Transfer ring 0x%d", ep_index);
+		goto fail;
 	}
 
 	if (ep_index == EP0_IN || ep_index == EP0_OUT) {
 		e = tegrabl_init_epcontext(EP0_IN);
 		if (e != TEGRABL_NO_ERROR) {
-			pr_critical("endpoint init failed ep no: 0x%d\n", ep_index);
-			return e;
+			goto fail;
 		}
 
 		if (reinit == true) {
@@ -732,8 +743,7 @@ static tegrabl_error_t tegrabl_initep(uint8_t ep_index, bool reinit)
 	} else if (ep_index == EP1_IN || ep_index == EP1_OUT) {
 		e = tegrabl_init_epcontext(ep_index);
 		if (e != TEGRABL_NO_ERROR) {
-			pr_critical("endpoint init failed ep no: 0x%d\n", ep_index);
-			return e;
+			goto fail;
 		}
 
 		if (reinit == false) {
@@ -753,8 +763,8 @@ static tegrabl_error_t tegrabl_initep(uint8_t ep_index, bool reinit)
 								expected_value,
 								1000);
 			if (e != TEGRABL_NO_ERROR) {
-				pr_critical("EP init timeout ep index: 0x%d\n", ep_index);
-				return e;
+				e = TEGRABL_ERROR(TEGRABL_ERR_TIMEOUT, AUX_INFO_INITEP);
+				goto fail;
 			}
 		}
 
@@ -768,22 +778,18 @@ static tegrabl_error_t tegrabl_initep(uint8_t ep_index, bool reinit)
 		reg_data &= ~(temp_mask);
 		reg_data = NV_WRITE32(XUSB_BASE + XUSB_DEV_XHCI_EP_HALT_0, reg_data);
 	} else {
-		e = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		e = TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_INITEP);
 	}
-
+fail:
 	return e;
 }
 
 static tegrabl_error_t tegrabl_set_configuration(uint8_t *psetup_data)
 {
 	uint16_t wvalue;
-	uint32_t reg_data, expected_value, mask;
+	uint32_t reg_data;
 	struct xusb_device_context *p_xusb_dev_context = &s_xusb_device_context;
 	tegrabl_error_t e = TEGRABL_NO_ERROR;
-
-	TEGRABL_UNUSED(e);
-	TEGRABL_UNUSED(mask);
-	TEGRABL_UNUSED(expected_value);
 
 	/* Last stage of enumeration. */
 	wvalue = psetup_data[USB_SETUP_VALUE] +
@@ -843,7 +849,6 @@ static tegrabl_error_t tegrabl_set_configuration(uint8_t *psetup_data)
 	/* Send status */
 	e = tegrabl_issue_status_trb(DIR_IN);
 	if (e != TEGRABL_NO_ERROR) {
-		pr_critical("%s Send status failed\n", __func__);
 		return e;
 	 }
 	p_xusb_dev_context->config_num = wvalue;
@@ -871,9 +876,7 @@ static tegrabl_error_t tegrabl_set_interface(uint8_t *psetup_data)
 	p_xusb_dev_context->interface_num = wvalue;
 	/* Send status */
 	error = tegrabl_issue_status_trb(DIR_IN);
-	if (error != TEGRABL_NO_ERROR) {
-		pr_critical("%s Send status failed\n", __func__);
-	}
+
 	return error;
 }
 
@@ -901,7 +904,6 @@ static tegrabl_error_t tegrabl_set_address(uint8_t *psetup_data)
 	/* Send status */
 	e = tegrabl_issue_status_trb(DIR_IN);
 		if (e != TEGRABL_NO_ERROR) {
-			pr_critical("%s Send status failed\n", __func__);
 			return e;
 		}
 	p_xusb_dev_context->device_state = ADDRESSED_STATUS_PENDING;
@@ -913,6 +915,7 @@ static tegrabl_error_t tegrabl_stall_ep(uint8_t ep_index, bool stall)
 {
 	uint32_t reg_data, expected_value, int_pending_mask;
 	tegrabl_error_t e;
+
 	/* EIndex received from Host is of the form:
 	 * Byte 1(Bit7 is dir): Byte 0
 	 * 8: In : EpNum
@@ -937,7 +940,7 @@ static tegrabl_error_t tegrabl_stall_ep(uint8_t ep_index, bool stall)
 			expected_value,
 			1000);
 	if (e != TEGRABL_NO_ERROR) {
-		pr_critical("Failed halting endpoint\n");
+		e = TEGRABL_ERROR(TEGRABL_ERR_TIMEOUT, AUX_INFO_STALL_EP);
 		return e;
 	}
 	NV_WRITE32(XUSB_BASE + XUSB_DEV_XHCI_EP_STCHG_0, (1UL << ep_index));
@@ -1016,7 +1019,7 @@ static tegrabl_error_t tegrabl_get_desc(uint8_t *psetup_data, uint16_t *tx_lengt
 			memcpy((void *)ptr_setup_buffer, (void *)&s_usb_language_id[0], *tx_length);
 			break;
 		default:
-			pr_warn("Get desc. unsupported req:desc_index=%d\n", desc_index);
+			TEGRABL_PRINT_WARN_STRING(TEGRABL_ERR_NOT_SUPPORTED, "desc_index %u", desc_index);
 			break;
 		}
 		break;
@@ -1055,7 +1058,7 @@ static tegrabl_error_t tegrabl_get_desc(uint8_t *psetup_data, uint16_t *tx_lengt
 			   *tx_length);
 		break;
 	default:
-		pr_warn("Unsupported req: desc_index=%d\n", desc_index);
+		TEGRABL_PRINT_WARN_STRING(TEGRABL_ERR_NOT_SUPPORTED, "desc_type %u", desc_type);
 		/* stall if any Un supported request comes */
 		e = tegrabl_stall_ep(EP0_IN, true);
 		break;
@@ -1063,10 +1066,9 @@ static tegrabl_error_t tegrabl_get_desc(uint8_t *psetup_data, uint16_t *tx_lengt
 	return e;
 }
 
-static tegrabl_error_t tegrabl_ep_getstatus(uint16_t ep_index, uint16_t *tx_length, uint8_t *ptr_setup_buffer)
+static void tegrabl_ep_getstatus(uint16_t ep_index, uint16_t *tx_length, uint8_t *ptr_setup_buffer)
 {
 	uint32_t ep_status;
-	tegrabl_error_t e = TEGRABL_NO_ERROR;
 
 	/* ep_index received from Host is of the form:
 	* Byte 1(Bit7 is dir): Byte 0
@@ -1084,7 +1086,6 @@ static tegrabl_error_t tegrabl_ep_getstatus(uint16_t ep_index, uint16_t *tx_leng
 	}
 	*tx_length = (uint16_t)sizeof(endpoint_status);
 	memcpy((void *)ptr_setup_buffer, (void *)&endpoint_status[0], sizeof(endpoint_status));
-	return e;
 }
 
 static void tegrabl_create_data_trb(struct data_trb *p_data_trb,
@@ -1148,6 +1149,7 @@ static tegrabl_error_t tegrabl_handle_setuppkt(uint8_t *psetup_data)
 	uint32_t mask;
 
 	wlength = *(uint16_t *)&psetup_data[USB_SETUP_LENGTH];
+	const char *config, *type;
 
 	reg_data = NV_READ32(XUSB_BASE + XUSB_DEV_XHCI_EP_HALT_0);
 	mask = (1UL << EP0_IN);
@@ -1162,27 +1164,27 @@ static tegrabl_error_t tegrabl_handle_setuppkt(uint8_t *psetup_data)
 										expected_value,
 										1000);
 
-		if (e != TEGRABL_NO_ERROR) {
-			pr_critical("%s Handle setup packet failed\n", __func__);
-			return e;
-		}
+	if (e != TEGRABL_NO_ERROR) {
+		e = TEGRABL_ERROR(TEGRABL_ERR_TIMEOUT, AUX_INFO_HANDLE_SETUPPKT);
+		return e;
+	}
 	switch (psetup_data[USB_SETUP_REQUEST_TYPE]) {
 	case HOST2DEV_DEVICE:
+		config = "device descriptor";
+		type = "H2D";
 		/* Process the Host -> device Device descriptor */
 		switch (psetup_data[USB_SETUP_REQUEST]) {
 		case SET_CONFIGURATION:
 			e = tegrabl_set_configuration(psetup_data);
 			if (e != TEGRABL_NO_ERROR) {
-				pr_critical("%s Sent configuration failed\n", __func__);
-				return e;
+				goto fail;
 			}
 			break;
 		case SET_ADDRESS:
 			e = tegrabl_set_address(psetup_data);
 			if (e != TEGRABL_NO_ERROR) {
-				pr_critical(
-								   "%s Set address failed\n", __func__);
-				return e;
+				TEGRABL_PRINT_CRITICAL_STRING(TEGRABL_ERR_CONFIG_FAILED, "address");
+				goto fail;
 			}
 			break;
 		case SET_ISOCH_DELAY:
@@ -1190,22 +1192,21 @@ static tegrabl_error_t tegrabl_handle_setuppkt(uint8_t *psetup_data)
 			/* Send status */
 			e = tegrabl_issue_status_trb(DIR_IN);
 			if (e != TEGRABL_NO_ERROR) {
-				pr_critical("%s set_iscoh delay failed\n", __func__);
-				return e;
+				TEGRABL_PRINT_CRITICAL_STRING(TEGRABL_ERR_CONFIG_FAILED, "ISOCH delay");
+				goto fail;
 			}
 			break;
 		case SET_SEL:
 			/* Data stage for receiving 6 bytes */
-			e = tegrabl_issue_data_trb((dma_addr_t)(uintptr_t)tdata,
-						   6, DIR_OUT);
-			if (e != TEGRABL_NO_ERROR)
-				return e;
+			e = tegrabl_issue_data_trb((dma_addr_t)(uintptr_t)tdata, 6, DIR_OUT);
+			if (e != TEGRABL_NO_ERROR) {
+				goto fail;
+			}
 
 			/* Send status */
 			e = tegrabl_issue_status_trb(DIR_IN);
 			if (e != TEGRABL_NO_ERROR) {
-				pr_critical("%s: set_sel delay failed\n", __func__);
-				return e;
+				goto fail;
 			}
 			break;
 		case SET_FEATURE:
@@ -1227,7 +1228,7 @@ static tegrabl_error_t tegrabl_handle_setuppkt(uint8_t *psetup_data)
 			/* Send status */
 			e = tegrabl_issue_status_trb(DIR_IN);
 			if ( e != TEGRABL_NO_ERROR) {
-				return e;
+				goto fail;
 			}
 			break;
 		case CLEAR_FEATURE:
@@ -1248,10 +1249,9 @@ static tegrabl_error_t tegrabl_handle_setuppkt(uint8_t *psetup_data)
 			/* Send status */
 			e = tegrabl_issue_status_trb(DIR_IN);
 			if ( e != TEGRABL_NO_ERROR) {
-				return e;
+				goto fail;
 			}
 			break;
-
 		default:
 			pr_trace("HOST2DEV_DEV: unhandled req=%d\n", psetup_data[USB_SETUP_REQUEST]);
 			break;
@@ -1259,16 +1259,20 @@ static tegrabl_error_t tegrabl_handle_setuppkt(uint8_t *psetup_data)
 		break;
 
 	case HOST2DEV_INTERFACE:
+		config = "device I/F";
+		type = "H2D";
 		/* Start the endpoint for zero packet acknowledgment
 		 * Store the interface number.
 		 */
 		e = tegrabl_set_interface(psetup_data);
 		if (e != TEGRABL_NO_ERROR) {
-			return e;
+			goto fail;
 		}
 		break;
 
 	case DEV2HOST_DEVICE:
+		config = "device descriptor";
+		type = "D2H";
 		switch (psetup_data[USB_SETUP_REQUEST]) {
 		case GET_STATUS:
 			pr_trace("Get status\n");
@@ -1290,22 +1294,24 @@ static tegrabl_error_t tegrabl_handle_setuppkt(uint8_t *psetup_data)
 			 */
 			e =  tegrabl_get_desc(psetup_data, &tx_length, p_setup_buffer);
 			if (e != TEGRABL_NO_ERROR) {
-				return e;
+				goto fail;
 			}
 			break;
 		default:
-			pr_warn(
-							   "Unsupported D2H_D request\n");
+			TEGRABL_PRINT_WARN_STRING(TEGRABL_ERR_NOT_SUPPORTED, "D2H_D request:%u",
+										psetup_data[USB_SETUP_REQUEST]);
 			/* Stall if any Un supported request comes */
 			e = tegrabl_stall_ep(EP0_IN, true);
 			if (e != TEGRABL_NO_ERROR) {
-				return e;
+				goto fail;
 			}
 			break;
 		}
 		break;
 
 	case DEV2HOST_INTERFACE:
+		config = "device I/F";
+		type = "D2H";
 		switch (psetup_data[USB_SETUP_REQUEST]) {
 		case GET_STATUS:
 			/* Just sending 0s. */
@@ -1325,56 +1331,54 @@ static tegrabl_error_t tegrabl_handle_setuppkt(uint8_t *psetup_data)
 			/* Stall if any unsupported request comes */
 			e = tegrabl_stall_ep(EP0_IN, true);
 			if (e != TEGRABL_NO_ERROR) {
-				return e;
+				goto fail;
 			}
 			break;
 		}
 		break;
 	/* Stall here, as we don't support endpoint requests here */
 	case DEV2HOST_ENDPOINT:
+		config = "device endpoint";
+		type = "D2H";
 		switch (psetup_data[USB_SETUP_REQUEST]) {
 		case GET_STATUS:
-			pr_trace("__Get status D2H_Ep\n");
+			pr_trace("Get status D2H_Ep\n");
 			ep_index = 2U * (psetup_data[USB_SETUP_INDEX] & 0xFU);
-			ep_index +=
-				((psetup_data[USB_SETUP_INDEX] & 0x80U) != 0U) ? 1U : 0U;
-			e = tegrabl_ep_getstatus(ep_index,
-			&tx_length,
-			p_setup_buffer);
-			if (e != TEGRABL_NO_ERROR) {
-				return e;
-			}
+			ep_index += ((psetup_data[USB_SETUP_INDEX] & 0x80U) != 0U) ? 1U : 0U;
+			tegrabl_ep_getstatus(ep_index, &tx_length, p_setup_buffer);
 			break;
 		default:
-			pr_warn("__Unsupported D2H_Ep\n");
+			TEGRABL_PRINT_WARN_STRING(TEGRABL_ERR_NOT_SUPPORTED, "D2H_ep:%u",
+										psetup_data[USB_SETUP_REQUEST]);
 			e = tegrabl_stall_ep(EP0_IN, true);
 			if (e != TEGRABL_NO_ERROR) {
-				return e;
+				goto fail;
 			}
 			break;
 		}
 		break;
 
 	case HOST2DEV_ENDPOINT:
+		config = "device endpoint";
+		type = "H2D";
 		switch (psetup_data[USB_SETUP_REQUEST]) {
 		case SET_FEATURE:
 			pr_trace("Set Feature H2D_Ep\n");
 			switch (psetup_data[USB_SETUP_VALUE]) {
 			case ENDPOINT_HALT:
 				ep_index = 2U * (psetup_data[USB_SETUP_INDEX] & 0xFU);
-				ep_index +=
-					((psetup_data[USB_SETUP_INDEX] & 0x80U) != 0U) ? 1U : 0U;
+				ep_index += ((psetup_data[USB_SETUP_INDEX] & 0x80U) != 0U) ? 1U : 0U;
 				tegrabl_stall_ep(ep_index, true);
 				/* Send status */
 				e = tegrabl_issue_status_trb(DIR_IN);
 				if (e != TEGRABL_NO_ERROR) {
-					return e;
+					goto fail;
 				}
 				break;
 			default:
 				e = tegrabl_stall_ep(EP0_IN, true);
 				if (e != TEGRABL_NO_ERROR) {
-					return e;
+					goto fail;
 				}
 				break;
 			}
@@ -1390,33 +1394,36 @@ static tegrabl_error_t tegrabl_handle_setuppkt(uint8_t *psetup_data)
 				/* Send status */
 				e = tegrabl_issue_status_trb(DIR_IN);
 				if ( e != TEGRABL_NO_ERROR) {
-					return e;
+					goto fail;
 				}
 				break;
 			default:
 				e = tegrabl_stall_ep(EP0_IN, true);
 				if (e != TEGRABL_NO_ERROR) {
-					return e;
+					goto fail;
 				}
 				break;
 			}
 			break;
 		default:
-			pr_warn("Unsupported H2D_Ep\n");
+			TEGRABL_PRINT_WARN_STRING(TEGRABL_ERR_NOT_SUPPORTED, "H2D_Ep:%u",
+							psetup_data[USB_SETUP_REQUEST]);
 			/* Stall if any unsupported request comes */
 			e = tegrabl_stall_ep(EP0_IN, true);
 			if (e != TEGRABL_NO_ERROR) {
-				return e;
+				goto fail;
 			}
 			break;
 		}
 		break;
 	default:
-		pr_warn("Unsupported setup req = %d\n", psetup_data[USB_SETUP_REQUEST]);
+		config = "unknown";
+		type = "unknown";
+		TEGRABL_PRINT_WARN_STRING(TEGRABL_ERR_NOT_SUPPORTED, "type %u", psetup_data[USB_SETUP_REQUEST_TYPE]);
 		/* Stall if any Un supported request comes */
 		e = tegrabl_stall_ep(EP0_IN, true);
 	 	if (e != TEGRABL_NO_ERROR){
-			return e;
+			goto fail;
 		}
 		break;
 	}
@@ -1426,15 +1433,16 @@ static tegrabl_error_t tegrabl_handle_setuppkt(uint8_t *psetup_data)
 
 	if (tx_length != 0U) {
 		/* Compensate buffer for xusb device view of sysram */
-		e = tegrabl_issue_data_trb(
-				dma_buf,
-				tx_length,
-				DIR_IN);
+		e = tegrabl_issue_data_trb(dma_buf, tx_length, DIR_IN);
 		if (e != TEGRABL_NO_ERROR) {
 			return e;
 		}
 	}
 
+fail:
+	if (e != TEGRABL_NO_ERROR) {
+		TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_SET_FAILED, config, type);
+	}
 	return e;
 }
 
@@ -1586,7 +1594,7 @@ static tegrabl_error_t tegrabl_handle_port_status(void)
 						1,
 						port_status);
 		NV_WRITE32(XUSB_BASE + XUSB_DEV_XHCI_PORTSC_0, port_status);
-		e = TEGRABL_ERROR(TEGRABL_ERR_INVALID_STATE, 0);
+		e = TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_HANDLE_PORT_STATUS);
 	}
 	return e;
 }
@@ -1649,7 +1657,9 @@ static tegrabl_error_t tegrabl_handle_txfer_event(
 				/* Send status */
 				e = tegrabl_issue_status_trb(DIR_OUT);
 				if (e != TEGRABL_NO_ERROR) {
-					pr_critical("%s Send status failed\n", __func__);
+					e = TEGRABL_ERROR(TEGRABL_ERR_SEND_FAILED,
+							  AUX_INFO_HANDLE_TXFER_EVENT_1);
+					TEGRABL_PRINT_CRITICAL_STRING(e, "status");
 					return e;
 				}
 			} else if (p_xusb_dev_context->wait_for_eventt ==
@@ -1672,9 +1682,9 @@ static tegrabl_error_t tegrabl_handle_txfer_event(
 			p_xusb_dev_context->tx_count--;
 			/* For IN, we should not have remaining bytes. Flag error */
 			if (p_tx_eventrb->trb_tx_len != 0U) {
-				pr_critical(
-								   "%s data under flow error\n", __func__);
-				return TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
+				e = TEGRABL_ERROR(TEGRABL_ERR_TOO_LARGE, AUX_INFO_HANDLE_TXFER_EVENT_1);
+				TEGRABL_SET_CRITICAL_STRING(e, "remain bytes", "0");
+				return e;
 			}
 		}
 		if (p_tx_eventrb->emp_id == EP1_OUT) {
@@ -1686,8 +1696,8 @@ static tegrabl_error_t tegrabl_handle_txfer_event(
 		}
 		/* This should be zero except in the case of a short packet. */
 	} else if (p_tx_eventrb->comp_code == CTRL_DIR_ERR_CODE) {
-		pr_critical("%s control dir error\n", __func__);
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		e = TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_HANDLE_TXFER_EVENT_1);
+		TEGRABL_SET_CRITICAL_STRING(e, "comp_code:0x%08x", CTRL_DIR_ERR_CODE);
 	} else if (p_tx_eventrb->comp_code == CTRL_SEQ_NUM_ERR_CODE) {
 		/* TODO:
 		* This could mean 2 things.
@@ -1698,12 +1708,13 @@ static tegrabl_error_t tegrabl_handle_txfer_event(
 		* We have a setup packet to process
 		* Setuppacketindex points to next slot. pop out last setup packet.
 		*/
-		pr_critical("%s, %d Send status failed\n", __func__, __LINE__);
+		TEGRABL_PRINT_CRITICAL_STRING(TEGRABL_ERR_OUT_OF_SEQUENCE, "comp_code", "%u", "%u",
+									SUCCESS_ERR_CODE, CTRL_SEQ_NUM_ERR_CODE);
 		e = tegrabl_handle_setuppkt(&usb_setup_data[0]);
 		return e;
 	} else {
-		pr_critical("%s transfer failed\n", __func__);
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		e = TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_HANDLE_TXFER_EVENT_2);
+		TEGRABL_SET_CRITICAL_STRING(e, "comp_code:0x%08x", p_tx_eventrb->comp_code);
 	}
 
 	return e;
@@ -1730,7 +1741,7 @@ static tegrabl_error_t tegrabl_poll_for_event(uint32_t timeout)
 				expected_value,
 				timeout);
 	if (e != TEGRABL_NO_ERROR) {
-		pr_error("%s:%d poll for event failed\n", __func__, __LINE__);
+		e = TEGRABL_ERROR(TEGRABL_ERR_TIMEOUT, AUX_INFO_POLL_FOR_EVENT);
 		return e;
 	}
 
@@ -1764,8 +1775,9 @@ static tegrabl_error_t tegrabl_poll_for_event(uint32_t timeout)
 	/* Make sure cycle state matches */
 	/* TODO :Need to find suitable error value */
 	if (p_event_trb->c !=  p_xusb_dev_context->event_ccs) {
-		pr_error("%s:%d cycle state mismatch\n", __func__, __LINE__);
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID_STATE, 0);
+		e = TEGRABL_ERROR(TEGRABL_ERR_MISMATCH, AUX_INFO_POLL_FOR_EVENT);
+		TEGRABL_SET_ERROR_STRING(e, "cycle state %u", "%u", p_event_trb->c, p_xusb_dev_context->event_ccs);
+		return e;
 	}
 
 	while (p_event_trb->c ==  p_xusb_dev_context->event_ccs) {
@@ -2027,7 +2039,7 @@ tegrabl_error_t tegrabl_usbf_enumerate(uint8_t *buffer)
 	while (p_xusb_dev_context->device_state != CONFIGURED) {
 		e = tegrabl_poll_for_event(0xFFFFFFFFUL);
 		if (e != TEGRABL_NO_ERROR) {
-			pr_warn("FAILED IN WAIT FOR EVENT err = 0x%x\n", e);
+			TEGRABL_PRINT_WARN_STRING(TEGRABL_ERR_CONFIG_FAILED, "enumeration");
 			return e;
 		}
 	}
@@ -2044,7 +2056,8 @@ tegrabl_error_t tegrabl_usbf_receive(uint8_t *buffer, uint32_t bytes,
 	dma_addr_t dma_buf;
 
 	if ((buffer == NULL) || (bytes_received == NULL)) {
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		e = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, AUX_INFO_USBF_RECEIVE);
+		return e;
 	}
 
 	p_xusb_dev_context->bytes_txfred = bytes;
@@ -2083,7 +2096,8 @@ tegrabl_error_t tegrabl_usbf_transmit(uint8_t *buffer, uint32_t bytes,
 	dma_addr_t dma_buf;
 
 	if ((buffer == NULL) || (bytes_transmitted == NULL)) {
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		e = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, AUX_INFO_USBF_TRANSMIT);
+		return e;
 	}
 
 	p_xusb_dev_context->bytes_txfred = bytes;
@@ -2095,9 +2109,9 @@ tegrabl_error_t tegrabl_usbf_transmit(uint8_t *buffer, uint32_t bytes,
 
 	/* Handle difference in sysram view between host and device. */
 	e = tegrabl_issue_normal_trb(dma_buf, bytes, direction);
-		if (e != TEGRABL_NO_ERROR) {
-			return e;
-		}
+	if (e != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
 	p_xusb_dev_context->tx_count++;
 
 	while (p_xusb_dev_context->tx_count > 0U) {
@@ -2112,6 +2126,7 @@ tegrabl_error_t tegrabl_usbf_transmit(uint8_t *buffer, uint32_t bytes,
 
 	*bytes_transmitted = p_xusb_dev_context->bytes_txfred;
 
+fail:
 	return e;
 }
 
@@ -2123,7 +2138,8 @@ tegrabl_error_t tegrabl_usbf_receive_start(uint8_t *buffer, uint32_t bytes)
 	dma_addr_t dma_buf;
 
 	if (buffer == NULL) {
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		e = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, AUX_INFO_USBF_RECEIVE_START);
+		return e;
 	}
 
 	p_xusb_dev_context->bytes_txfred = bytes;
@@ -2153,7 +2169,8 @@ tegrabl_error_t tegrabl_usbf_receive_complete(uint32_t *bytes_received,
 	TEGRABL_UNUSED(dma_buf);
 
 	if (bytes_received == NULL) {
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		e = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, AUX_INFO_USBF_RECEIVE_COMPLETE);
+		return e;
 	}
 
 	while (p_xusb_dev_context->tx_count > 0U) {
@@ -2175,7 +2192,8 @@ tegrabl_error_t tegrabl_usbf_transmit_start(uint8_t *buffer, uint32_t bytes)
 	dma_addr_t dma_buf;
 
 	if (buffer == NULL) {
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		e = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, AUX_INFO_USBF_TRANSMIT_START_1);
+		return e;
 	}
 
 	p_xusb_dev_context->bytes_txfred = bytes;
@@ -2201,7 +2219,8 @@ tegrabl_error_t tegrabl_usbf_transmit_complete(uint32_t *p_bytes_transferred,
 	(void)timeout;
 
 	if (p_bytes_transferred == NULL) {
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		e = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, AUX_INFO_USBF_TRANSMIT_START_2);
+		return e;
 	}
 
 	while ((p_xusb_dev_context->tx_count) > 0UL) {
@@ -2485,7 +2504,7 @@ static tegrabl_error_t tegrabl_usbf_clock_and_pad_programming(void)
 	/* Configure the USB phy stabilization delay setting */
 	err = tegrabl_usbf_pad_setup();
 	if (err != TEGRABL_NO_ERROR) {
-		pr_error("%s:: %d usbf_pad setup failed\n", __func__,  __LINE__);
+		TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_INIT_FAILED, "pad");
 		goto fail;
 	}
 
@@ -2511,7 +2530,7 @@ static tegrabl_error_t tegrabl_usbf_clock_and_pad_programming(void)
 
 	err = tegrabl_usbf_clock_init();
 	if (err != TEGRABL_NO_ERROR) {
-		pr_error("%s:: %d usbf clock init failed\n", __func__,  __LINE__);
+		TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_INIT_FAILED, "clock");
 		goto fail;
 	}
 
@@ -2567,7 +2586,7 @@ static tegrabl_error_t tegrabl_usbf_regulator_init(void)
 
 	err = tegrabl_dt_get_fdt_handle(TEGRABL_DT_BL, &fdt);
 	if (TEGRABL_NO_ERROR != err) {
-		pr_warn("%s %d failed\n", __func__, __LINE__);
+		TEGRABL_PRINT_WARN_STRING(TEGRABL_ERR_GET_FAILED, "handle", "BL_DTB", "FDT");
 		goto fail;
 	}
 
@@ -2575,7 +2594,7 @@ static tegrabl_error_t tegrabl_usbf_regulator_init(void)
 										XUDC_DT_COMPATIBLE,
 										&xudc_node_offset);
 	if (TEGRABL_NO_ERROR != err) {
-		pr_warn("%s %d failed\n", __func__, __LINE__);
+		TEGRABL_PRINT_WARN_STRING(TEGRABL_ERR_GET_FAILED, "node", "XUDC", "BL_DTB");
 		goto fail;
 	}
 
@@ -2589,7 +2608,7 @@ static tegrabl_error_t tegrabl_usbf_regulator_init(void)
 		if (temp != NULL) {
 			reg_phandle = fdt32_to_cpu(*temp);
 		} else {
-			err = TEGRABL_ERROR(TEGRABL_ERR_BAD_ADDRESS, 1);
+			err = TEGRABL_ERROR(TEGRABL_ERR_BAD_ADDRESS, AUX_INFO_USBF_REGULATOR_INIT_1);
 			continue;
 		}
 
@@ -2600,7 +2619,7 @@ static tegrabl_error_t tegrabl_usbf_regulator_init(void)
 		if (temp != NULL) {
 			reg_voltage = fdt32_to_cpu(*temp);
 		} else {
-			err = TEGRABL_ERROR(TEGRABL_ERR_BAD_ADDRESS, 2);
+			err = TEGRABL_ERROR(TEGRABL_ERR_BAD_ADDRESS, AUX_INFO_USBF_REGULATOR_INIT_2);
 			continue;
 		}
 
@@ -2627,8 +2646,8 @@ static tegrabl_error_t tegrabl_usbf_priv_init(bool reinit)
 
 	usb_setup_data = (uint8_t *)tegrabl_alloc_align(TEGRABL_HEAP_DMA, 16, SETUP_DATA_SIZE);
 	if (usb_setup_data == NULL) {
-		pr_error("failed to allocate memory for setup data\n");
-		e = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
+		e = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, AUX_INFO_USBF_PRIV_INIT_1);
+		TEGRABL_SET_ERROR_STRING(e, "%u", "setup data", SETUP_DATA_SIZE);
 		return e;
 	}
 	memset(usb_setup_data, 0x0, SETUP_DATA_SIZE);
@@ -2644,8 +2663,8 @@ static tegrabl_error_t tegrabl_usbf_priv_init(bool reinit)
 	p_ep_context = (struct ep_context *) tegrabl_alloc_align(TEGRABL_HEAP_DMA, 64, EP_CONTEXT_SIZE);
 	if ((p_event_ring == NULL) || (p_txringep0 == NULL) || (p_txringep1out == NULL) ||
 		(p_txringep1in == NULL) || (p_setup_buffer == NULL) || (p_ep_context == NULL)) {
-		pr_error("failed to allocate memory for xusb buffers\n");
-		e = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
+		e = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, AUX_INFO_USBF_PRIV_INIT_2);
+		TEGRABL_SET_ERROR_STRING(e, "(varying)", "buffers");
 		return e;
 	}
 	memset(p_event_ring, 0x0, EVENT_RING_SIZE);
@@ -2678,7 +2697,7 @@ static tegrabl_error_t tegrabl_usbf_priv_init(bool reinit)
 	/* Enable regulators needed */
 	e = tegrabl_usbf_regulator_init();
 	if (e != TEGRABL_NO_ERROR) {
-		pr_warn("%s enable regulator failed\n", __func__);
+		TEGRABL_PRINT_WARN_STRING(TEGRABL_ERR_INIT_FAILED, "regulator");
 	}
 #else
 	TEGRABL_UNUSED(tegrabl_usbf_regulator_init);
@@ -2703,8 +2722,9 @@ static tegrabl_error_t tegrabl_usbf_priv_init(bool reinit)
 			p_xusb_dev_context->port_speed = port_speed;
 			pr_trace("port speed =%d\n", port_speed);
 		} else {
-			pr_error("ERROR: XUSB port status not configured!!\n");
-			e = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+			e = TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_USBF_PRIV_INIT_1);
+			TEGRABL_SET_ERROR_STRING(e, "port status %lu",
+									NV_DRF_VAL(XUSB_DEV_XHCI, PORTSC, CCS, port_status));
 			return e;
 		}
 #if !defined(CONFIG_ENABLE_XUSBF_REENUMERATION)
@@ -2716,10 +2736,14 @@ static tegrabl_error_t tegrabl_usbf_priv_init(bool reinit)
 							TRUE,
 							reg_data);
 		reg_data = NV_WRITE32(XUSB_BASE + XUSB_DEV_XHCI_CTRL_0, reg_data);
-		reg_data = NV_READ32(XUSB_BASE + XUSB_DEV_XHCI_CTRL_0);
+
+		/* Clear pending interrupts */
+		reg_data = NV_READ32(XUSB_BASE+XUSB_DEV_XHCI_ST_0);
+		reg_data = NV_FLD_SET_DRF_NUM(XUSB_DEV_XHCI, ST, IP, 1, reg_data);
+		NV_WRITE32(XUSB_BASE + XUSB_DEV_XHCI_ST_0, reg_data);
 #endif
 	} else {
-		pr_info("%s:%d full init:: ", __func__, __LINE__);
+		pr_trace("Full init::\n");
 
 #if defined(CONFIG_ENABLE_XUSBF_SS)
 		pr_info(" SUPER SPEED\n");
@@ -2729,7 +2753,7 @@ static tegrabl_error_t tegrabl_usbf_priv_init(bool reinit)
 
 		e = tegrabl_usbf_clock_and_pad_programming();
 		if (e != TEGRABL_NO_ERROR) {
-			pr_warn("%d clock_pad init failed\n", __LINE__);
+			TEGRABL_PRINT_WARN_STRING(TEGRABL_ERR_INIT_FAILED, "clock_pad");
 			return e;
 		}
 	}
@@ -2839,17 +2863,16 @@ tegrabl_error_t tegrabl_usbf_close(uint32_t instance)
 	/* Put controller in reset state */
 	err = tegrabl_car_rst_set(TEGRABL_MODULE_XUSB_SS, (uint8_t)instance);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_critical("%s Failed to deassert XUSB_SS\n", __func__);
 		return err;
 	}
 	err = tegrabl_car_rst_set(TEGRABL_MODULE_XUSB_DEV, (uint8_t)instance);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_critical("%s Failed to deassert XUSB_DEV\n", __func__);
+		TEGRABL_PRINT_CRITICAL_STRING(TEGRABL_ERR_SET_FAILED, "rst", "%s%s", "XUSB_", "DEV");
 		return err;
 	}
 	err = tegrabl_car_rst_set(TEGRABL_MODULE_XUSB_PADCTL, (uint8_t)instance);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_critical("%s Failed to deassert XUSB_PADCTL\n", __func__);
+		TEGRABL_PRINT_CRITICAL_STRING(TEGRABL_ERR_SET_FAILED, "rst", "%s%s", "XUSB_", "PADCTL");
 		return err;
 	}
 

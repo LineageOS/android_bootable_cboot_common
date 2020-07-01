@@ -114,21 +114,21 @@ typedef struct tegrabl_bdev {
 
 	void *priv_data;
 
-	tegrabl_error_t (*read)(struct tegrabl_bdev *, void *buf, off_t offset,
+	tegrabl_error_t (*read)(struct tegrabl_bdev *dev, void *buf, off_t offset,
 		off_t len);
-	tegrabl_error_t (*write)(struct tegrabl_bdev *, const void *buf,
+	tegrabl_error_t (*write)(struct tegrabl_bdev *dev, const void *buf,
 		off_t offset, off_t len);
-	tegrabl_error_t (*read_block)(struct tegrabl_bdev *, void *buf,
+	tegrabl_error_t (*read_block)(struct tegrabl_bdev *dev, void *buf,
 		bnum_t block, bnum_t count);
-	tegrabl_error_t (*write_block)(struct tegrabl_bdev *, const void *buf,
+	tegrabl_error_t (*write_block)(struct tegrabl_bdev *dev, const void *buf,
 		bnum_t block, bnum_t count);
-	tegrabl_error_t (*xfer)(struct tegrabl_blockdev_xfer_info *);
-	tegrabl_error_t (*xfer_wait)(struct tegrabl_blockdev_xfer_info *, time_t timeout, uint8_t *status_flag);
-	tegrabl_error_t (*erase)(struct tegrabl_bdev *, bnum_t block, bnum_t count,
+	tegrabl_error_t (*xfer)(struct tegrabl_blockdev_xfer_info *xfer);
+	tegrabl_error_t (*xfer_wait)(struct tegrabl_blockdev_xfer_info *xfer, time_t timeout, uint8_t *status_flag);
+	tegrabl_error_t (*erase)(struct tegrabl_bdev *dev, bnum_t block, bnum_t count,
 		bool is_secure);
-	tegrabl_error_t (*erase_all)(struct tegrabl_bdev *, bool is_secure);
-	tegrabl_error_t (*ioctl)(struct tegrabl_bdev *, uint32_t ioctl, void *args);
-	tegrabl_error_t (*close)(struct tegrabl_bdev *);
+	tegrabl_error_t (*erase_all)(struct tegrabl_bdev *dev, bool is_secure);
+	tegrabl_error_t (*ioctl)(struct tegrabl_bdev *dev, uint32_t ioctl, void *args);
+	tegrabl_error_t (*close)(struct tegrabl_bdev *dev);
 } tegrabl_bdev_t;
 
 #define TEGRABL_BLOCKDEV_BLOCK_SIZE(dev)	(1UL << (dev)->block_size_log2)

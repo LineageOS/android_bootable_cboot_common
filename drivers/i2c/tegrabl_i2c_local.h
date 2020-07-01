@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -13,11 +13,10 @@
 
 #include <stdint.h>
 
-#define KHZ				1000UL
-#define STD_SPEED		(100UL * KHZ)
-#define FM_SPEED		(400UL * KHZ)
-#define FM_PLUS_SPEED	(1000UL * KHZ)
-#define HS_SPEED		(3400UL * KHZ)
+#define STD_SPEED		100UL
+#define FM_SPEED		400UL
+#define FM_PLUS_SPEED	1000UL
+#define HS_SPEED		3400UL
 
 #define I2C_TIMEOUT (500)
 #define CNFG_LOAD_TIMEOUT_US (20)

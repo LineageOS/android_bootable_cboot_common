@@ -10,6 +10,7 @@
 
 #define MODULE TEGRABL_ERR_UFS
 
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_ufs_defs.h>
 #include "tegrabl_ufs_local.h"
 #include <address_map_new.h>
@@ -32,6 +33,8 @@
 #include <inttypes.h>
 #include <arfuse.h>
 #include <arpmc_impl.h>
+#include <tegrabl_io.h>
+
 /* Global structure pointers */
 
 static struct transfer_request_descriptor *ptx_rx_desc;
@@ -649,9 +652,9 @@ static  tegrabl_error_t tegrabl_ufs_enable_hs_mode(const struct tegrabl_ufs_para
 		goto uphy_power_down;
 	}
 
-	reg_data &= ~set_tref(~0);
+	reg_data &= ~(set_tref(~0UL));
 	reg_data |= set_tref(vs_debugsaveconfigtime_tref);
-	reg_data &= ~set_st_sct(~0);
+	reg_data &= ~(set_st_sct(~0UL));
 	reg_data |= set_tref(vs_debugsaveconfigtime_st_sct);
 
 	pr_debug("pvs_debugsaveconfigtime value is 0x%X\n", reg_data);
@@ -1640,22 +1643,19 @@ tegrabl_ufs_set_descriptor(uint8_t *pufsdesc,
 	pquery_req_upiu->vtsf.vdesc_fields.desc_idn = descidn;
 	/* Index */
 	pquery_req_upiu->vtsf.vdesc_fields.index = desc_index;
-	/* TODO Find out device descriptor size.
-	* It is ok to simply specify max desc size
+	/* It is ok to simply specify max desc size
 	* of 255 bytes as device will return actual descriptor size if lesser.
 	*/
 
 	pquery_req_upiu->vtsf.vdesc_fields.length_bige = BYTE_SWAP16(pufsdesc[0]);
 	memcpy(&(pquery_req_upiu->data_segment[0]), pufsdesc, pufsdesc[0]);
 
-	/* TODO Task Tags */
 	error = tegrabl_ufs_create_trd(trd_index, cmd_desc_index,
 					DATA_DIR_NIL, 1);
 	if (error != TEGRABL_NO_ERROR) {
 		return error;
 	}
 
-	/* TODO Timeout for READ DESCRIPTOR */
 	error = tegrabl_ufs_queue_trd(trd_index, QUERY_REQ_DESC_TIMEOUT);
 	if (error != TEGRABL_NO_ERROR) {
 		return error;
@@ -1724,21 +1724,18 @@ tegrabl_ufs_get_descriptor(uint8_t *pufsdesc,
 	pquery_req_upiu->vtsf.vdesc_fields.desc_idn = descidn;
 	/* Index */
 	pquery_req_upiu->vtsf.vdesc_fields.index = desc_index;
-	/* TODO Find out device descriptor size.
-	* It is ok to simply specify max desc size
+	/* It is ok to simply specify max desc size
 	* of 255 bytes as device will return actual descriptor size if lesser.
 	*/
 
 	pquery_req_upiu->vtsf.vdesc_fields.length_bige = BYTE_SWAP16(255U);
 
-	/* TODO Task Tags */
 	error = tegrabl_ufs_create_trd(trd_index, cmd_desc_index,
 					DATA_DIR_NIL, 1);
 	if (error != TEGRABL_NO_ERROR) {
 		return error;
 	}
 
-	/* TODO Timeout for READ DESCRIPTOR */
 	error = tegrabl_ufs_queue_trd(trd_index, QUERY_REQ_DESC_TIMEOUT);
 	if (error != TEGRABL_NO_ERROR) {
 		return error;
@@ -1803,15 +1800,13 @@ tegrabl_error_t tegrabl_ufs_set_attribute(uint32_t *pufsattrb, uint32_t attrbidn
 	pquery_req_upiu->vtsf.vattrb_fields.attrb_idn = (uint8_t)attrbidn;
 	/* Index */
 	pquery_req_upiu->vtsf.vattrb_fields.index = attrbindex;
-	pquery_req_upiu->vtsf.vdesc_fields.length_bige = BYTE_SWAP32(*pufsattrb);
+	pquery_req_upiu->vtsf.vdesc_fields.length_bige = (uint16_t)BYTE_SWAP32(*pufsattrb);
 
-	/* TODO Task Tags */
 	error = tegrabl_ufs_create_trd(trd_index, cmd_desc_index, 0, 1);
 	if (error != TEGRABL_NO_ERROR) {
 		return error;
 	}
 
-	/* TODO Timeout for READ ATTRB */
 	error = tegrabl_ufs_queue_trd(trd_index, QUERY_REQ_ATTRB_TIMEOUT);
 	if (error != TEGRABL_NO_ERROR) {
 		return error;
@@ -1869,13 +1864,11 @@ tegrabl_error_t tegrabl_ufs_get_attribute(uint32_t *pufsattrb, uint32_t attrbidn
 	/* Index */
 	pquery_req_upiu->vtsf.vattrb_fields.index = attrbindex;
 
-	/* TODO Task Tags */
 	error = tegrabl_ufs_create_trd(trd_index, cmd_desc_index, 0, 1);
 	if (error != TEGRABL_NO_ERROR) {
 		return error;
 	}
 
-	/* TODO Timeout for READ ATTRB */
 	error = tegrabl_ufs_queue_trd(trd_index, QUERY_REQ_ATTRB_TIMEOUT);
 	if (error != TEGRABL_NO_ERROR) {
 		return error;
@@ -1938,12 +1931,10 @@ tegrabl_ufs_get_flag(uint32_t *pufsflag, uint8_t flagidn, uint8_t flag_index)
 	/* Index */
 	pquery_req_upiu->vtsf.vflag_fields.index = flag_index;
 
-	/* TODO Task Tags */
 	error = tegrabl_ufs_create_trd(trd_index, cmd_desc_index, DATA_DIR_NIL, 1);
 	if (error != TEGRABL_NO_ERROR) {
 		return error;
 	}
-
 
 	error = tegrabl_ufs_queue_trd(trd_index, QUERY_REQ_FLAG_TIMEOUT);
 	if (error != TEGRABL_NO_ERROR) {
@@ -2002,7 +1993,6 @@ tegrabl_ufs_set_flag(uint8_t flagidn, uint8_t flag_index)
 	pquery_req_upiu =
 		(struct query_req_resp_upiu *)&plcmd_descriptor->vucd_generic_req_upiu;
 	pquery_req_upiu->basic_header.trans_code = UPIU_QUERY_REQUEST_TRANSACTION;
-	/* TODO: Is SET FLAG a Read or Write Query function */
 	pquery_req_upiu->basic_header.query_tm_function = UPIU_QUERY_FUNC_STD_WRITE;
 	pquery_req_upiu->vtsf.op_code = TSF_OPCODE_SET_FLAG;
 
@@ -2011,14 +2001,11 @@ tegrabl_ufs_set_flag(uint8_t flagidn, uint8_t flag_index)
 	/* Index */
 	pquery_req_upiu->vtsf.vflag_fields.index = flag_index;
 
-	/* TODO Task Tags */
 	error = tegrabl_ufs_create_trd(trd_index, cmd_desc_index, DATA_DIR_NIL, 1);
 	if (error != TEGRABL_NO_ERROR) {
 		return error;
 	}
 
-
-	/* TODO Timeout for READ FLAG */
 	error = tegrabl_ufs_queue_trd(trd_index, QUERY_REQ_FLAG_TIMEOUT);
 	if (error != TEGRABL_NO_ERROR) {
 		return error;
@@ -2034,7 +2021,7 @@ tegrabl_ufs_set_flag(uint8_t flagidn, uint8_t flag_index)
 		TEGRABL_DMA_FROM_DEVICE);
 	pquery_resp_upiu =
 		(struct query_req_resp_upiu *)&plcmd_descriptor->vucd_generic_resp_upiu;
-	/* OSF6 LSB (Big Endian) TODO contains the returned flag*/
+	/* OSF6 LSB (Big Endian) */
 	flag_readback = pquery_resp_upiu->vtsf.vflag_fields.flag_value;
 	if (flag_readback != 1UL) {
 		pr_debug("flag_readback is %d\n", flag_readback);
@@ -2083,7 +2070,6 @@ tegrabl_ufs_common_upiu_write(uint8_t *pdesc_req_data, uint32_t data_size)
 		plcmd_descriptor->cmd_desc_req[i] = pdesc_req_data[i];
 	}
 
-	/* TODO Task Tags */
 	error = tegrabl_ufs_create_trd(trd_index, cmd_desc_index, DATA_DIR_NIL, 1);
 	if (error != TEGRABL_NO_ERROR) {
 		return error;
@@ -2115,7 +2101,6 @@ tegrabl_error_t tegrabl_ufs_complete_init(void)
 		return e;
 	}
 
-	/* TODO: Timeout waiting for deviceInit */
 	do {
 		e = tegrabl_ufs_get_flag(&flag_device_init,
 			QUERY_FLAG_DEVICE_INIT_IDN, 0);

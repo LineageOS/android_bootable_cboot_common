@@ -10,6 +10,7 @@
 
 #define MODULE TEGRABL_ERR_DPAUX
 
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_dpaux.h>
 #include <ardpaux.h>
 #include <tegrabl_clock.h>
@@ -167,13 +168,14 @@ static void dpaux_config_pad_mode(struct tegrabl_dpaux *hdpaux,
 tegrabl_error_t dpaux_prod_set(struct tegrabl_dpaux *hdpaux, uint32_t mode)
 {
 	void *fdt = NULL;
-	const struct fdt_property *property;
 	int32_t prod_offset;
 	int32_t dpaux_off;
 	int32_t off = 0, mask = 0, val = 0;
 	int32_t temp_val;
 	int32_t propval;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	uint32_t dpaux_prod_tuple[4] = {0};
+	uint32_t count;
 
 	err = tegrabl_dt_get_fdt_handle(TEGRABL_DT_BL, &fdt);
 	if (err != TEGRABL_NO_ERROR) {
@@ -217,20 +219,25 @@ tegrabl_error_t dpaux_prod_set(struct tegrabl_dpaux *hdpaux, uint32_t mode)
 		goto fail;
 	}
 
-	property = fdt_get_property(fdt, prod_offset, "prod", NULL);
-	if (!property) {
-		pr_error("error in reading \"prod\" property\n");
-		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 4);
+	err = tegrabl_dt_get_prop_u32_array(fdt, prod_offset, "prod", 0, dpaux_prod_tuple, &count);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("%s: error in reading dpaux \"prod\" property\n", __func__);
 		goto fail;
 	}
 
-	off = fdt32_to_cpu(*(property->data32 + 1));
+#if defined(IS_T186)
+	off = dpaux_prod_tuple[0];
+	mask = dpaux_prod_tuple[1];
+	val = dpaux_prod_tuple[2];
+#else
+	off = dpaux_prod_tuple[1];
+	mask = dpaux_prod_tuple[2];
+	val = dpaux_prod_tuple[3];
+#endif
 	if ((off < 0) || (off > (NV_ADDRESS_MAP_DPAUX_SIZE - *(int32_t *)hdpaux->base))) {
 		pr_error("dpaux address offset is out of bounds\n");
 		goto fail;
 	}
-	mask = fdt32_to_cpu(*(property->data32 + 2));
-	val = fdt32_to_cpu(*(property->data32 + 3));
 	pr_debug("dpaux prod settings: addr = %#x, mask = %#x, val = %#x\n", off, mask, val);
 
 	temp_val = NV_READ32(hdpaux->base + off);

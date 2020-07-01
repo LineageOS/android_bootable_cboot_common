@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - 2017, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2015 - 2018, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -44,5 +44,16 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(
 		void **kernel_dtb,
 		struct tegrabl_kernel_load_callbacks *callbacks,
 		void *data);
+
+#if defined(CONFIG_OS_IS_ANDROID)
+/**
+ * @brief Get os version in Android bootimg header
+ *
+ * @param os_version pointer to Android os version
+ *
+ * @return TEGRABL_NO_ERROR if successful, otherwise appropriate error code
+ */
+tegrabl_error_t tegrabl_get_os_version(union android_os_version *os_version);
+#endif
 
 #endif /* INCLUDED_TEGRABL_LINUX_LOADER_H */

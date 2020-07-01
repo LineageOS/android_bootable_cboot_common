@@ -13,6 +13,7 @@
 #include <build_config.h>
 #include <stdint.h>
 #include <tegrabl_malloc.h>
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_clock.h>
 #include <tegrabl_module.h>
 #include <tegrabl_error.h>
@@ -22,6 +23,7 @@
 #include <list.h>
 #include <arpwm.h>
 #include <tegrabl_addressmap.h>
+#include <tegrabl_io.h>
 
 /**
  * @brief List of controllers

@@ -29,8 +29,8 @@
  * distribution of this software and related documentation without an express
  * license agreement from NVIDIA CORPORATION is strictly prohibited
  */
-#ifndef __LIST_H
-#define __LIST_H
+#ifndef LIST_H
+#define LIST_H
 
 #include <stddef.h>
 #include <stdint.h>

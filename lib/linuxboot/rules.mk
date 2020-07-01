@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2018, NVIDIA Corporation.  All Rights Reserved.
+# Copyright (c) 2015-2019, NVIDIA Corporation.  All Rights Reserved.
 #
 # NVIDIA Corporation and its licensors retain all intellectual property and
 # proprietary rights in and to this software and related documentation.  Any
@@ -20,7 +20,8 @@ GLOBAL_INCLUDES += \
 	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/include/lib \
 	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/include/soc/$(TARGET) \
 	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/include/drivers \
-	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/nvtboot/common/soc/$(TARGET)/include
+	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/nvtboot/common/soc/$(TARGET)/include \
+	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/nvtboot/bpmp/soc/$(TARGET)/include
 
 MODULE_DEPS += \
 	$(LOCAL_DIR)/../libfdt \
@@ -30,7 +31,8 @@ MODULE_DEPS += \
 	$(LOCAL_DIR)/../external/libufdt \
 	$(LOCAL_DIR)/../odmdata \
 	$(LOCAL_DIR)/../../../t18x/common/lib/partitionloader \
-	$(LOCAL_DIR)/../decompress
+	$(LOCAL_DIR)/../decompress \
+	$(LOCAL_DIR)/../file_manager
 
 ifneq ($(filter t18x, $(TARGET_FAMILY)),)
 MODULE_DEPS += \
@@ -46,6 +48,12 @@ MODULE_SRCS += \
 	$(LOCAL_DIR)/dtb_update.c \
 	$(LOCAL_DIR)/dtb_overlay.c \
 	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/lib/linuxboot/$(TARGET)/linuxboot_helper.c \
+	$(LOCAL_DIR)/../../../common/lib/linuxboot/linuxboot_utils.c \
 	$(LOCAL_DIR)/linux_load.c
+
+ifneq ($(filter t19x, $(TARGET_FAMILY)),)
+MODULE_SRCS += \
+	$(LOCAL_DIR)/extlinux_boot.c
+endif
 
 include make/module.mk

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -14,6 +14,7 @@
 #include <tegrabl_error.h>
 #include <tegrabl_malloc.h>
 #include <tegrabl_timer.h>
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_dp_lt.h>
 #include <tegrabl_dp.h>
 #include <tegrabl_dpaux.h>
@@ -69,7 +70,7 @@ static int32_t get_next_lower_link_config(struct tegrabl_dp *dp,
 
 	/* already at lowest link config */
 	if (priority_index == priority_arr_size - 1) {
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 1);
+		return -1;
 	}
 
 	for (priority_index++;
@@ -83,7 +84,7 @@ static int32_t get_next_lower_link_config(struct tegrabl_dp *dp,
 	}
 
 	/* we should never end up here */
-	return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 2);
+	return -1;
 }
 
 static bool get_clock_recovery_status(struct tegrabl_dp_lt_data *lt_data)
@@ -335,13 +336,10 @@ static void set_lt_config(struct tegrabl_dp_lt_data *lt_data)
 		}
 
 
-		sor_writel(sor, SOR_NV_PDISP_SOR_LANE_PREEMPHASIS0_0 + sor->portnum,
-				   pe_val);
-		sor_writel(sor, SOR_NV_PDISP_SOR_LANE_DRIVE_CURRENT0_0 + sor->portnum,
-				   vs_val);
+		sor_writel(sor, SOR_NV_PDISP_SOR_LANE_PREEMPHASIS0_0 + sor->portnum, pe_val);
+		sor_writel(sor, SOR_NV_PDISP_SOR_LANE_DRIVE_CURRENT0_0 + sor->portnum, vs_val);
 		if (pc_supported) {
-			sor_writel(sor, SOR_NV_PDISP_SOR_LANE_PREEMPHASIS0_0 + sor->portnum,
-					   pc_val);
+			sor_writel(sor, SOR_NV_PDISP_SOR_POSTCURSOR0_0 + sor->portnum, pc_val);
 		}
 
 		pr_debug("%s: lane %d: vs level: %d, pe level: %d, pc2 level: %d\n",
@@ -781,41 +779,66 @@ static tegrabl_error_t perform_lt(struct tegrabl_dp_lt_data *lt_data)
 {
 	int32_t pending_lt_evt;
 	bool cur_hpd;
+	bool done = false;
 	tegrabl_error_t ret = TEGRABL_NO_ERROR;
 
 	/*
 	 * Observe and clear pending flag
 	 * and latch the current HPD state.
 	 */
-	pending_lt_evt = lt_data->pending_evt;
-	lt_data->pending_evt = 0;
+	while (!done) {
+		pending_lt_evt = lt_data->pending_evt;
+		lt_data->pending_evt = 0;
 
-	CHECK_RET(tegrabl_dpaux_hpd_status(lt_data->dp->hdpaux, &cur_hpd));
+		CHECK_RET(tegrabl_dpaux_hpd_status(lt_data->dp->hdpaux, &cur_hpd));
 
-	pr_debug("dp lt: state %d (%s), hpd %d, pending_lt_evt %d\n",
-			lt_data->state, tegra_dp_lt_state_names[lt_data->state],
-			cur_hpd, pending_lt_evt);
+		pr_debug("dp lt: state %d (%s), hpd %d, pending_lt_evt %d\n",
+				 lt_data->state, tegra_dp_lt_state_names[lt_data->state],
+				 cur_hpd, pending_lt_evt);
 
-	if (!cur_hpd) {
-		return TEGRABL_ERR_INIT_FAILED;
-	}
-
-	if (pending_lt_evt) {
-		ret = set_lt_state(lt_data, STATE_RESET, 0);
-	} else if (lt_data->state < (int32_t)ARRAY_SIZE(state_machine_dispatch)) {
-		dispatch_func_t func = state_machine_dispatch[lt_data->state];
-
-		if (!func) {
-			pr_warn("dp lt: NULL state handler in state %d\n", lt_data->state);
-			ret = TEGRABL_ERR_INVALID;
-		} else {
-			pr_debug("dp lt: handler in state %d\n", lt_data->state);
-			ret = func(lt_data);
+		if (!cur_hpd) {
+			return TEGRABL_ERR_INIT_FAILED;
 		}
-	} else {
-		pr_warn("dp lt: unexpected state scheduled %d", lt_data->state);
-	}
 
+		if (pending_lt_evt) {
+			ret = set_lt_state(lt_data, STATE_RESET, 0);
+		} else if (lt_data->state < (int32_t)ARRAY_SIZE(state_machine_dispatch)) {
+			dispatch_func_t func = state_machine_dispatch[lt_data->state];
+
+			if (!func) {
+				pr_warn("dp lt: NULL state handler in state %d\n", lt_data->state);
+				ret = TEGRABL_ERR_INVALID;
+			} else {
+				pr_debug("dp lt: handler in state %d\n", lt_data->state);
+				ret = func(lt_data);
+			}
+		} else {
+			pr_warn("dp lt: unexpected state scheduled %d", lt_data->state);
+			ret = TEGRABL_ERROR(TEGRABL_ERR_INVALID_STATE, 1);
+		}
+
+		switch (lt_data->state) {
+		case STATE_DONE_PASS:
+			if (!get_lt_status(lt_data)) {
+				pr_debug("dp_lt: sink reset the link!\n");
+				ret = set_lt_state(lt_data, STATE_RESET, 0);
+			} else {
+				done = true;
+				pr_debug("dp_lt: Link Training complete PASS!\n");
+			}
+			break;
+		case STATE_DONE_FAIL:
+			pr_debug("dp_lt: Link Training complete FAIL!\n");
+			ret = TEGRABL_ERROR(TEGRABL_ERR_INIT_FAILED, 0);
+			break;
+		default:
+			break;
+		}
+		if (ret != TEGRABL_NO_ERROR) {
+			done = true;
+			pr_debug("dp_lt link training intermediate state error!\n");
+		}
+	}
 	return ret;
 }
 
@@ -841,7 +864,7 @@ static tegrabl_error_t set_lt_state(struct tegrabl_dp_lt_data *lt_data,
 	 * scheduled to run immediately
 	 */
 	if (!lt_data->pending_evt)
-		return perform_lt(lt_data);
+		return TEGRABL_NO_ERROR;
 
 	return TEGRABL_ERROR(TEGRABL_ERR_INVALID_STATE, 0);
 }

@@ -10,6 +10,7 @@
 
 #define MODULE TEGRABL_ERR_KEYBOARD
 
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_utils.h>
 #include <tegrabl_gpio.h>
 #include <tegrabl_gpio_hw.h>

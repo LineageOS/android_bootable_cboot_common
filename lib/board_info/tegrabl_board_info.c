@@ -17,6 +17,7 @@
 #include <string.h>
 #include <tegrabl_soc_misc.h>
 #include "board_info_local.h"
+#include <ctype.h>
 
 static struct board_info_ops *ops;
 static bool board_info_initialized;
@@ -112,7 +113,7 @@ tegrabl_error_t tegrabl_get_serial_no(uint8_t *buf)
 		}
 
 		while (buf[i] != '\0') {
-			if (!IS_DIGITAL(buf[i]) && !IS_ALPHA(buf[i])) {
+			if (!isdigit(buf[i]) && !isalpha(buf[i])) {
 				pr_warn("Serial number invalid!\n");
 				buf[0] = '\0';
 				err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);

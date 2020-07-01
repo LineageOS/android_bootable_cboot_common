@@ -94,8 +94,8 @@ struct tegrabl_ufs_platform_params {
 	bool skip_hs_mode_switch;
 };
 
-uint32_t tegrabl_ufs_get_attribute(uint32_t*, uint32_t, uint8_t);
-uint32_t tegrabl_ufs_get_descriptor(uint8_t*, uint8_t, uint8_t);
-uint32_t tegrabl_ufs_set_attribute(uint32_t*, uint32_t, uint8_t);
-uint32_t tegrabl_ufs_set_descriptor(uint8_t*, uint8_t, uint8_t);
+uint32_t tegrabl_ufs_get_attribute(uint32_t *pufsattrb, uint32_t attrbidn, uint8_t attrbindex);
+uint32_t tegrabl_ufs_get_descriptor(uint8_t *pufsdesc, uint8_t descidn, uint8_t desc_index);
+uint32_t tegrabl_ufs_set_attribute(uint32_t *pufsattrb, uint32_t attrbidn, uint8_t attrbindex);
+uint32_t tegrabl_ufs_set_descriptor(uint8_t *pufsdesc, uint8_t descidn, uint8_t desc_index);
 #endif

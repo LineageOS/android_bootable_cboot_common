@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All Rights Reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -124,6 +124,9 @@ extern int strcmp(const char *s1, const char *s2);
 /* Compare N characters of S1 and S2.  */
 extern int strncmp(const char *s1, const char *s2, size_t n);
 
+/* Compare N characters of S1 and S2, ignoring case.  */
+extern int strncasecmp(const char *s1, const char *s2, size_t n);
+
 /* Find the first occurrence of C in S.  */
 extern char *strchr(const char *s, int c);
 
@@ -148,6 +151,9 @@ extern char *strpbrk(char const *cs, char const *ct);
 
 /* Split string based on a delimiter */
 extern char *strtok(const char *str, const char *delim);
+
+/* Return a pointer to a new string which is a duplicate of the string str */
+extern char *strdup(const char *str);
 
 int tegrabl_clib_test_memcpy(size_t maxsize, bool alloc, void *testbuf);
 

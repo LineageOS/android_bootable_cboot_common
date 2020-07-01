@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All Rights Reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -15,6 +15,22 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <tegrabl_compiler.h>
+
+#define BASE_10  10UL
+
+#define SZ_256  256UL
+#define SZ_512  512UL
+#define SZ_1K   1024UL
+#define SZ_2K   2048UL
+#define SZ_4K   4096UL
+#define SZ_8K   8192UL
+#define SZ_1M   (1UL * SZ_1K * SZ_1K)
+#define SZ_2M   (2UL * SZ_1M)
+#define SZ_4M   (4UL * SZ_1M)
+#define SZ_8M   (8UL * SZ_1M)
+
+#define TIME_1MS  1000UL
+#define TIME_1US  (TIME_1MS * TIME_1MS)
 
 #ifndef MIN
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
@@ -92,15 +108,16 @@
 	(a) ^= (b); \
 }
 
-#define ALIGN(X, A)	 (((X) + ((A)-1)) & ~((A)-1))
+#define READ_BIT(val, p)			(((val) >> (p)) & 1)
 
-#define IS_SPACE(c) \
-((' ' == (c)) || ('\f' == (c)) || ('\n' == (c)) || ('\r' == (c)) || \
-												 ('\t' == (c)) || ('\v' == (c)))
-#define IS_DIGITAL(c) (((c) >= '0') && ((c) <= '9'))
-#define IS_UPPER(c) (((c) >= 'A') && ((c) <= 'Z'))
-#define IS_LOWER(c) (((c) >= 'a') && ((c) <= 'z'))
-#define IS_ALPHA(c) ((IS_UPPER(c) || (IS_LOWER(c))))
+#define XOR_BITS(val, p1, p2)		(READ_BIT(val, p1) ^ READ_BIT(val, p2))
+
+#define LEFT_SHIFT(val, dist)		((val) << (dist))
+
+#define SWAP_BITS(val, p1, p2)		\
+	((val) ^ (LEFT_SHIFT(XOR_BITS(val, p1, p2), p1) | LEFT_SHIFT(XOR_BITS(val, p1, p2), p2)))
+
+#define ALIGN(X, A)	 (((X) + ((A)-1)) & ~((A)-1))
 
 /**
  * @brief Computes the crc32 of buffer.

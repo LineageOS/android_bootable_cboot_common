@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - 2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -89,18 +89,6 @@ void tegrabl_i2c_unregister_instance(tegrabl_instance_i2c_t instance);
  * @return TEGRABL_NO_ERROR if successful else appropriate error.
  */
 tegrabl_error_t tegrabl_i2c_set_bus_freq_info(uint32_t *freq, uint32_t num);
-
-/**
- * @brief Register prod settings for particular instance.
- *
- * @param instance I2C controller instance
- * @param mode Transfer speed mode
- * @param settings Pointer to buffer containing <address, mask, value> triplets
- * @param num_settings Number of triplets in buffer
- *
- */
-tegrabl_error_t tegrabl_i2c_register_prod_settings(uint32_t instance,
-		uint32_t mode, uint32_t *settings, uint32_t num_settings);
 
 /**
 * @brief Initializes the given i2c controller.

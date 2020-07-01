@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -45,7 +45,7 @@ struct tegrabl_i2c_dev *tegrabl_i2c_dev_open(tegrabl_instance_i2c_t instance,
 
 	hi2cdev->hi2c = hi2c;
 	hi2cdev->instance = instance;
-	hi2cdev->slave_addr = slave_addr;
+	hi2cdev->slave_addr = (uint16_t)slave_addr;
 	hi2cdev->reg_addr_size = reg_addr_size;
 	hi2cdev->bytes_per_reg = bytes_per_reg;
 	hi2cdev->wait_time_for_write_us = 0;
@@ -59,7 +59,7 @@ tegrabl_error_t tegrabl_i2c_dev_read(struct tegrabl_i2c_dev *hi2cdev, void *buf,
 {
 	uint8_t *buffer = NULL;
 	uint8_t *pbuf = buf;
-	bool repeat_start = false;
+	bool repeat_start;
 	struct tegrabl_i2c *hi2c = NULL;
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 	uint32_t curr_reg_addr;
@@ -112,15 +112,16 @@ tegrabl_error_t tegrabl_i2c_dev_read(struct tegrabl_i2c_dev *hi2cdev, void *buf,
 		} else {
 			regs_to_transfer = DIV_FLOOR(MAX_I2C_TRANSFER_SIZE, bytes_per_reg);
 		}
-		repeat_start = 1;
+		regs_remaining -= regs_to_transfer;
+		repeat_start = regs_remaining ? true : false;
 
 		/* copy current slave register address */
 		i = 0;
 		do  {
-			buffer[i] = (curr_reg_addr >> (8U * i)) & 0xFFU;
+			buffer[i] = (uint8_t)((curr_reg_addr >> (8U * i)) & 0xFFU);
 		} while (++i < reg_addr_size);
 
-		error = tegrabl_i2c_write(hi2c, slave_addr, 1, buffer, i);
+		error = tegrabl_i2c_write(hi2c, slave_addr, true, buffer, i);
 		if (error != TEGRABL_NO_ERROR) {
 			TEGRABL_SET_HIGHEST_MODULE(error);
 			TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_SEND_FAILED, "register address 0x%08x", reg_addr);
@@ -137,11 +138,10 @@ tegrabl_error_t tegrabl_i2c_dev_read(struct tegrabl_i2c_dev *hi2cdev, void *buf,
 			goto fail;
 		}
 
-		j  += i;
+		j += i;
 
-		pr_trace("curr reg = %x, regs transferred = %d, regs remain = %d\n",
+		pr_trace("curr reg = %x, regs transferred = %u, regs remain = %u\n",
 			 curr_reg_addr, regs_to_transfer, regs_remaining);
-		regs_remaining -= regs_to_transfer;
 		curr_reg_addr += regs_to_transfer;
 	} while (regs_remaining != 0U);
 
@@ -165,7 +165,7 @@ tegrabl_error_t tegrabl_i2c_dev_write(struct tegrabl_i2c_dev *hi2cdev,
 {
 	uint8_t *buffer = NULL;
 	uint8_t *pbuf =  (uint8_t *)buf;
-	bool repeat_start = false;
+	bool repeat_start;
 	struct tegrabl_i2c *hi2c = NULL;
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 	uint32_t curr_reg_addr;
@@ -221,29 +221,28 @@ tegrabl_error_t tegrabl_i2c_dev_write(struct tegrabl_i2c_dev *hi2cdev,
 		} else {
 			regs_to_transfer = DIV_FLOOR(
 				(MAX_I2C_TRANSFER_SIZE - reg_addr_size), bytes_per_reg);
-			repeat_start = 1;
 		}
+		regs_remaining -= regs_to_transfer;
+		repeat_start = regs_remaining ? true : false;
 
 		/* copy current slave register address */
 		i = 0;
 		do  {
-			buffer[i] = (curr_reg_addr >> (8U * i)) & 0xFFU;
+			buffer[i] = (uint8_t)((curr_reg_addr >> (8U * i)) & 0xFFU);
 		} while (++i < reg_addr_size);
 
 		memcpy(&buffer[i], &pbuf[j], regs_to_transfer * bytes_per_reg);
 		i += regs_to_transfer * bytes_per_reg;
-		j += i;
+		j += regs_to_transfer * bytes_per_reg;
 
 		error = tegrabl_i2c_write(hi2c, slave_addr, repeat_start, buffer, i);
 		if (error != TEGRABL_NO_ERROR) {
 			TEGRABL_SET_HIGHEST_MODULE(error)
 			TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_SEND_FAILED, "register address 0x%08x", reg_addr);
-;
 			goto fail;
 		}
-		pr_trace("curr reg = %x, regs transferred = %d, regs remain = %d\n",
+		pr_trace("curr reg = %x, regs transferred = %u, regs remain = %u\n",
 			 curr_reg_addr, regs_to_transfer, regs_remaining);
-		regs_remaining -= regs_to_transfer;
 		curr_reg_addr += regs_to_transfer;
 	} while (regs_remaining != 0U);
 

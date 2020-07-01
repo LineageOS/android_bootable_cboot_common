@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -13,6 +13,7 @@
 #include "build_config.h"
 #include <stdint.h>
 #include <string.h>
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_drf.h>
 #include <tegrabl_malloc.h>
 #include <tegrabl_clock.h>
@@ -27,6 +28,7 @@
 #include <tegrabl_qspi_private.h>
 #include <inttypes.h>
 #include <tegrabl_qspi_soc_common.h>
+#include <tegrabl_io.h>
 
 #ifndef NV_ADDRESS_MAP_QSPI_BASE
 #define NV_ADDRESS_MAP_QSPI_BASE NV_ADDRESS_MAP_QSPI0_BASE
@@ -66,70 +68,26 @@
 #define AUX_INFO_ALREADY_OPEN 12
 #define AUX_INFO_CLOCK_CONFIG 13
 #define AUX_INFO_OPEN_PARAMETER 14
+#define AUX_INFO_OP_CODE 15 /* 0xF */
 
 typedef uint32_t flush_type_t;
 #define TX_FIFO_FLUSH 0
 #define RX_FIFO_FLUSH 1
 
-struct tegrabl_qspi_info {
-	uint32_t base_address;
-	uint8_t instance_id;
-	tegrabl_dmaio_t gpcdma_req;
-	tegrabl_dmaio_t bpmpdma_req;
-	uint32_t open_count;
-};
 
-struct tegrabl_qspi_handle {
-	struct tegrabl_qspi_info *qspi;
-	struct tegrabl_qspi_device_property *device;
-	struct tegrabl_qspi_platform_params *param;
-	struct tegrabl_qspi_ctxt qspi_context;
-	struct tegrabl_dma_xfer_params dma_params;
-	struct qspi_soc_info *qspi_info;
-	uint32_t dev_index;
-	uint32_t xfer_start_time;
-	uint32_t xfer_timeout;
-	uint32_t requested_bytes;
-	uint32_t remain_packet;
-	uint32_t req_dma_packet;
-	uint32_t req_pio_1w_packet;
-	uint32_t req_pio_4w_packet;
-	uint32_t ramain_dma_packet;
-	uint32_t ramain_pio_packet;
-	uint32_t ramain_pio_1w_packet;
-	uint32_t ramain_pio_4w_packet;
-	uint32_t req_pio_1w_bytes;
-	uint32_t req_pio_4w_bytes;
-	uint32_t req_dma_bytes;
-	uint32_t cur_req_dma_packet;
-	uint32_t cur_remain_dma_packet;
-	uint32_t cur_req_pio_packet;
-	uint32_t cur_remain_pio_packet;
-	uint32_t bits_pw;
-	uint32_t bytes_pw;
-	uint8_t *cur_buf;
-	uint64_t buf_addr;
-	uint32_t buf_len;
-	bool is_transmit;
-	uint32_t cur_xfer_index;
-	struct tegrabl_qspi_transfer *cur_xfer;
-	struct tegrabl_qspi_transfer *req_xfer;
-	uint32_t req_xfer_count;
-	bool cur_xfer_is_dma;
-	bool xfer_is_progress;
-	qspi_op_mode_t curr_op_mode;
-};
-
+/* Do not use dma channel 0. It is protected and can be accessed by secure OS only. */
 static struct tegrabl_qspi_info s_qspi_info[QSPI_MAX_INSTANCE] = {
 	{
 		.base_address = NV_ADDRESS_MAP_QSPI0_BASE,
 		.instance_id = 0U,
+		.dma_chan_id = 1U,
 		.open_count = 0U,
 		.gpcdma_req = GPCDMA_IO_QSPI0,
 		.bpmpdma_req = DMA_IO_QSPI0,
 	}, {
 		.base_address = NV_ADDRESS_MAP_QSPI1_BASE,
 		.instance_id = 1U,
+		.dma_chan_id = 2U,
 		.open_count = 0U,
 		.gpcdma_req = GPCDMA_IO_QSPI1,
 		.bpmpdma_req = DMA_IO_QSPI1,
@@ -198,7 +156,7 @@ static tegrabl_error_t configure_qspi_clk(struct tegrabl_qspi_info *qspi,
 
 	case TEGRABL_CLK_SRC_PLLC_OUT0:
 		pll_id = TEGRABL_CLK_PLL_ID_PLLC;
-		rate = 1020000U;
+		rate = 800000U;
 		break;
 
 	case TEGRABL_CLK_SRC_PLLC2_OUT0:
@@ -290,7 +248,7 @@ static tegrabl_error_t configure_qspi_clk(struct tegrabl_qspi_info *qspi,
 	}
 
 	qhandle->curr_op_mode = SDR_MODE;
-	tegrabl_qspi_sdr_enable(qspi->instance_id);
+	(void)tegrabl_qspi_sdr_enable(qspi->instance_id);
 	return err;
 }
 
@@ -576,7 +534,7 @@ static void qspi_abort_tx_dma(struct tegrabl_qspi_handle *qspi_handle)
 
 	qspi_stop_tx(qspi_handle->qspi);
 	tegrabl_dma_transfer_abort(qspi_context->dma_handle,
-							   qspi_handle->qspi->instance_id);
+							   qspi_handle->qspi->dma_chan_id);
 	qspi_hw_disable_transfer(qspi_handle->qspi);
 }
 
@@ -716,7 +674,7 @@ static tegrabl_error_t qspi_send_start_one_xfer_dma(
 
 	qspi_handle->cur_xfer_is_dma = true;
 
-	dma_blk_size = MIN(qspi_handle->ramain_dma_packet, QSPI_DMA_BLK_SIZE_MAX);
+	dma_blk_size = MIN(qspi_handle->ramain_dma_packet, qspi_handle->qspi_info->dma_max_size);
 
 	/* Number of bits to be transmitted per packet in unpacked mode = 32 */
 	rval = qspi_readl(qspi_handle->qspi, COMMAND);
@@ -762,7 +720,7 @@ static tegrabl_error_t qspi_send_start_one_xfer_dma(
 		/* No Action Required */
 	}
 
-	err = tegrabl_dma_transfer(qspi_context->dma_handle, qspi->instance_id,
+	err = tegrabl_dma_transfer(qspi_context->dma_handle, qspi->dma_chan_id,
 							   &qspi_handle->dma_params);
 	if (err != TEGRABL_NO_ERROR) {
 		TEGRABL_SET_HIGHEST_MODULE(err);
@@ -798,7 +756,7 @@ continue_wait:
 	}
 
 	err = tegrabl_dma_transfer_status(qspi_context->dma_handle,
-									  qspi->instance_id,
+									  qspi->dma_chan_id,
 					  				  &qspi_handle->dma_params);
 	if (err != TEGRABL_NO_ERROR) {
 		if (is_abort == true) {
@@ -857,7 +815,7 @@ static void qspi_abort_rx_dma(struct tegrabl_qspi_handle *qspi_handle)
 
 	qspi_stop_rx(qspi_handle->qspi);
 	tegrabl_dma_transfer_abort(qspi_context->dma_handle,
-							   qspi_handle->qspi->instance_id);
+							   qspi_handle->qspi->dma_chan_id);
 	qspi_hw_disable_transfer(qspi_handle->qspi);
 }
 
@@ -1073,7 +1031,7 @@ static tegrabl_error_t qspi_receive_start_one_xfer_dma(
 		/* No Action Required */
 	}
 
-	err = tegrabl_dma_transfer(qspi_context->dma_handle, qspi->instance_id,
+	err = tegrabl_dma_transfer(qspi_context->dma_handle, qspi->dma_chan_id,
 							   &qspi_handle->dma_params);
 	if (err != TEGRABL_NO_ERROR) {
 		TEGRABL_SET_HIGHEST_MODULE(err);
@@ -1110,7 +1068,7 @@ continue_wait:
 	do {
 		tegrabl_udelay(50);
 		err = tegrabl_dma_transfer_status(qspi_context->dma_handle,
-										  qspi->instance_id,
+										  qspi->dma_chan_id,
 										  &qspi_handle->dma_params);
 		if (err == TEGRABL_NO_ERROR) {
 			break;
@@ -1217,11 +1175,40 @@ static tegrabl_error_t qspi_start_remaining_one_xfer(
 	return TEGRABL_NO_ERROR;
 }
 
+static tegrabl_error_t program_dummy_cycles(
+		struct tegrabl_qspi_handle *qspi_handle)
+{
+	struct tegrabl_qspi_transfer *xfer = qspi_handle->cur_xfer;
+	struct tegrabl_qspi_info *qspi = qspi_handle->qspi;
+	uint32_t reg;
+
+	if ((qspi_handle->is_transmit == true) && (xfer->write_len < 6UL) &&
+		(xfer->dummy_cycles != 0U)) {
+		reg = qspi_readl(qspi, MISC);
+		reg = NV_FLD_SET_DRF_NUM(QSPI, MISC, NUM_OF_DUMMY_CLK_CYCLES,
+				xfer->dummy_cycles, reg);
+		qspi_writel(qspi, MISC, reg);
+	}
+
+	if (xfer->op_mode != qspi_handle->curr_op_mode) {
+		if (xfer->op_mode == DDR_MODE) {
+			(void)tegrabl_qspi_ddr_enable(qspi->instance_id);
+		} else if (xfer->op_mode == SDR_MODE) {
+			(void)tegrabl_qspi_sdr_enable(qspi->instance_id);
+		} else {
+			return TEGRABL_ERR_BAD_PARAMETER;
+		}
+		qspi_handle->curr_op_mode = xfer->op_mode;
+	}
+	return TEGRABL_NO_ERROR;
+}
+
 static tegrabl_error_t qspi_start_one_transaction(
 		struct tegrabl_qspi_handle *qspi_handle)
 {
 	struct tegrabl_qspi_transfer *xfer = qspi_handle->cur_xfer;
 	struct tegrabl_qspi_info *qspi = qspi_handle->qspi;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	uint32_t reg;
 	bool pio_only = false;
 	uint32_t bpw = 0;
@@ -1289,24 +1276,91 @@ static tegrabl_error_t qspi_start_one_transaction(
 							 (qspi_handle->bits_pw - 1UL), reg);
 	qspi_writel(qspi, COMMAND, reg);
 
-	/* Program Dummy Cycles for TX */
-	if ((qspi_handle->is_transmit == true) && (xfer->write_len < 6UL) &&
-		(xfer->dummy_cycles !=0U)) {
-		reg = qspi_readl(qspi, MISC);
-		reg = NV_FLD_SET_DRF_NUM(QSPI, MISC, NUM_OF_DUMMY_CLK_CYCLES,
-				xfer->dummy_cycles, reg);
-		qspi_writel(qspi, MISC, reg);
+	err = program_dummy_cycles(qspi_handle);
+	if (err != TEGRABL_NO_ERROR) {
+		return TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, AUX_INFO_OP_CODE);
 	}
 
-	if (xfer->op_mode != qspi_handle->curr_op_mode) {
-		if (xfer->op_mode == DDR_MODE) {
-			tegrabl_qspi_ddr_enable(qspi->instance_id);
-		} else if (xfer->op_mode == SDR_MODE) {
-			tegrabl_qspi_sdr_enable(qspi->instance_id);
-		}
-		qspi_handle->curr_op_mode = xfer->op_mode;
-	}
 	return qspi_start_remaining_one_xfer(qspi_handle, NULL);
+}
+
+static tegrabl_error_t qspi_wait_transfer(struct tegrabl_qspi_handle *qspi_handle,
+											bool is_abort)
+{
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	if (qspi_handle->is_transmit) {
+		if (qspi_handle->cur_xfer_is_dma == true) {
+			err = qspi_send_wait_one_xfer_dma(qspi_handle, is_abort);
+		} else {
+			err = qspi_send_wait_one_xfer_pio(qspi_handle, is_abort);
+		}
+
+		if (err == TEGRABL_NO_ERROR) {
+			return TEGRABL_NO_ERROR;
+		} else {
+			return err;
+		}
+	} else {
+		if (qspi_handle->cur_xfer_is_dma == true) {
+			err = qspi_receive_wait_one_xfer_dma(qspi_handle, is_abort);
+		} else {
+			err = qspi_receive_wait_one_xfer_pio(qspi_handle, is_abort);
+		}
+
+		if (err == TEGRABL_NO_ERROR) {
+			return TEGRABL_NO_ERROR;
+		} else {
+			return err;
+		}
+	}
+}
+
+static tegrabl_error_t qspi_xfer_wait(
+						struct tegrabl_qspi_handle *qspi_handle,
+						uint32_t timeout_us, bool is_abort)
+{
+	struct tegrabl_qspi_device_property *qdev = qspi_handle->device;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	tegrabl_error_t e_reason;
+	bool in_progress;
+
+	qspi_handle->xfer_timeout = timeout_us;
+
+	while (true) {
+		err = qspi_wait_transfer(qspi_handle, is_abort);
+		e_reason = TEGRABL_ERROR_REASON(err);
+		if (e_reason == TEGRABL_ERR_XFER_IN_PROGRESS) {
+			return err;
+		}
+		if (err != TEGRABL_NO_ERROR) {
+			goto clean_exit;
+		}
+
+		err = qspi_start_remaining_one_xfer(qspi_handle, &in_progress);
+		if (err != TEGRABL_NO_ERROR) {
+			goto clean_exit;
+		}
+
+		if (in_progress == true) {
+			continue;
+		}
+		qspi_handle->cur_xfer_index++;
+		if (qspi_handle->cur_xfer_index >= qspi_handle->req_xfer_count) {
+			err = TEGRABL_NO_ERROR;
+			goto clean_exit;
+		}
+
+		qspi_handle->cur_xfer = &qspi_handle->req_xfer[qspi_handle->cur_xfer_index];
+		err = qspi_start_one_transaction(qspi_handle);
+		if (err != TEGRABL_NO_ERROR) {
+			goto clean_exit;
+		}
+	}
+
+clean_exit:
+	qspi_set_chip_select_level(qspi_handle->qspi, qdev, false);
+	qspi_handle->xfer_is_progress = false;
+	return err;
 }
 
 static tegrabl_error_t qspi_check_transfer_status(
@@ -1320,63 +1374,37 @@ static tegrabl_error_t qspi_check_transfer_status(
 
 	qspi_handle->xfer_timeout = timeout_us;
 
-continue_wait:
-	/* Wait for one transfer to complete */
-	if (qspi_handle->is_transmit) {
-		if (qspi_handle->cur_xfer_is_dma == true) {
-			err = qspi_send_wait_one_xfer_dma(qspi_handle, is_abort);
-		} else {
-			err = qspi_send_wait_one_xfer_pio(qspi_handle, is_abort);
-		}
-		if (err == TEGRABL_NO_ERROR) {
-			goto continue_remain_xfer;
-		}
-
+	while (true) {
+		err = qspi_wait_transfer(qspi_handle, is_abort);
 		e_reason = TEGRABL_ERROR_REASON(err);
 		if (e_reason == TEGRABL_ERR_XFER_IN_PROGRESS) {
 			return err;
 		}
-		goto clean_exit;
-	} else {
-		if (qspi_handle->cur_xfer_is_dma == true) {
-			err = qspi_receive_wait_one_xfer_dma(qspi_handle, is_abort);
-		} else {
-			err = qspi_receive_wait_one_xfer_pio(qspi_handle, is_abort);
+		if (err != TEGRABL_NO_ERROR) {
+			goto clean_exit;
 		}
-		if (err == TEGRABL_NO_ERROR) {
-			goto continue_remain_xfer;
+		err = qspi_start_remaining_one_xfer(qspi_handle, &in_progress);
+		if (err != TEGRABL_NO_ERROR) {
+			goto clean_exit;
+		}
+		if (in_progress == true) {
+			continue;
+		}
+		qspi_handle->cur_xfer_index++;
+		if (qspi_handle->cur_xfer_index >= qspi_handle->req_xfer_count) {
+			err = TEGRABL_NO_ERROR;
+			goto clean_exit;
 		}
 
-		e_reason = TEGRABL_ERROR_REASON(err);
-		if (e_reason == TEGRABL_ERR_XFER_IN_PROGRESS) {
-			return err;
+		qspi_handle->cur_xfer = &qspi_handle->req_xfer[qspi_handle->cur_xfer_index];
+		err = qspi_start_one_transaction(qspi_handle);
+		if (err != TEGRABL_NO_ERROR) {
+			goto clean_exit;
 		}
-		goto clean_exit;
+		if ((qspi_handle->cur_xfer_is_dma == true) && (qspi_handle->is_async == true)) {
+			return TEGRABL_NO_ERROR;
+		}
 	}
-
-continue_remain_xfer:
-	err = qspi_start_remaining_one_xfer(qspi_handle, &in_progress);
-	if (err != TEGRABL_NO_ERROR) {
-		goto clean_exit;
-	}
-
-	if (in_progress == true) {
-		goto continue_wait;
-	}
-
-	qspi_handle->cur_xfer_index++;
-	if (qspi_handle->cur_xfer_index >= qspi_handle->req_xfer_count) {
-		err = TEGRABL_NO_ERROR;
-		goto clean_exit;
-	}
-
-	qspi_handle->cur_xfer = &qspi_handle->req_xfer[qspi_handle->cur_xfer_index];
-	err = qspi_start_one_transaction(qspi_handle);
-	if (err != TEGRABL_NO_ERROR) {
-		goto clean_exit;
-	}
-
-	goto continue_wait;
 
 clean_exit:
 	qspi_set_chip_select_level(qspi_handle->qspi, qdev, false);
@@ -1384,11 +1412,32 @@ clean_exit:
 	return err;
 }
 
+static tegrabl_error_t qspi_validate_packet(
+				struct tegrabl_qspi_transfer *xfer,
+				uint64_t buf_addr, uint32_t len)
+{
+	if (len == 0U) {
+		return TEGRABL_ERR_INVALID;
+	}
+
+	if (xfer->packet_bit_length == 32U) {
+		if ((len & 0x3U) != 0U) {
+			return TEGRABL_ERR_INVALID;
+		}
+
+		if ((buf_addr & 0x3U) != 0U) {
+			return TEGRABL_ERR_INVALID;
+		}
+	}
+	return TEGRABL_NO_ERROR;
+}
+
 static tegrabl_error_t qspi_validate_parameters(
 				struct tegrabl_qspi_transfer *p_transfers,
 				uint32_t no_of_transfers)
 {
 	struct tegrabl_qspi_transfer *xfer;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	uint64_t buf_addr = 0;
 	uint32_t len;
 	uint32_t i;
@@ -1417,18 +1466,9 @@ static tegrabl_error_t qspi_validate_parameters(
 			len = xfer->read_len;
 		}
 
-		if (len == 0U) {
+		err = qspi_validate_packet(xfer, buf_addr, len);
+		if (err != TEGRABL_NO_ERROR) {
 			goto error;
-		}
-
-		if (xfer->packet_bit_length == 32U) {
-			if ((len & 0x3U) != 0U) {
-				goto error;
-			}
-
-			if ((buf_addr & 0x3U) != 0U) {
-				goto error;
-			}
 		}
 	}
 
@@ -1474,10 +1514,6 @@ tegrabl_error_t tegrabl_qspi_transaction(
 		return err;
 	}
 
-	if (timeout_us == 0U) {
-		return err;
-	}
-
 	return qspi_check_transfer_status(qspi_handle, timeout_us, true);
 }
 
@@ -1486,6 +1522,13 @@ tegrabl_error_t tegrabl_qspi_check_transfer_status(
 					uint32_t timeout_us, bool is_abort)
 {
 	return qspi_check_transfer_status(qspi_handle, timeout_us, is_abort);
+}
+
+tegrabl_error_t tegrabl_qspi_xfer_wait(
+					struct tegrabl_qspi_handle *qspi_handle,
+					uint32_t timeout_us, bool is_abort)
+{
+	return qspi_xfer_wait(qspi_handle, timeout_us, is_abort);
 }
 
 tegrabl_error_t tegrabl_qspi_open(uint32_t instance,

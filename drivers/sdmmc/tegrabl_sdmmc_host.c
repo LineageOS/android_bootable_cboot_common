@@ -12,6 +12,7 @@
 
 #include <string.h>
 #include <stdint.h>
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_blockdev.h>
 #include <tegrabl_sdmmc_defs.h>
 #include <tegrabl_sdmmc_protocol.h>
@@ -1117,16 +1118,16 @@ void sdmmc_set_num_blocks(uint32_t block_size, uint32_t num_blocks,
 {
 	uint32_t reg;
 
+	/*
+	* DMA512K: This makes controller halt when ever it detects 512KB boundary.
+	* When controller halts on this boundary, need to clear the
+	* dma block boundary event and write SDMA base address again.
+	* Writing address again triggers controller to continue.
+	* We can't disable this. We have to live with it.
+	*/
 	reg = NV_DRF_NUM(SDMMCAB, BLOCK_SIZE_BLOCK_COUNT, BLOCKS_COUNT,
 			num_blocks) |
 			NV_DRF_DEF(SDMMCAB, BLOCK_SIZE_BLOCK_COUNT,
-		/*
-		* This makes controller halt when ever it detects 512KB boundary.
-		* When controller halts on this boundary, need to clear the
-		* dma block boundary event and write SDMA base address again.
-		* Writing address again triggers controller to continue.
-		* We can't disable this. We have to live with it.
-		*/
 				HOST_DMA_BUFFER_SIZE, DMA512K) |
 			NV_DRF_NUM(SDMMCAB, BLOCK_SIZE_BLOCK_COUNT,
 				XFER_BLOCK_SIZE_11_0, block_size);

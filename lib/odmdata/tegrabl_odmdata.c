@@ -21,6 +21,7 @@
 #include <tegrabl_malloc.h>
 #include <nvboot_bct.h>
 #include <string.h>
+#include <tegrabl_io.h>
 
 static uint32_t odmdata;
 
@@ -28,8 +29,12 @@ extern struct odmdata_params odmdata_array[ODMDATA_PROP_TYPE_MAX];
 
 static uint32_t odmdata_get_offset(void)
 {
-	return (uint32_t)NVBOOT_BCT_CUSTOMER_DATA_SIZE - sizeof(NvBctAuxInternalData) +
-		   offsetof(NvBctAuxInternalData, CustomerOption);
+	int32_t temp1;
+
+	temp1 = NVBOOT_BCT_CUSTOMER_DATA_SIZE;
+
+	return (uint32_t)temp1 - sizeof(NvBctAuxInternalData) +
+					 offsetof(NvBctAuxInternalData, CustomerOption);
 }
 
 uint32_t tegrabl_odmdata_get(void)
@@ -107,7 +112,7 @@ done:
 	return err;
 }
 
-tegrabl_error_t tegrabl_odmdata_set(uint32_t val)
+tegrabl_error_t tegrabl_odmdata_set(uint32_t val, bool is_storage_flush)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	NvBootConfigTable * pbct;
@@ -120,11 +125,13 @@ tegrabl_error_t tegrabl_odmdata_set(uint32_t val)
 
 	NV_WRITE32((uintptr_t)&(pbct->CustomerData) + odmdata_get_offset(), val);
 
-	/* Update odmdata to BCT partition on storage */
-	err = flush_odmdata_to_storage(val);
-	if (err != TEGRABL_NO_ERROR) {
-		pr_error("Failed to flush odmdata to storage\n");
-		return err;
+	if (true == is_storage_flush) {
+		/* Update odmdata to BCT partition on storage */
+		err = flush_odmdata_to_storage(val);
+		if (err != TEGRABL_NO_ERROR) {
+			pr_error("Failed to flush odmdata to storage\n");
+			return err;
+		}
 	}
 
 	return TEGRABL_NO_ERROR;

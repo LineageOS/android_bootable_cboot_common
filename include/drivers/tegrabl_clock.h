@@ -15,6 +15,7 @@
 #include <stdbool.h>
 #include <tegrabl_module.h>
 #include <tegrabl_error.h>
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_soc_clock.h>
 
 #if defined(__cplusplus)

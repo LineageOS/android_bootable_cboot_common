@@ -14,6 +14,7 @@
 
 #include <tegrabl_nvdisp.h>
 #include <tegrabl_addressmap.h>
+#include <tegrabl_io.h>
 
 /* macro tegra sor clock */
 #define TEGRA_SOR_SAFE_CLK 1

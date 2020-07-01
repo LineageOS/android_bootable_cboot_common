@@ -62,8 +62,8 @@ tegrabl_error_t sdmmc_clock_init(uint32_t instance, uint32_t rate,
 								 uint32_t source)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	uint32_t srate;
 
-	TEGRABL_UNUSED(rate);
 	TEGRABL_UNUSED(source);
 
 	err = tegrabl_car_rst_set(TEGRABL_MODULE_SDMMC, (uint8_t)instance);
@@ -77,6 +77,11 @@ tegrabl_error_t sdmmc_clock_init(uint32_t instance, uint32_t rate,
 	}
 
 	err = tegrabl_car_set_clk_src(TEGRABL_MODULE_SDMMC, (uint8_t)instance, (uint8_t)source);
+	if (err != TEGRABL_NO_ERROR) {
+		return err;
+	}
+
+	err = tegrabl_car_set_clk_rate(TEGRABL_MODULE_SDMMC, (uint8_t)instance, rate, &srate);
 	if (err != TEGRABL_NO_ERROR) {
 		return err;
 	}
@@ -1260,10 +1265,9 @@ tegrabl_error_t sdmmc_block_io(bnum_t block, bnum_t count, uint8_t *buf,
 		pr_trace("cur_Start_Sector = %d, cur_num_sectors = %d,cmd_arg = %d\n", current_start_sector,
 				 current_num_sectors, cmd_arg);
 
-		dma_dir = (is_write != 0U) ? TEGRABL_DMA_TO_DEVICE :
-														TEGRABL_DMA_FROM_DEVICE;
+		dma_dir = (is_write != 0U) ? TEGRABL_DMA_TO_DEVICE : TEGRABL_DMA_FROM_DEVICE;
 		dma_addr = tegrabl_dma_map_buffer(TEGRABL_MODULE_SDMMC,
-			hsdmmc->controller_id, buf,
+			(uint8_t)(hsdmmc->controller_id), buf,
 			current_num_sectors << hsdmmc->block_size_log2, dma_dir);
 
 		/* Setup Dma. */
@@ -1629,7 +1633,7 @@ tegrabl_error_t sdmmc_send_cmd0_cmd1(uint32_t instance,
 		struct tegrabl_sdmmc_platform_params *emmc_params)
 {
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
-	struct tegrabl_sdmmc local_hsdmmc = { 0U };
+	struct tegrabl_sdmmc local_hsdmmc = { 0 };
 	struct tegrabl_sdmmc *hsdmmc = &local_hsdmmc;
 
 	if (emmc_params == NULL) {

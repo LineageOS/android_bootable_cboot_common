@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -17,6 +17,7 @@
 #include <tegrabl_debug.h>
 #include <tegrabl_timer.h>
 #include <tegrabl_blockdev.h>
+#include <tegrabl_dmamap.h>
 
 #define MAX_SDMMC_INSTANCES 4UL
 
@@ -218,7 +219,7 @@ struct tegrabl_sdmmc {
 
 	/* context required for non-blocking xfer */
 	void *last_io_buf;
-	bool last_io_dma_dir;
+	tegrabl_dma_data_direction last_io_dma_dir;
 	uint32_t last_io_num_sectors;
 	bnum_t last_xfer_blocks;
 	void *last_xfer_buf;

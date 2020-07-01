@@ -12,10 +12,12 @@
 
 #include <tegrabl_debug.h>
 #include <tegrabl_error.h>
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_clock.h>
 #include <tegrabl_timer.h>
 #include <tegrabl_malloc.h>
 #include <arsor1.h>
+#include <tegrabl_io.h>
 #include <ardisplay.h>
 #include <tegrabl_drf.h>
 #include <tegrabl_sor.h>
@@ -46,7 +48,7 @@ tegrabl_error_t sor_init(struct sor_data **phsor, struct tegrabl_display_sor_dtb
 	struct sor_data *hsor;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
-	hsor = tegrabl_malloc(sizeof(struct sor_data));
+	hsor = tegrabl_calloc(1, sizeof(struct sor_data));
 	if (hsor == NULL) {
 		pr_error("%s, memory allocation failed\n", __func__);
 		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);

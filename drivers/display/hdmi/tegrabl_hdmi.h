@@ -220,6 +220,7 @@ struct hdmi {
 	struct sor_data *sor;
 	struct avi_infoframe avi;
 	struct hdmi_vendor_infoframe vsi;
+	bool is_panel_hdmi; /* true if hdmi, false if dvi */
 };
 
 #endif

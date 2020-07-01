@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -42,14 +42,6 @@ do { \
 
 /* Read time out of 1 second. */
 #define QSPI_HW_TIMEOUT			1000000
-
-/*
- * QSPI context structure
- */
-struct tegrabl_qspi_ctxt {
-	tegrabl_dmatype_t dma_type;
-	tegrabl_gpcdma_handle_t dma_handle;
-};
 
 void qspi_dump_registers(void);
 

@@ -23,9 +23,11 @@ tegrabl_error_t qspi_flash_qpi_mode_enable_spansion(struct tegrabl_qspi_flash_dr
 
 #endif /* #if !defined(CONFIG_ENABLE_BLOCKDEV_BASIC) */
 
-tegrabl_error_t qspi_flash_x4_enable_spansion(struct tegrabl_qspi_flash_driver_info *hqfdi, uint8_t bset, bool verify);
+tegrabl_error_t qspi_flash_x4_enable_spansion(struct tegrabl_qspi_flash_driver_info *hqfdi, uint8_t bset);
 
+#if !defined(CONFIG_DISABLE_QSPI_FLASH_WRITE_512B_PAGE)
 tegrabl_error_t qspi_flash_page_512bytes_enable_spansion(struct tegrabl_qspi_flash_driver_info *hqfdi);
+#endif
 
 #endif /* INCLUDED_TEGRABL_QSPI_FLASH_SPANSION_H*/
 

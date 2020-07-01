@@ -12,6 +12,7 @@
 
 #include <tegrabl_debug.h>
 #include <tegrabl_error.h>
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_clock.h>
 #include <tegrabl_timer.h>
 #include <tegrabl_malloc.h>

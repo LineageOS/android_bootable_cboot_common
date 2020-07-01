@@ -673,7 +673,6 @@ static tegrabl_error_t xhci_ring_doorbell_wait(struct xusb_host_context *ctx,
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	struct TRB *trb;
 	uint32_t ep_ring_index;
-	uint32_t i;
 
 	if (ep_index == 0) {
 		ep_ring_index = 0;
@@ -687,24 +686,7 @@ static tegrabl_error_t xhci_ring_doorbell_wait(struct xusb_host_context *ctx,
 
 	pr_debug("%s TRB: from @ %p\n", (ep_index == 0) ? "CONTROL" : "TRANSFER",
 			 ctx->ep_ring[ep_ring_index].enque_start_ptr);
-	trb = (struct TRB *)ctx->ep_ring[ep_ring_index].enque_start_ptr;
-	for (i = 0; i < 4; i++) {
-		//xhci_print_trb(trb);
-		if ((trb->field[3] & TRB_TYPE_BITMASK) == TRB_TYPE(TRB_LINK)) {
-			trb = (struct TRB *)ctx->ep_ring[ep_index].first;
-			i--;
-		} else {
-			trb++;
-		}
-	}
-/*
-	xhci_print_slot_ctx(ctx, 0);
-	xhci_print_ep_ctx(ctx, 0, 3, 0);
-	xhci_print_slot_ctx(ctx, 1);
-	xhci_print_ep_ctx(ctx, 0, 3, 1);
-	xhci_print_erst(ctx);
-	xhci_dump_ir_set_regs();
-*/
+
 	tegrabl_dma_map_buffer(TEGRABL_MODULE_XUSB_HOST, 0, (void *)&ctx->dev_context[ep_index+1],
 						   sizeof(struct EP), TEGRABL_DMA_TO_DEVICE);
 	tegrabl_udelay(2);

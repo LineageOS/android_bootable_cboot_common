@@ -316,9 +316,10 @@ typedef uint32_t tegrabl_err_reason_t;
 #define TEGRABL_ERR_CONFIG_STORAGE 0x7BU
 #define TEGRABL_ERR_USBMSD 0x7CU
 #define TEGRABL_ERR_CBO 0x7DU
+#define TEGRABL_ERR_SHELL 0x7EU
 
 /**** This should be last ****/
-#define TEGRABL_ERR_MODULE_END 0x7EU
+#define TEGRABL_ERR_MODULE_END 0x7FU
 #define TEGRABL_ERR_MODULE_MAX 0xffU
 
 typedef uint32_t tegrabl_err_module_t;

@@ -14,6 +14,7 @@
 
 struct qspi_soc_info {
 	uint32_t trig_len;
+	uint32_t dma_max_size;
 };
 
 void qspi_get_soc_info(struct qspi_soc_info **gqspi_info);

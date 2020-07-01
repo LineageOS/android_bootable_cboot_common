@@ -15,9 +15,11 @@
 #include <tegrabl_debug.h>
 #include <tegrabl_addressmap.h>
 #include <string.h>
+#include <tegrabl_ar_macro.h>
 #include <arhsp_dbell.h>
 #include <tegrabl_ipc_soc.h>
 #include <tegrabl_soc_misc.h>
+#include <tegrabl_io.h>
 
 #define KB (1024LU)
 #define MB (1024*KB)
@@ -274,14 +276,14 @@ static tegrabl_error_t tegrabl_connect_bpmp(void)
 		timeout = TIMEOUT_RESPONSE_FROM_BPMP;
 		do {
 			/* Check if BPMP FW is ready, else wait */
-			if (tegrabl_can_ccplex_ring_bpmpdb())
+			if (tegrabl_can_ccplex_ring_bpmpdb()) {
 				break;
+        	}
+			tegrabl_udelay(delay_us); /* bpmp turn-around time */
+			timeout -= delay_us;
+		} while (timeout > 0);
 
-		tegrabl_udelay(delay_us); /* bpmp turn-around time */
-		timeout -= delay_us;
-		} while (timeout);
-
-		if (!timeout)
+		if (timeout <= 0)
 			pr_info("%s: Waiting for BPMP FW readiness..\n", __func__);
 		else
 			break;
@@ -365,9 +367,10 @@ fail:
  */
 tegrabl_error_t tegrabl_ipc_init(void)
 {
+	tegrabl_error_t e = TEGRABL_NO_ERROR;
 	tegrabl_ipc_callbacks(&s_ipc_callbacks);
-	s_ipc_callbacks->connect();
-	return TEGRABL_NO_ERROR;
+	e = s_ipc_callbacks->connect();
+	return e;
 }
 
 /*

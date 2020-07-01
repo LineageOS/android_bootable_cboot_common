@@ -721,13 +721,13 @@ tegrabl_error_t tegrabl_usbmsd_bdev_open(uint32_t instance)
 		goto fail;
 	}
 
-	/* Check if enumerated device belongs to MSD class */
-	if (host_ctx->enum_dev.class != USB_MSD_CLASS) {
-		pr_error("Enumerated device doesn't belong to MSD class!!\n");
+	/* Check if enumerated device belongs to MSD class and protocol is bulk-only */
+	if ((host_ctx->enum_dev.class != USB_MSD_CLASS) || (host_ctx->enum_dev.protocol != BULK_PROTOCOL)) {
+		pr_error("Enumerated device doesn't belong to MSD class or protocol is not bulk-only!!\n");
 		error = TEGRABL_ERROR(TEGRABL_ERR_INIT_FAILED,
 				      TEGRABL_USBMSD_BDEV_OPEN);
 		TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_INIT_FAILED,
-					   "enumerated usb device is not MSD");
+			"Enumerated USB device either not an MSD device or supported protocol is not BULK_ONLY protocol");
 		goto fail;
 	}
 

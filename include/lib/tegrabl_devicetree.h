@@ -26,12 +26,8 @@
 typedef uint32_t tegrabl_dt_type_t;
 #define TEGRABL_DT_BL 0
 #define TEGRABL_DT_KERNEL 1
-#if defined(CONFIG_ENABLE_CBO)
 #define TEGRABL_DT_CBO 2
 #define TEGRABL_DT_COUNT 3
-#else
-#define TEGRABL_DT_COUNT 2
-#endif
 
 /**
  * @brief Get the next node's offset

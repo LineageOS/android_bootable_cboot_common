@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <inttypes.h>
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_sata.h>
 #include <tegrabl_error.h>
 #include <tegrabl_debug.h>
@@ -31,6 +32,7 @@
 #include <tegrabl_uphy.h>
 #include <tegrabl_soc_misc.h>
 #include <tegrabl_sata_err_aux.h>
+#include <tegrabl_io.h>
 
 /**
  * @brief Dumps ahci registers

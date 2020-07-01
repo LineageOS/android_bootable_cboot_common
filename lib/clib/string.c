@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2015-2019, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -34,7 +34,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <ctype.h>
 #include <clib_dma.h>
+#include <tegrabl_malloc.h>
 
 typedef long word;
 
@@ -315,6 +317,28 @@ int strncmp(const char* s1, const char* s2, size_t n)
 	return 0;
 }
 
+int strncasecmp(const char* s1, const char* s2, size_t n)
+{
+	const char *p1 = s1;
+	const char *p2 = s2;
+	int result;
+
+	if ((p1 == p2) || (n == 0)) {
+		return 0;
+	}
+
+	while ((result = (tolower((int)*p1) - tolower((int)*p2))) == 0) {
+		--n;
+		if ((*p1 == '\0') || (n == 0)) {
+			break;
+		}
+		p1++;
+		p2++;
+	}
+
+	return result;
+}
+
 char* strcpy(char* dest, const char* src)
 {
 	char* save = dest;
@@ -351,12 +375,13 @@ char* strncpy(char* dest, const char* src, size_t n)
 size_t strlen(const char* str)
 {
 	const char* s = str;
-
+	int32_t strdiff;
 	while (*s != '\0') {
 		s++;
 	}
 
-	return (size_t)(s - str);
+	strdiff = s - str;
+	return (size_t)(strdiff);
 }
 
 size_t strlcpy(char *dest, char const *src, size_t n)
@@ -490,4 +515,19 @@ char *strtok(const char *str, const char *delim)
 	}
 	___strtok = send;
 	return sbegin;
+}
+
+char *strdup(const char *str)
+{
+	size_t len;
+	char *copy = NULL;
+
+	len = strlen(str) + 1;
+	copy = tegrabl_malloc(len);
+	if (copy == NULL) {
+		return NULL;
+	}
+	memcpy(copy, str, len);
+
+	return copy;
 }

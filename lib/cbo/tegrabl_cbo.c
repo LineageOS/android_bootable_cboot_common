@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2018-2019, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -18,9 +18,38 @@
 #include <tegrabl_cbo.h>
 #include <string.h>
 
-#if defined(CONFIG_ENABLE_CBO)
+#define NVIDIA_BOOT_PARTITION_GUID	"6637b54f-c21b-48a7-952e-a8d071029d6b"
+#define CBO_DT_SIZE					(16 * 1024) /* 16KB */
 
 static struct cbo_info g_cbo_info;
+
+static uint8_t default_boot_order[NUM_SECONDARY_STORAGE_DEVICES] = {
+	/* Specified in the order of priority from top to bottom */
+	BOOT_FROM_SD,
+	BOOT_FROM_USB,
+	BOOT_FROM_BUILTIN_STORAGE,
+	BOOT_FROM_NETWORK,
+	BOOT_DEFAULT,
+};
+
+char *boot_cfg_vars[] = {
+	"boot-order",
+	"tftp-server-ip",
+	"dhcp-enabled",
+	"static-ip",
+	"ip-netmask",
+	"ip-gateway",
+	"boot_pt_guid",
+};
+
+static struct boot_devices g_boot_devices[] = {
+	{"sd",		BOOT_FROM_SD},
+	{"usb",		BOOT_FROM_USB},
+	{"net",		BOOT_FROM_NETWORK},
+	{"emmc",	BOOT_FROM_BUILTIN_STORAGE},
+	{"ufs",		BOOT_FROM_BUILTIN_STORAGE},
+	{"sata",	BOOT_FROM_BUILTIN_STORAGE},
+};
 
 tegrabl_error_t tegrabl_read_cbo(char *part_name)
 {
@@ -45,14 +74,14 @@ tegrabl_error_t tegrabl_read_cbo(char *part_name)
 	partition_size = partition.partition_info->total_size;
 	pr_debug("%s: CBO partiton opened successfully.\n", __func__);
 
-	cbo_buf = tegrabl_calloc(partition_size, 1);
+	cbo_buf = tegrabl_calloc(CBO_DT_SIZE, 1);
 	if (cbo_buf == NULL) {
 		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
 		pr_error("%s: Not enough memory for buffer (%ld bytes)\n", __func__, partition_size);
 		goto fail;
 	}
 
-	err = tegrabl_partition_read(&partition, cbo_buf, partition_size);
+	err = tegrabl_partition_read(&partition, cbo_buf, CBO_DT_SIZE);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_error("%s Failed to read %s partition\n", __func__, part_name);
 		goto fail;
@@ -75,44 +104,15 @@ fail:
 	return err;
 }
 
-static int8_t *parse_boot_order(void *fdt, int32_t offset)
+static tegrabl_error_t map_boot_priority(uint32_t count, const char **boot_order, uint8_t **boot_priority)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
-	const char **boot_order = NULL;
-	int8_t *boot_priority = NULL;
-	uint32_t count, i;
+	uint8_t *boot_p;
+	uint32_t i, j;
 
-	pr_debug("%s: Entry\n", __func__);
-
-	err = tegrabl_dt_get_prop_count_strings(fdt, offset, "boot-order", &count);
-	if (err != TEGRABL_NO_ERROR) {
-		pr_error("%s: Failed to get number of boot devices from CBO file.\n", __func__);
-		goto fail;
-	}
-
-	pr_debug("%s: num of boot devices = %u\n", __func__, count);
-
-	boot_order = tegrabl_calloc(sizeof(char *), count);
-	if (boot_order == NULL) {
+	boot_p = tegrabl_calloc(sizeof(uint8_t), count + 1);
+	if (boot_p == NULL) {
 		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 1);
-		pr_error("%s: memory allocation failed for boot_order\n", __func__);
-		goto fail;
-	}
-
-	err = tegrabl_dt_get_prop_string_array(fdt, offset, "boot-order", boot_order, &count);
-	if (err != TEGRABL_NO_ERROR) {
-		pr_error("%s: boot-order info not found in CBO options file\n", __func__);
-		goto fail;
-	}
-
-	pr_info("%s: boot-order :-\n", __func__);
-	for (i = 0; i < count; i++) {
-		pr_info("%d.%s\n", i + 1, boot_order[i]);
-	}
-
-	boot_priority = tegrabl_calloc(sizeof(uint8_t), count + 1);
-	if (boot_priority == NULL) {
-		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 2);
 		pr_error("%s: memory allocation failed for boot_priority\n", __func__);
 		goto fail;
 	}
@@ -123,31 +123,68 @@ static int8_t *parse_boot_order(void *fdt, int32_t offset)
 	  * that requires linux_load code to be updated accordingly.
 	  */
 	for (i = 0; i < count; i++) {
-		if (!strncmp(boot_order[i], "sd", 2)) {
-			boot_priority[i] = BOOT_FROM_SD;
-		} else if (!strncmp(boot_order[i], "usb", 3)) {
-			boot_priority[i] = BOOT_FROM_USB;
-		} else if (!strncmp(boot_order[i], "net", 3)) {
-			boot_priority[i] = BOOT_FROM_NETWORK;
-		} else if (!strncmp(boot_order[i], "emmc", 4)) {
-			boot_priority[i] = BOOT_FROM_BUILTIN_STORAGE;
-		} else if (!strncmp(boot_order[i], "ufs", 3)) {
-			boot_priority[i] = BOOT_FROM_BUILTIN_STORAGE;
-		} else if (!strncmp(boot_order[i], "sata", 4)) {
-			boot_priority[i] = BOOT_FROM_BUILTIN_STORAGE;
-		} else {
-			boot_priority[i] = BOOT_INVALID;
+		for (j = 0; j < ARRAY_SIZE(g_boot_devices); j++) {
+			if (!strncmp(boot_order[i], g_boot_devices[j].name, strlen(g_boot_devices[j].name))) {
+				boot_p[i] = g_boot_devices[j].device_id;
+				break;
+			}
 		}
+	}
+	boot_p[i] = BOOT_DEFAULT;
+
+	*boot_priority = boot_p;
+
+fail:
+	if (err != TEGRABL_NO_ERROR) {
+		tegrabl_free(boot_p);
+		boot_p = NULL;
+	}
+	return err;
+}
+
+static tegrabl_error_t parse_boot_order(void *fdt, int32_t offset, uint8_t **boot_priority)
+{
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	const char **boot_order = NULL;
+	uint32_t count, i;
+
+	pr_debug("%s: Entry\n", __func__);
+
+	err = tegrabl_dt_get_prop_count_strings(fdt, offset, boot_cfg_vars[0], &count);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("Failed to get number of boot devices from CBO file.\n");
+		goto fail;
+	}
+	pr_debug("Num of boot devices = %u\n", count);
+
+	/* use count+1 to NULL terminate the array */
+	boot_order = tegrabl_calloc(sizeof(char *), count);
+	if (boot_order == NULL) {
+		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 2);
+		pr_error("Memory allocation failed for boot_order\n");
+		goto fail;
+	}
+
+	err = tegrabl_dt_get_prop_string_array(fdt, offset, boot_cfg_vars[0], boot_order, &count);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("boot-order info not found in CBO options file\n");
+		goto fail;
+	}
+
+	pr_info("boot-order :-\n");
+	for (i = 0; i < count; i++) {
+		pr_info("%d.%s\n", i + 1, boot_order[i]);
+	}
+
+	err = map_boot_priority(count, boot_order, boot_priority);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
 	}
 	pr_debug("%s: EXIT\n", __func__);
 
 fail:
 	tegrabl_free(boot_order);
-	if (err != TEGRABL_NO_ERROR) {
-		tegrabl_free(boot_priority);
-		return NULL;
-	}
-	return boot_priority;
+	return err;
 }
 
 static void print_ip(char *name, uint8_t *ip)
@@ -161,14 +198,14 @@ static void parse_ip_info(void *fdt, int32_t offset, struct ip_info *ip_info)
 	uint32_t count;
 	const char *status;
 
-	err = tegrabl_dt_get_prop_u8_array(fdt, offset, "tftp-server-ip", 0, ip_info->tftp_server_ip, &count);
+	err = tegrabl_dt_get_prop_u8_array(fdt, offset, boot_cfg_vars[1], 0, ip_info->tftp_server_ip, &count);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_info("%s: tftp-server-ip info not found in CBO options file\n", __func__);
+		pr_warn("%s: tftp-server-ip info not found in CBO options file\n", __func__);
 	} else {
-		print_ip("tftp-ip", ip_info->tftp_server_ip);
+		print_ip("tftp-server-ip", ip_info->tftp_server_ip);
 	}
 
-	status = fdt_getprop(fdt, offset, "dhcp-enabled", NULL);
+	status = fdt_getprop(fdt, offset, boot_cfg_vars[2], NULL);
 	if (status != NULL) {
 		pr_warn("%s: static-ip info is not required, only tftp-server-ip is required.\n", __func__);
 		ip_info->is_dhcp_enabled = true;
@@ -177,7 +214,7 @@ static void parse_ip_info(void *fdt, int32_t offset, struct ip_info *ip_info)
 		ip_info->is_dhcp_enabled = false;
 	}
 
-	err = tegrabl_dt_get_prop_u8_array(fdt, offset, "static-ip", 0, ip_info->static_ip, &count);
+	err = tegrabl_dt_get_prop_u8_array(fdt, offset, boot_cfg_vars[3], 0, ip_info->static_ip, &count);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_warn("%s: static-ip info not found in CBO options file\n", __func__);
 		goto skip_static_ip_parse;
@@ -185,20 +222,20 @@ static void parse_ip_info(void *fdt, int32_t offset, struct ip_info *ip_info)
 		print_ip("static-ip", ip_info->static_ip);
 	}
 
-	err = tegrabl_dt_get_prop_u8_array(fdt, offset, "ip-netmask", 0, ip_info->ip_netmask, &count);
+	err = tegrabl_dt_get_prop_u8_array(fdt, offset, boot_cfg_vars[4], 0, ip_info->ip_netmask, &count);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_warn("%s: netmask for static-ip not found in CBO options file\n", __func__);
 		goto skip_static_ip_parse;
 	} else {
-		print_ip("netmask", ip_info->ip_netmask);
+		print_ip("ip-netmask", ip_info->ip_netmask);
 	}
 
-	err = tegrabl_dt_get_prop_u8_array(fdt, offset, "ip-gateway", 0, ip_info->ip_gateway, &count);
+	err = tegrabl_dt_get_prop_u8_array(fdt, offset, boot_cfg_vars[5], 0, ip_info->ip_gateway, &count);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_warn("%s: gateway-ip for static-ip not found in CBO options file\n", __func__);
 		goto skip_static_ip_parse;
 	} else {
-		print_ip("gateway", ip_info->ip_gateway);
+		print_ip("ip-gateway", ip_info->ip_gateway);
 	}
 
 skip_static_ip_parse:
@@ -211,33 +248,199 @@ skip_static_ip_parse:
 	return;
 }
 
-tegrabl_error_t tegrabl_cbo_parse_info(void)
+static void parse_boot_pt_guid(void *fdt, int32_t offset)
+{
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	char *guid = NULL;
+	uint8_t guid_str_len;
+
+	pr_debug("%s: Entry\n", __func__);
+
+	err = tegrabl_dt_get_prop_string(fdt, offset, boot_cfg_vars[6], (const char **)&guid);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("Failed to parse GUID\n");
+		goto fail;
+	}
+
+	guid_str_len = strlen(guid);
+	if (guid_str_len == GUID_STR_LEN) {
+		strncpy(g_cbo_info.boot_pt_guid, guid, guid_str_len);
+		g_cbo_info.boot_pt_guid[GUID_STR_LEN] = '\0';
+		pr_info("Boot partition GUID: %s\n", g_cbo_info.boot_pt_guid);
+	} else {
+		pr_error("Invalid GUID (len: %u, expected len: %u)\n", guid_str_len, GUID_STR_LEN);
+	}
+
+fail:
+	return;
+}
+
+tegrabl_error_t tegrabl_cbo_parse_info(bool is_cbo_read)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	void *fdt = NULL;
 	int32_t offset = -1;
+	bool set_default_boot_order = true;
 
-	err = tegrabl_dt_get_fdt_handle(TEGRABL_DT_CBO, &fdt);
-	if (err != TEGRABL_NO_ERROR) {
-		pr_error("%s: get fdt handle failed for cbo-dtb\n", __func__);
-		goto fail;
+	memset(&g_cbo_info.ip_info, 0, sizeof(g_cbo_info.ip_info));
+	memset(&g_cbo_info.boot_pt_guid, 0, GUID_STR_SIZE);
+
+	if (is_cbo_read) {
+		err = tegrabl_dt_get_fdt_handle(TEGRABL_DT_CBO, &fdt);
+		if (err != TEGRABL_NO_ERROR) {
+			pr_error("%s: get fdt handle failed for cbo-dtb\n", __func__);
+			goto default_boot_order;
+		}
+
+		err = tegrabl_dt_get_node_with_path(fdt, "/boot-configuration", &offset);
+		if ((err != TEGRABL_NO_ERROR) || (offset < 0)) {
+			pr_error("%s: \"boot-configuration\" not found in CBO file.\n", __func__);
+			goto default_boot_order;
+		}
+
+		err = parse_boot_order(fdt, offset, &g_cbo_info.boot_priority);
+		if (err == TEGRABL_NO_ERROR) {
+			set_default_boot_order = false;
+		}
+
+		parse_ip_info(fdt, offset, &g_cbo_info.ip_info);
+
+		parse_boot_pt_guid(fdt, offset);
 	}
 
-	err = tegrabl_dt_get_node_with_path(fdt, "/boot-configuration", &offset);
-	if ((err != TEGRABL_NO_ERROR) || (offset < 0)) {
-		pr_error("%s: \"boot-configuration\" not found in CBO file.\n", __func__);
-		goto fail;
+default_boot_order:
+	if (set_default_boot_order) {
+		g_cbo_info.boot_priority = tegrabl_calloc(sizeof(uint8_t), NUM_SECONDARY_STORAGE_DEVICES);
+		if (g_cbo_info.boot_priority == NULL) {
+			err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 3);
+			pr_error("%s: memory allocation failed for boot_priority\n", __func__);
+			goto fail;
+		}
+		memcpy(g_cbo_info.boot_priority, default_boot_order, sizeof(default_boot_order));
 	}
-
-	g_cbo_info.boot_priority = parse_boot_order(fdt, offset);
-
-	parse_ip_info(fdt, offset, &g_cbo_info.ip_info);
 
 fail:
+	tegrabl_free(fdt);
 	return err;
 }
 
-int8_t *tegrabl_get_boot_order(void)
+void tegrabl_set_boot_order(uint32_t count, const char **boot_order)
+{
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+
+	/* clear the boot priority and set the new values */
+	tegrabl_clear_boot_order();
+
+	err = map_boot_priority(count, boot_order, &g_cbo_info.boot_priority);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_info("Error updating boot-priority\n");
+	}
+}
+
+void tegrabl_set_ip_info(const char *var_name, uint8_t *ip, bool is_dhcp_enabled)
+{
+	if (!strcmp(var_name, "dhcp-enabled")) {
+		g_cbo_info.ip_info.is_dhcp_enabled = is_dhcp_enabled;
+	} else if (!strcmp(var_name, "tftp-server-ip")) {
+		memcpy(g_cbo_info.ip_info.tftp_server_ip, ip, 4);
+	} else if (!strcmp(var_name, "static-ip")) {
+		memcpy(g_cbo_info.ip_info.static_ip, ip, 4);
+	} else if (!strcmp(var_name, "ip-netmask")) {
+		memcpy(g_cbo_info.ip_info.ip_netmask, ip, 4);
+	} else if (!strcmp(var_name, "ip-gateway")) {
+		memcpy(g_cbo_info.ip_info.ip_gateway, ip, 4);
+	} else {
+		pr_info("invalid variable\n");
+	}
+}
+
+void tegrabl_set_boot_pt_guid(const char *var_name, const char *guid)
+{
+	uint8_t guid_str_len;
+
+	guid_str_len = strlen(guid);
+
+	if (guid_str_len == GUID_STR_LEN) {
+		strncpy(g_cbo_info.boot_pt_guid, guid, guid_str_len);
+		g_cbo_info.boot_pt_guid[GUID_STR_LEN] = '\0';
+	} else {
+		pr_error("Invalid GUID (len: %u, expected len: %u)\n", guid_str_len, GUID_STR_LEN);
+	}
+}
+
+void tegrabl_clear_boot_order(void)
+{
+	if (g_cbo_info.boot_priority != NULL) {
+		tegrabl_free(g_cbo_info.boot_priority);
+		g_cbo_info.boot_priority = NULL;
+	}
+}
+
+void tegrabl_clear_ip_info(const char *var_name)
+{
+	if (!strcmp(var_name, "dhcp-enabled")) {
+		g_cbo_info.ip_info.is_dhcp_enabled = false;
+	} else if (!strcmp(var_name, "tftp-server-ip")) {
+		memset(g_cbo_info.ip_info.tftp_server_ip, 0, 4);
+	} else if (!strcmp(var_name, "static-ip")) {
+		memset(g_cbo_info.ip_info.static_ip, 0, 4);
+	} else if (!strcmp(var_name, "ip-netmask")) {
+		memset(g_cbo_info.ip_info.ip_netmask, 0, 4);
+	} else if (!strcmp(var_name, "ip-gateway")) {
+		memset(g_cbo_info.ip_info.ip_gateway, 0, 4);
+	} else {
+		pr_info("invalid variable\n");
+	}
+}
+
+void tegrabl_clear_boot_pt_guid(void)
+{
+	memset(g_cbo_info.boot_pt_guid, 0, GUID_STR_SIZE);
+}
+
+void tegrabl_print_boot_order(void)
+{
+	uint32_t i, j;
+
+	if (g_cbo_info.boot_priority == NULL) {
+		pr_info("boot-order is not set\n");
+		return;
+	}
+
+	pr_info("boot-order :-\n");
+	for (i = 0; g_cbo_info.boot_priority[i] != BOOT_DEFAULT; i++) {
+		for (j = 0; j < ARRAY_SIZE(g_boot_devices); j++) {
+			if (g_cbo_info.boot_priority[i] == g_boot_devices[j].device_id) {
+				pr_info("%d.%s\n", i + 1, g_boot_devices[j].name);
+				break;
+			}
+		}
+	}
+}
+
+void tegrabl_print_ip_info(const char *var_name)
+{
+	if (!strcmp(var_name, "dhcp-enabled")) {
+		pr_info("dhcp_enabled is %s\n", g_cbo_info.ip_info.is_dhcp_enabled ? "set" : "not set");
+	} else if (!strcmp(var_name, "tftp-server-ip")) {
+		print_ip("tftp-server-ip", g_cbo_info.ip_info.tftp_server_ip);
+	} else if (!strcmp(var_name, "static-ip")) {
+		print_ip("static-ip", g_cbo_info.ip_info.static_ip);
+	} else if (!strcmp(var_name, "ip-netmask")) {
+		print_ip("ip-netmask", g_cbo_info.ip_info.ip_netmask);
+	} else if (!strcmp(var_name, "ip-gateway")) {
+		print_ip("ip-gateway", g_cbo_info.ip_info.ip_gateway);
+	} else {
+		pr_info("invalid variable\n");
+	}
+}
+
+void tegrabl_print_boot_pt_guid(void)
+{
+	pr_info("%s\n", g_cbo_info.boot_pt_guid);
+}
+
+uint8_t *tegrabl_get_boot_order(void)
 {
 	return g_cbo_info.boot_priority;
 }
@@ -247,5 +450,24 @@ struct ip_info tegrabl_get_ip_info(void)
 	return g_cbo_info.ip_info;
 }
 
-#endif	/* CONFIG_ENABLE_CBO */
+char *tegrabl_get_boot_pt_guid(void)
+{
+	if (g_cbo_info.boot_pt_guid[0] == 0) {
+		memcpy(&g_cbo_info.boot_pt_guid, NVIDIA_BOOT_PARTITION_GUID, GUID_STR_SIZE);
+	}
+	return g_cbo_info.boot_pt_guid;
+}
+
+bool is_var_boot_cfg(const char *var_name)
+{
+	unsigned int i = 0;
+
+	while (i < ARRAY_SIZE(boot_cfg_vars)) {
+		if (!strcmp(boot_cfg_vars[i++], var_name)) {
+			return true;
+		}
+	}
+
+	return false;
+}
 

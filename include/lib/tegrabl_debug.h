@@ -17,7 +17,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
-#include <tegrabl_io.h>
 #include <tegrabl_error.h>
 #include <tegrabl_compiler.h>
 
@@ -134,41 +133,6 @@ typedef uint32_t tegrabl_loglevel_t;
 #if defined(CONFIG_ENABLE_LOGLEVEL_RUNTIME)
 void tegrabl_debug_set_loglevel(tegrabl_loglevel_t level);
 #endif
-
-/**
- * @brief Debug function that acts as wrapper on top of NV_WRITE32 and allows
- * conditionally logging (i.e. if TEGRABL_TRACE_REG_RW is defined in including
- * source file) the address/value of the register being written to.
- *
- * @param addr address of the register being written
- * @param val 32bit data to be written to the register
- */
-static TEGRABL_INLINE void tegrabl_trace_write32(volatile uint32_t addr,
-		uint32_t val)
-{
-#if defined(TEGRABL_TRACE_REG_RW)
-	pr_debug("%s: [0x%08"PRIx32"] <= 0x%08"PRIx32"\n", __func__, addr, val);
-#endif
-	NV_WRITE32(addr, val);
-}
-
-/**
- * @brief Debug function that acts as wrapper on top of NV_READ32 and allows
- * conditionally logging (i.e. if TEGRABL_TRACE_REG_RW is defined in including
- * source file) the address/value of the register being read from.
- *
- * @param addr address of the register being read
- *
- * @return 32bit data read from the register
- */
-static TEGRABL_INLINE uint32_t tegrabl_trace_read32(volatile uint32_t addr)
-{
-	uint32_t val = NV_READ32(addr);
-#if defined(TEGRABL_TRACE_REG_RW)
-	pr_debug("%s: [0x%08"PRIx32"] <= 0x%08"PRIx32"\n", __func__, addr, val);
-#endif
-	return val;
-}
 
 /**
  * @brief Assert a condition, i.e. blocks execution if the specified condition

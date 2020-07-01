@@ -35,7 +35,7 @@
 
 /*  Define 102 Mhz Clock
  */
-#define CLK_102_MHZ 102000000U
+#define CLK_102_MHZ 102000U
 
 /* Different modes for  card clock init */
 	/* 400 KHz supplied to card. */

@@ -11,6 +11,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <tegrabl_ar_macro.h>
 #include <ardisplay.h>
 #include <ardisplay_a.h>
 #include <tegrabl_error.h>

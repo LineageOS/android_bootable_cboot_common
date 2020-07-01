@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <inttypes.h>
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_ufs_local.h>
 #include <tegrabl_ufs_hci.h>
 #include <tegrabl_error.h>
@@ -23,6 +24,7 @@
 #include <arpmc_impl.h>
 #include <address_map_new.h>
 #include <tegrabl_soc_misc.h>
+#include <tegrabl_io.h>
 
 #ifndef _MK_ADDR_CONST
 #define _MK_ADDR_CONST(_constant_) _constant_

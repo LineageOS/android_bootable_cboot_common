@@ -14,6 +14,7 @@
 #include <tegrabl_utils.h>
 #include <tegrabl_debug.h>
 #include <tegrabl_error.h>
+#include <tegrabl_ar_macro.h>
 #include <tegrabl_drf.h>
 #include <tegrabl_io.h>
 

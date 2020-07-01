@@ -23,6 +23,7 @@
 #include <tegrabl_clock.h>
 #include <tegrabl_dmamap.h>
 #include <tegrabl_gpcdma_soc_common.h>
+#include <tegrabl_gpcdma_err_aux.h>
 
 #define DMA_CHANNEL_OFFSET				(0x10000U)
 
@@ -85,6 +86,7 @@ struct s_dma_plat_data {
 	uint8_t max_channel_num;
 	uintptr_t base_addr;
 	tegrabl_module_t dma_module_id;
+	bool skip_reset;
 };
 
 static struct s_dma_plat_data g_dma_gpc_plat = {
@@ -92,18 +94,25 @@ static struct s_dma_plat_data g_dma_gpc_plat = {
 	.max_channel_num = 32,
 	.base_addr = NV_ADDRESS_MAP_GPCDMA_BASE,
 	.dma_module_id = TEGRABL_MODULE_GPCDMA,
+#if defined(CONFIG_SKIP_GPCDMA_RESET)
+	.skip_reset = true,
+#else
+	.skip_reset = false,
+#endif
 };
 static struct s_dma_plat_data g_dma_bpmp_plat = {
 	.dma_type = DMA_BPMP,
 	.max_channel_num = 4,
 	.base_addr = NV_ADDRESS_MAP_BPMP_DMA_BASE,
 	.dma_module_id = TEGRABL_MODULE_BPMPDMA,
+	.skip_reset = false,
 };
 static struct s_dma_plat_data g_dma_spe_plat = {
 	.dma_type = DMA_SPE,
 	.max_channel_num = 8,
 	.base_addr = NV_ADDRESS_MAP_AON_DMA_BASE,
 	.dma_module_id = TEGRABL_MODULE_SPEDMA,
+	.skip_reset = false,
 };
 
 /* Global strcture to maintain DMA information */
@@ -150,22 +159,22 @@ tegrabl_gpcdma_handle_t tegrabl_dma_request(tegrabl_dmatype_t dma_type)
 		goto done;
 	}
 
-	/* assert reset of DMA engine */
-	err =
-	tegrabl_car_rst_set(g_dma_data[dma_type].dma_plat_data.dma_module_id, 0);
-	if (err != TEGRABL_NO_ERROR) {
-		ret = NULL;
-		goto done;
-	}
+	if (g_dma_data[dma_type].dma_plat_data.skip_reset == false) {
+		/* assert reset of DMA engine */
+		err = tegrabl_car_rst_set(g_dma_data[dma_type].dma_plat_data.dma_module_id, 0);
+		if (err != TEGRABL_NO_ERROR) {
+			ret = NULL;
+			goto done;
+		}
 
-	tegrabl_udelay(2);
+		tegrabl_udelay(2);
 
-	/* de-assert reset of DMA engine */
-	err =
-	tegrabl_car_rst_clear(g_dma_data[dma_type].dma_plat_data.dma_module_id, 0);
-	if (err != TEGRABL_NO_ERROR) {
-		ret = NULL;
-		goto done;
+		/* de-assert reset of DMA engine */
+		err = tegrabl_car_rst_clear(g_dma_data[dma_type].dma_plat_data.dma_module_id, 0);
+		if (err != TEGRABL_NO_ERROR) {
+			ret = NULL;
+			goto done;
+		}
 	}
 
 	g_dma_data[dma_type].init_done = true;
@@ -205,17 +214,24 @@ tegrabl_error_t tegrabl_dma_transfer(tegrabl_gpcdma_handle_t handle,
 	struct s_dma_privdata *dma_data = (struct s_dma_privdata *)handle;
 	struct gpcdma_soc_info *ggpcdma_info;
 	tegrabl_module_t dma_module_id;
+	tegrabl_error_t err;
 
 	if ((handle == NULL) || (params == NULL)) {
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		err = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, AUX_INFO_DMA_TRANSFER_1);
+		TEGRABL_SET_ERROR_STRING(err, "handle: %p, params: %p", handle, params);
+		return err;
 	}
 
 	if (dma_data->init_done != true) {
-		return TEGRABL_ERROR(TEGRABL_ERR_NOT_INITIALIZED, 0);
+		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_INITIALIZED, AUX_INFO_DMA_TRANSFER_1);
+		TEGRABL_SET_ERROR_STRING(err, "DMA");
+		return err;
 	}
 
 	if (c_num >= dma_data->dma_plat_data.max_channel_num) {
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_DMA_TRANSFER_1);
+		TEGRABL_SET_ERROR_STRING(err, "Channel %u", c_num);
+		return err;
 	}
 
 	/* get the dma module id */
@@ -228,8 +244,9 @@ tegrabl_error_t tegrabl_dma_transfer(tegrabl_gpcdma_handle_t handle,
 	/* make sure channel isn't busy */
 	val = NV_READ32(cb + DMA_CH_STAT);
 	if ((val & DMA_CH_STAT_BUSY) != 0UL) {
-		pr_error("DMA channel %u is busy\n", c_num);
-		return TEGRABL_ERROR(TEGRABL_ERR_BUSY, 0);
+		err = TEGRABL_ERROR(TEGRABL_ERR_BUSY, AUX_INFO_DMA_TRANSFER_1);
+		TEGRABL_SET_ERROR_STRING(err, "Channel %u", c_num);
+		return err;
 	}
 
 	gpcdma_get_soc_info(&ggpcdma_info);
@@ -308,7 +325,9 @@ tegrabl_error_t tegrabl_dma_transfer(tegrabl_gpcdma_handle_t handle,
 
 	/* transfer size */
 	if ((params->size > MAX_TRANSFER_SIZE) || ((params->size & 0x3UL) != 0UL)) {
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		err = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, AUX_INFO_DMA_TRANSFER_2);
+		TEGRABL_SET_ERROR_STRING(err, "transfer size %u", params->size);
+		return err;
 	}
 	NV_WRITE32_FENCE(cb + DMA_CH_MMIO_WCOUNT, ((params->size >> 2) - 1U));
 
@@ -356,23 +375,30 @@ tegrabl_error_t tegrabl_dma_transfer_status(tegrabl_gpcdma_handle_t handle,
 	uintptr_t cb = 0;
 	struct s_dma_privdata *dma_data;
 	tegrabl_module_t dma_module_id;
+	tegrabl_error_t err;
 
 	if ((handle == NULL) || (params == NULL)) {
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		err = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, AUX_INFO_DMA_TRANSFER_STATUS);
+		TEGRABL_SET_ERROR_STRING(err, "handle: %p, params: %p", handle, params);
+		return err;
 	}
 	dma_data = (struct s_dma_privdata *)handle;
 
 	if (c_num >= dma_data->dma_plat_data.max_channel_num) {
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_DMA_TRANSFER_STATUS);
+		TEGRABL_SET_ERROR_STRING(err, "Channel %u", c_num);
+		return err;
 	}
+
 	/* get the dma module id */
 	dma_module_id = dma_data->dma_plat_data.dma_module_id;
 
 	cb = dma_data->dma_plat_data.base_addr +
 										   (DMA_CHANNEL_OFFSET * (c_num + 1UL));
 	if ((NV_READ32(cb + DMA_CH_STAT) & DMA_CH_STAT_BUSY) != 0UL) {
+		err = TEGRABL_ERROR(TEGRABL_ERR_BUSY, AUX_INFO_DMA_TRANSFER_STATUS);
 		pr_debug("DMA channel %u is busy\n", c_num);
-		return TEGRABL_ERROR(TEGRABL_ERR_BUSY, 1);
+		return err;
 	} else {
 		tegrabl_unmap_buffers(params, dma_module_id);
 		return TEGRABL_NO_ERROR;
@@ -464,8 +490,8 @@ tegrabl_error_t tegrabl_init_scrub_dma(uint64_t dest, uint64_t src,
 	/* make sure channel isn't busy */
 	val = NV_READ32(cb + DMA_CH_STAT);
 	if ((val & DMA_CH_STAT_BUSY) != 0UL) {
-		pr_error("DMA channel %u is busy\n", c_num);
-		result = TEGRABL_ERROR(TEGRABL_ERR_BUSY, 2);
+		result = TEGRABL_ERROR(TEGRABL_ERR_BUSY, AUX_INFO_INIT_SCRUB_DMA_1);
+		TEGRABL_SET_ERROR_STRING(result, "Channel %u", c_num);
 		goto fail;
 	}
 
@@ -483,9 +509,9 @@ tegrabl_error_t tegrabl_init_scrub_dma(uint64_t dest, uint64_t src,
 	src_dma_addr = src;
 	dst_dma_addr = dest;
 
-	pr_debug("dst_dma_addr = 0x%016"PRIx64"\n", dst_dma_addr);
-	pr_debug("src_dma_addr = 0x%016"PRIx64"\n", src_dma_addr);
-	pr_debug("size = 0x%08x\n", params.size);
+	pr_trace("dst_dma_addr = 0x%016"PRIx64"\n", dst_dma_addr);
+	pr_trace("src_dma_addr = 0x%016"PRIx64"\n", src_dma_addr);
+	pr_trace("size = 0x%08x\n", params.size);
 
 	/* populate src and dst address registers */
 	NV_WRITE32_FENCE(cb + DMA_CH_SRC_PTR, (uint32_t)src_dma_addr);
@@ -497,8 +523,8 @@ tegrabl_error_t tegrabl_init_scrub_dma(uint64_t dest, uint64_t src,
 
 	/* transfer size */
 	if ((params.size > MAX_TRANSFER_SIZE) || ((params.size & 0x3U) != 0U)) {
-		pr_error("Invalid Size\n");
-		result = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		result = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, AUX_INFO_INIT_SCRUB_DMA_1);
+		TEGRABL_SET_ERROR_STRING(result, "transfer size %u", params.size);
 		goto fail;
 	}
 	NV_WRITE32_FENCE(cb + DMA_CH_MMIO_WCOUNT, ((params.size >> 2) - 1U));
@@ -506,8 +532,8 @@ tegrabl_error_t tegrabl_init_scrub_dma(uint64_t dest, uint64_t src,
 	/* populate value for CSR */
 	if ((params.dir != DMA_PATTERN_FILL) &&
 			(params.dir != DMA_MEM_TO_MEM)) {
-		pr_error("Invalid Transfer type\n");
-		result = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, 0);
+		result = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, AUX_INFO_INIT_SCRUB_DMA_2);
+		TEGRABL_SET_ERROR_STRING(result, "transfer type %u", params.dir);
 		goto fail;
 	}
 	val = NV_READ32(cb + DMA_CH_CSR);
@@ -520,12 +546,12 @@ tegrabl_error_t tegrabl_init_scrub_dma(uint64_t dest, uint64_t src,
 	val |= DMA_CH_CSR_ENABLE;
 	NV_WRITE32_FENCE(cb + DMA_CH_CSR, val);
 
-	pr_debug("Waiting for DMA ......%s\n", __func__);
+	pr_trace("Waiting for DMA ......%s\n", __func__);
 
 	while ((NV_READ32(cb + DMA_CH_STAT) & DMA_CH_STAT_BUSY) != 0UL) {
 		;
 	}
-	pr_debug("DMA Complete......%s\n\n", __func__);
+	pr_trace("DMA Complete......%s\n\n", __func__);
 
 fail:
 	return result;

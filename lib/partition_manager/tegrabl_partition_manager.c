@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2015-2019, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -19,14 +19,17 @@
 #include <tegrabl_gpt.h>
 #include <tegrabl_nvpt.h>
 #include <inttypes.h>
+#include <tegrabl_cbo.h>
+#include <ctype.h>
 
 #if defined(CONFIG_ENABLE_A_B_SLOT)
 #include <tegrabl_a_b_partition_naming.h>
 #endif
 
-#define AUX_INFO_PARTITION_LOOKUP_ERR	20
-#define AUX_INFO_PARTITION_NOT_FOUND	21
-#define AUX_INFO_PARTITION_NOT_INIT		22
+#define AUX_INFO_PARTITION_LOOKUP_ERR		20
+#define AUX_INFO_PARTITION_BOOT_LOOKUP_ERR	21
+#define AUX_INFO_PARTITION_NOT_FOUND		22
+#define AUX_INFO_PARTITION_NOT_INIT			23
 /**
  * @brief Stores the partition list for storage devices
  */
@@ -79,6 +82,15 @@ tegrabl_error_t tegrabl_partition_pt_has_3_levels(bool *info)
 	return tegrabl_nvpt_pt_has_3_levels(info);
 #endif
 	return TEGRABL_ERROR(TEGRABL_ERR_NOT_SUPPORTED, 0);
+}
+
+static inline bool match_partition_name(const char *partition_name, const char *name)
+{
+#if defined(CONFIG_ENABLE_A_B_SLOT)
+	return tegrabl_a_b_match_part_name(partition_name, name);
+#else
+	return strcmp(partition_name, name) == 0;
+#endif
 }
 
 tegrabl_error_t tegrabl_partition_lookup_bdev(const char *partition_name, struct tegrabl_partition *partition,
@@ -136,9 +148,53 @@ tegrabl_error_t tegrabl_partition_lookup_bdev(const char *partition_name, struct
 	partition->offset = 0;
 
 fail:
-	if (error != TEGRABL_NO_ERROR) {
-		pr_debug("%s: exit error = %x\n", __func__, error);
+	return error;
+}
+
+tegrabl_error_t tegrabl_partition_boot_guid_lookup_bdev(char *pt_type_guid,
+														struct tegrabl_partition *partition,
+														tegrabl_bdev_t *bdev)
+{
+	tegrabl_error_t error = TEGRABL_NO_ERROR;
+	struct tegrabl_partition_info *partition_info = NULL;
+	struct tegrabl_storage_info *entry = NULL;
+	uint32_t num_partitions = 0;
+	uint32_t i = 0;
+
+	if ((partition == NULL) || (bdev == NULL)) {
+		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_PARTITION_BOOT_LOOKUP_ERR);
+		pr_error("Invalid args passed\n");
+		goto fail;
 	}
+
+	list_for_every_entry(storage_list, entry, struct tegrabl_storage_info, node) {
+		if (entry->bdev != bdev) {
+			continue;
+		}
+		num_partitions = entry->num_partitions;
+		partition_info = entry->partitions;
+
+		/* Check for boot partition by matching partition type UUID */
+		for (i = 0; i < num_partitions; i++) {
+			if (strncasecmp(partition_info[i].ptype_guid, pt_type_guid, GUID_STR_LEN) == 0) {
+				pr_trace("Partition type GUID matched\n\n");
+				goto partition_found;
+			}
+		}
+	}
+
+	/* Fall back: assume 0th partition is boot partition*/
+	if (i >= num_partitions) {
+		pr_trace("Fallback: assuming 0th partition is boot\n");
+		i = 0;
+	}
+
+partition_found:
+	partition->partition_info = &partition_info[i];
+	partition->block_device = entry->bdev;
+	partition->offset = 0;
+
+fail:
 	return error;
 }
 
@@ -171,12 +227,7 @@ tegrabl_error_t tegrabl_partition_open(const char *partition_name,
 		partition_info = entry->partitions;
 
 		for (i = 0; i < num_partitions; i++) {
-#if defined(CONFIG_ENABLE_A_B_SLOT)
-			if (tegrabl_a_b_match_part_name(partition_info[i].name,
-											partition_name)) {
-#else
-			if (strcmp(partition_info[i].name, partition_name) == 0) {
-#endif
+			if (match_partition_name(partition_info[i].name, partition_name)) {
 				break;
 			}
 		}
@@ -200,9 +251,6 @@ tegrabl_error_t tegrabl_partition_open(const char *partition_name,
 	partition->offset = 0;
 
 fail:
-	if (error != TEGRABL_NO_ERROR) {
-		pr_debug("%s: exit error = %x\n", __func__, error);
-	}
 	return error;
 }
 
@@ -264,9 +312,6 @@ tegrabl_error_t tegrabl_partition_erase(struct tegrabl_partition *partition,
 	}
 
 fail:
-	if (error != TEGRABL_NO_ERROR) {
-		pr_error("%s: exit error = %x\n", __func__, error);
-	}
 	return error;
 }
 
@@ -313,9 +358,6 @@ tegrabl_error_t tegrabl_partition_write(struct tegrabl_partition *partition,
 	partition->offset += num_bytes;
 
 fail:
-	if (error != TEGRABL_NO_ERROR) {
-		pr_error("%s: exit error = %x\n", __func__, error);
-	}
 	return error;
 }
 
@@ -342,9 +384,6 @@ tegrabl_error_t tegrabl_partition_start_in_block(
 	*start = (uint32_t)partition_info->start_sector;
 
 fail:
-	if (error != TEGRABL_NO_ERROR) {
-		pr_error("%s: exit error = %x\n", __func__, error);
-	}
 	return error;
 }
 
@@ -393,9 +432,6 @@ tegrabl_error_t tegrabl_partition_read(struct tegrabl_partition *partition,
 	partition->offset += num_bytes;
 
 fail:
-	if (error != TEGRABL_NO_ERROR) {
-		pr_error("%s: exit error = %x\n", __func__, error);
-	}
 	return error;
 }
 
@@ -433,6 +469,7 @@ tegrabl_error_t tegrabl_partition_seek(struct tegrabl_partition *partition,
 		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 6);
 		break;
 	}
+
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
@@ -455,9 +492,6 @@ tegrabl_error_t tegrabl_partition_seek(struct tegrabl_partition *partition,
 	partition->offset = (uint64_t)new_offset;
 
 fail:
-	if (error != TEGRABL_NO_ERROR) {
-		pr_error("%s: exit error = %x\n", __func__, error);
-	}
 	return error;
 }
 
@@ -586,7 +620,8 @@ tegrabl_error_t tegrabl_partition_publish(tegrabl_bdev_t *dev, off_t offset)
 	uint32_t num = 0;
 	struct tegrabl_storage_info  *storage_info = NULL;
 	struct tegrabl_partition_info *partitions = NULL;
-
+	size_t array_size;
+	array_size = ARRAY_SIZE(publish_partition);
 	if (dev == NULL) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 15);
 		goto fail;
@@ -597,14 +632,15 @@ tegrabl_error_t tegrabl_partition_publish(tegrabl_bdev_t *dev, off_t offset)
 	} else {
 		/* Try publishing partition from registered publishers one at a time,
 		 * stop as soon as one of them is successful */
-		for (i = 0; i < (int32_t)ARRAY_SIZE(publish_partition); i++) {
+		for (i = 0; i < (int32_t)array_size; i++) {
 			if (publish_partition[i] != NULL) {
 				error = publish_partition[i](dev, offset, &partitions, &num);
 				if (TEGRABL_NO_ERROR != error) {
 					continue;
 				}
 				pr_info("Found %d partitions in %s (instance %x)\n",
-						num, tegrabl_blockdev_get_name(dev->device_id & 0xf0), dev->device_id & 0xf);
+						num, tegrabl_blockdev_get_name((dev->device_id >> 16) & 0xfU),
+						dev->device_id & 0xfU);
 
 				storage_info = tegrabl_malloc(sizeof(*storage_info));
 				if (storage_info == NULL) {
@@ -623,7 +659,7 @@ tegrabl_error_t tegrabl_partition_publish(tegrabl_bdev_t *dev, off_t offset)
 		}
 
 		/* None of the partition-managers were able to publish this device */
-		if (i >= (int32_t)ARRAY_SIZE(publish_partition)) {
+		if (i >= (int32_t)array_size) {
 			error = TEGRABL_ERROR(TEGRABL_ERR_NOT_SUPPORTED, 0);
 			pr_warn("Cannot find any partition table for %08x\n",
 					dev->device_id);
@@ -638,9 +674,6 @@ tegrabl_error_t tegrabl_partition_publish(tegrabl_bdev_t *dev, off_t offset)
 	}
 
 fail:
-	if (error != TEGRABL_NO_ERROR) {
-		pr_error("%s: exit error = %x\n", __func__, error);
-	}
 	return error;
 }
 
@@ -677,9 +710,6 @@ tegrabl_error_t tegrabl_partitions_unpublish(tegrabl_bdev_t *dev)
 	}
 
 fail:
-	if (error != TEGRABL_NO_ERROR) {
-		pr_error("%s: exit error = %x\n", __func__, error);
-	}
 	return error;
 }
 
@@ -703,7 +733,7 @@ tegrabl_error_t tegrabl_partition_manager_init(void)
 	while ((dev = tegrabl_blockdev_next_device(dev)) != NULL) {
 		if (tegrabl_blockdev_get_storage_type(dev) != TEGRABL_STORAGE_SDMMC_RPMB) {
 			pr_trace("Finding partitions in %s (instance %x)\n",
-					 tegrabl_blockdev_get_name(dev->device_id & 0xf0), dev->device_id & 0xf);
+					 tegrabl_blockdev_get_name((dev->device_id >> 16) & 0xfU), dev->device_id & 0xfU);
 			tegrabl_partition_publish(dev, 0);
 		}
 	}
@@ -713,13 +743,10 @@ tegrabl_error_t tegrabl_partition_manager_init(void)
 #endif
 
 fail:
-	if (error != TEGRABL_NO_ERROR) {
-		pr_error("%s: exit error = %x\n", __func__, error);
-	}
 	return error;
 }
 
-void tegrabl_partition_manager_flush_cache()
+void tegrabl_partition_manager_flush_cache(void)
 {
 	tegrabl_bdev_t *dev = NULL;
 	tegrabl_error_t error = TEGRABL_NO_ERROR;

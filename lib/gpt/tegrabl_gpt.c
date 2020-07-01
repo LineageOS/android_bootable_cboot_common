@@ -19,8 +19,6 @@
 #include <tegrabl_gpt.h>
 #include <inttypes.h>
 
-static const char * const gpt_name[] = {"primary", "secondary"};
-
 /**
  * @brief Validate the GPT header.
  *
@@ -216,6 +214,8 @@ static tegrabl_error_t tegrabl_gpt_read(tegrabl_bdev_t *dev, off_t offset,
 	uint32_t i = 0;
 	uint32_t block_size;
 
+	const char * const gpt_name[2] = {"primary", "secondary"};
+
 	if ((dev == NULL) || (buf == NULL) || (buf_size == NULL)) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 4);
 		goto fail;
@@ -361,11 +361,13 @@ tegrabl_error_t tegrabl_gpt_publish(tegrabl_bdev_t *dev,
 		partitions[j].num_sectors = num_sectors;
 		partitions[j].total_size = num_sectors << dev->block_size_log2;
 		guid_to_str(entries[j].unique_guid.guid, partitions[j].guid);
+		guid_to_str(entries[j].ptype_guid.guid, partitions[j].ptype_guid);
 
 		pr_debug("%02d] Name %s\n", j + 1U, partitions[j].name);
 		pr_debug("Start sector: %"PRIu64"\n", start_sector);
 		pr_debug("Num sectors : %"PRIu64"\n", num_sectors);
-		pr_debug("Size        : %"PRIu64"\n\n", partitions[j].total_size);
+		pr_debug("Size        : %"PRIu64"\n", partitions[j].total_size);
+		pr_debug("Ptype guid  : %s\n", partitions[j].ptype_guid);
 	}
 
 	*partition_list = partitions;

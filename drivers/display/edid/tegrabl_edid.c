@@ -64,6 +64,8 @@
 #define VIDEO_ID_3840_2160_97 97
 #define VIDEO_ID_Force32 0x7FFFFFFF
 
+static bool is_panel_hdmi;
+
 #if defined (CONFIG_ENABLE_DP)
 static tegrabl_error_t dpaux_i2c_dev_read(struct tegrabl_dpaux *hdpaux,
 	uint8_t *edid, uint32_t offset, uint32_t size)
@@ -482,6 +484,11 @@ void parse_descriptors(const uint8_t *edid, struct monitor_data *monitor_info,
 		}
 	}
 
+	/* this var is used to distinguish between hdmi and dvi panels,
+	 * make it explicitly false in case we have multiple displays.
+	 */
+	is_panel_hdmi = false;
+
 	/* parse descriptors, SVDs in extension blocks */
 	total_extensions = edid[NUM_EXTENSIONS_BYTE];
 	for (i = 0; i < total_extensions; i++) {
@@ -598,22 +605,27 @@ void parse_descriptors(const uint8_t *edid, struct monitor_data *monitor_info,
 				case BLOCK_TYPE_VENDOR_SPECIFIC:
 					ptr = &edid_extension[svd_start];
 
-					/* 24-bit IEEE Registration Identifier for hdmi licensing */
-					if ((ptr[1] != 0x03) ||
-						(ptr[2] != 0x0c) ||
-						(ptr[3] != 0)) {
-						/* OUI for hdmi forum */
-						if ((ptr[1] == 0xd8) &&
-							(ptr[2] == 0x5d) &&
-							(ptr[3] == 0xc4)) {
-							monitor_info->hf_vsdb_present = true;
-						} else {
-							j = j + n_blocks + 1;
-							break;
-						}
+					/* OUI for hdmi forum */
+					if ((ptr[1] == 0xd8) &&
+						(ptr[2] == 0x5d) &&
+						(ptr[3] == 0xc4)) {
+						is_panel_hdmi = true;
+						monitor_info->hf_vsdb_present = true;
+						j = j + n_blocks + 1;
+						break;
 					}
 
-					if (n_blocks >= 8) {
+					/* 24-bit IEEE Registration Identifier for hdmi licensing */
+					if ((ptr[1] == 0x03) &&
+						(ptr[2] == 0x0c) &&
+						(ptr[3] == 0)) {
+						is_panel_hdmi = true;
+					}
+
+					if (n_blocks >= 8 &&
+						(ptr[1] == 0x03) &&
+						(ptr[2] == 0x0c) &&
+						(ptr[3] == 0)) {
 						l = 8;
 						tmp = ptr[l++];
 						/* HDMI_Video_present? */
@@ -785,3 +797,9 @@ fail:
 	}
 	return status;
 }
+
+bool tegrabl_edid_is_panel_hdmi(void)
+{
+	return is_panel_hdmi;
+}
+

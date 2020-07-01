@@ -8,8 +8,8 @@
  * license agreement from NVIDIA Corporation is strictly prohibited.
  */
 
-#ifndef _TEGRABL_UFS_LOCAL_H
-#define _TEGRABL_UFS_LOCAL_H
+#ifndef TEGRABL_UFS_LOCAL_H
+#define TEGRABL_UFS_LOCAL_H
 #include <tegrabl_drf.h>
 #include <tegrabl_error.h>
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2016-2018, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -8,8 +8,8 @@
  * is strictly prohibited.
  */
 
-#ifndef __TEGRABL_EXIT_H__
-#define __TEGRABL_EXIT_H__
+#ifndef TEGRABL_EXIT_H
+#define TEGRABL_EXIT_H
 
 #include <tegrabl_error.h>
 

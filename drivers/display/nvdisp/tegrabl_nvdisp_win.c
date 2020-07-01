@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -14,6 +14,7 @@
 #include <tegrabl_error.h>
 #include <stdint.h>
 #include <string.h>
+#include <tegrabl_ar_macro.h>
 #include <ardisplay.h>
 #include <ardisplay_a.h>
 #include <tegrabl_io.h>

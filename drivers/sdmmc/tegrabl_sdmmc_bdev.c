@@ -23,6 +23,7 @@
 #include <tegrabl_module.h>
 #include <tegrabl_error.h>
 #include <tegrabl_debug.h>
+#include <tegrabl_sdmmc_host.h>
 #include <inttypes.h>
 #include <tegrabl_blockdev.h>
 
@@ -125,8 +126,9 @@ static tegrabl_error_t sdmmc_bdev_xfer(struct tegrabl_blockdev_xfer_info *xfer)
 	sdmmc_priv_data_t *priv_data = (sdmmc_priv_data_t *)dev->priv_data;
 	struct tegrabl_sdmmc *hsdmmc = (struct tegrabl_sdmmc *)priv_data->context;
 
-	return sdmmc_io(dev, (void *)xfer->buf, xfer->start_block, xfer->block_count, 1, hsdmmc,
-			priv_data->device, true);
+	return sdmmc_io(dev, (void *)xfer->buf, xfer->start_block, xfer->block_count,
+				 (xfer->xfer_type == TEGRABL_BLOCKDEV_WRITE) ? 1U : 0U, hsdmmc,
+				 priv_data->device, true);
 }
 
 tegrabl_error_t sdmmc_bdev_erase(tegrabl_bdev_t *dev, bnum_t block,
