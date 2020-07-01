@@ -63,7 +63,8 @@ typedef enum {
 	TEGRABL_MODULE_PCIEXCLK = 45,				/* 0x2D */
 	TEGRABL_MODULE_AFI = 46,				/* 0x2E */
 	TEGRABL_MODULE_XUSBH = 47,			/* 0x2F */
-	TEGRABL_MODULE_NUM = 48,				/* 0x30 Total modules in the list */
+	TEGRABL_MODULE_VIC = 48,				/*0x30*/
+	TEGRABL_MODULE_NUM = 49,				/* 0x31 Total modules in the list */
 } tegrabl_module_t;
 
 #endif /* INCLUDED_TEGRABL_MODULE_H */

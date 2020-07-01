@@ -1,5 +1,5 @@
  /*
-  * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+  * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
   *
   * NVIDIA Corporation and its licensors retain all intellectual property
   * and proprietary rights in and to this software, related documentation
@@ -566,7 +566,7 @@ static tegrabl_error_t tegrabl_dp_init(struct tegrabl_nvdisp *nvdisp,
 	int dp_num = pdata->sor_instance;
 	tegrabl_error_t ret = TEGRABL_NO_ERROR;
 
-	dp = tegrabl_malloc(sizeof(struct tegrabl_dp));
+	dp = tegrabl_calloc(1, sizeof(struct tegrabl_dp));
 	if (!dp) {
 		pr_error("%s, memory allocation failed\n", __func__);
 		ret = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);

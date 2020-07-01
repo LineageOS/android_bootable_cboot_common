@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -50,10 +50,40 @@ static tegrabl_error_t eeprom_get_serial_no(void *param)
 	return err;
 }
 
+static uint8_t *eeprom_get_mac_addr_location(enum mac_addr_type type,
+						bool factory_mac_addr, struct eeprom_layout *eeprom)
+{
+	switch (type) {
+	case MAC_ADDR_TYPE_WIFI:
+		if (factory_mac_addr)
+			return &eeprom->wifi_mac_addr[0];
+		else
+			return &eeprom->cust_wifi_mac_addr[0];
+		break;
+	case MAC_ADDR_TYPE_BT:
+		if (factory_mac_addr)
+			return &eeprom->bt_mac_addr[0];
+		else
+			return &eeprom->cust_bt_mac_addr[0];
+		break;
+	case MAC_ADDR_TYPE_ETHERNET:
+		if (factory_mac_addr)
+			return &eeprom->eth_mac_addr[0];
+		else
+			return &eeprom->cust_eth_mac_addr[0];
+		break;
+	default:
+		pr_error("Error: Undefined MAC address type: %u\n", type);
+		return NULL;
+	}
+
+	return NULL;
+}
+
 /**
  * @brief Metadata for a MAC Address of a certain interface
  *
- * @param param - pointer points to structure containing mac addr type and
+ * @param param - pointer points to structure containing MAC addr type and
  *                buffer pointer for storing return data
  */
 static tegrabl_error_t eeprom_get_mac_addr(void *param)
@@ -62,6 +92,19 @@ static tegrabl_error_t eeprom_get_mac_addr(void *param)
 	struct tegrabl_eeprom *cvm_eeprom = NULL;
 	struct eeprom_layout *eeprom;
 	uint8_t *data;
+
+	/* List of invalid MAC addresses */
+	static const uint8_t invalid_mac_ff[EEPROM_MAC_SIZE] = {
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff
+	};
+	static const uint8_t invalid_mac_00[EEPROM_MAC_SIZE] = {
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+	};
+
+	static const char cust_sig[EEPROM_CUST_SIG_SIZE] = {'N', 'V', 'C', 'B'};
+	static const char cust_type_sig[EEPROM_CUST_TYPE_SIZE] = {'M', '1'};
+	int diff1, diff2;
+	bool factory_mac_addr;
 
 	struct mac_addr *mac_addr_info = (struct mac_addr *)param;
 	enum mac_addr_type type = mac_addr_info->type;
@@ -77,19 +120,32 @@ static tegrabl_error_t eeprom_get_mac_addr(void *param)
 	/* Get eeprom data */
 	eeprom = (struct eeprom_layout *)cvm_eeprom->data;
 
-	switch (type) {
-	case MAC_ADDR_TYPE_WIFI:
-		data = &eeprom->wifi_mac_addr[0];
-		break;
-	case MAC_ADDR_TYPE_BT:
-		data = &eeprom->bt_mac_addr[0];
-		break;
-	case MAC_ADDR_TYPE_ETHERNET:
-		data = &eeprom->eth_mac_addr[0];
-		break;
-	default:
-		pr_error("Error: Undefined MAC address type: %u\n", type);
-		goto fail;
+	/* Check if signature and type matches the expected values */
+	char *block_sig = (char *)&eeprom->cust_blocksig;
+	char *block_type = (char *)&eeprom->cust_typesig;
+
+	diff1 = memcmp(cust_sig, block_sig, EEPROM_CUST_SIG_SIZE);
+	diff2 = memcmp(cust_type_sig, block_type, EEPROM_CUST_TYPE_SIZE);
+	if (diff1 || diff2) {
+		pr_warn("%s: EEPROM valid signature or type not found, ", __func__);
+		pr_warn("using factory default MAC address\n");
+		factory_mac_addr = true;
+	} else {
+		factory_mac_addr = false;
+	}
+
+	data = eeprom_get_mac_addr_location(type, factory_mac_addr, eeprom);
+	if (!data)
+		return TEGRABL_ERR_INVALID;
+
+	/* Return error if data contains invalid MAC address */
+	if (!(memcmp(data, invalid_mac_ff, EEPROM_MAC_SIZE))) {
+		pr_error("%s: EEPROM invalid MAC address (all 0xff)\n", __func__);
+		return TEGRABL_ERR_INVALID;
+	}
+	if (!(memcmp(data, invalid_mac_00, EEPROM_MAC_SIZE))) {
+		pr_error("%s: EEPROM invalid MAC address (all 0x00)\n", __func__);
+		return TEGRABL_ERR_INVALID;
 	}
 
 	/* mac address stored in eeprom is in little endian */

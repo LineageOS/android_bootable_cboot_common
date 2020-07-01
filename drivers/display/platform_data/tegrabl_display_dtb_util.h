@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -29,13 +29,12 @@ void parse_nvdisp_dtb_settings(const void *fdt, int32_t node_offset,
  *  @param prod_list data pointer to display prod list
  *  @param node_config nodes to be parsed from dt for particular display
  *  @param num_nodes number of nodes to be parsed from dt
- *  @param prod_tuple_count number of tuples for each dt node entry
  *
  *  @return TEGRABL_NO_ERROR if success, error code if fails.
  */
 tegrabl_error_t parse_prod_settings(const void *fdt, int32_t prod_offset,
 	struct prod_list **prod_list, struct prod_pair *node_config,
-	uint32_t num_nodes, uint32_t prod_tuple_count);
+	uint32_t num_nodes);
 
 /**
  *  @brief Parse xbar-ctrl property from Sor node

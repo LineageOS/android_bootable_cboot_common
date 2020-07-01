@@ -829,7 +829,7 @@ exit:
 					   hqspi_flash->sector_size_log2)
 
 #define block_cnt_to_sector_cnt(cnt)		\
-		DIV_FLOOR_LOG2((cnt << hqspi_flash->block_size_log2), \
+		DIV_CEIL_LOG2((cnt << hqspi_flash->block_size_log2), \
 					  hqspi_flash->sector_size_log2)
 
 /**
@@ -1169,9 +1169,6 @@ static tegrabl_error_t qspi_bdev_erase(tegrabl_bdev_t *dev, bnum_t block,
 	sector_num = block_num_to_sector_num(block);
 	sector_cnt = block_cnt_to_sector_cnt(count);
 
-	pr_info("QSPI: erasing sectors from %u - %u\n",
-			sector_num, (sector_cnt - 1) + sector_num);
-
 	if (count != hqspi_flash->block_count) {
 		/* Need to preserve the partitions that are overlapping */
 		/* on the sector which needs to be erased.              */
@@ -1188,7 +1185,12 @@ static tegrabl_error_t qspi_bdev_erase(tegrabl_bdev_t *dev, bnum_t block,
 		sector_cnt -= sector_num;
 #undef PAGES_IN_SECTOR_LOG2
 
+		pr_info("QSPI: erasing sectors from %u - %u\n",
+				sector_num, sector_cnt - 1 + sector_num);
+
 		if (head_count != 0) {
+			pr_info("QSPI: recoverying head blocks from %u - %u\n",
+					head_start, head_start + head_count);
 			head_backup = tegrabl_calloc(1,
 					head_count << hqspi_flash->block_size_log2);
 			if (head_backup == NULL) {
@@ -1202,6 +1204,8 @@ static tegrabl_error_t qspi_bdev_erase(tegrabl_bdev_t *dev, bnum_t block,
 				goto fail;
 		}
 		if (tail_count != 0) {
+			pr_info("QSPI: recoverying tail blocks from %u - %u\n",
+					tail_start, tail_start + tail_count);
 			tail_backup = tegrabl_calloc(1,
 					tail_count << hqspi_flash->block_size_log2);
 			if (tail_backup == NULL) {

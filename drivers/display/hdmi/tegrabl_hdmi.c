@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -21,6 +21,7 @@
 #include <address_map_new.h>
 #include <tegrabl_hdmi.h>
 #include <tegrabl_sor.h>
+#include <tegrabl_edid.h>
 #include <string.h>
 #include <tegrabl_i2c_dev.h>
 #include <kernel/thread.h>
@@ -58,7 +59,7 @@ static tegrabl_error_t hdmi_init(struct tegrabl_nvdisp *nvdisp,
 		goto fail;
 	}
 
-	hdmi = tegrabl_malloc(sizeof(struct hdmi));
+	hdmi = tegrabl_calloc(1, sizeof(struct hdmi));
 	if (!hdmi) {
 		pr_error("%s, memory allocation failed\n", __func__);
 		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
@@ -79,6 +80,7 @@ static tegrabl_error_t hdmi_init(struct tegrabl_nvdisp *nvdisp,
 	hdmi->nvdisp = nvdisp;
 	hdmi->enabled = false;
 	hdmi->hdmi_dtb = &pdata->hdmi_dtb;
+	hdmi->is_panel_hdmi = tegrabl_edid_is_panel_hdmi();
 	nvdisp->out_data = hdmi;
 
 	pr_debug("%s: exit hdmi_init\n", __func__);
@@ -130,7 +132,8 @@ static void hdmi_config(struct hdmi *hdmi)
 	max_ac = (hblank - rekey - 18) / 32;
 
 	val = 0;
-	val |= NV_DRF_DEF(SOR_NV_PDISP, SOR_HDMI_CTRL, ENABLE, EN);
+	val |= hdmi->is_panel_hdmi ?
+			NV_DRF_DEF(SOR_NV_PDISP, SOR_HDMI_CTRL, ENABLE, EN) : 0x0;
 	val |= NV_SOR_HDMI_CTRL_REKEY(rekey);
 	val |= NV_SOR_HDMI_CTRL_MAX_AC_PACKET(max_ac);
 	sor_writel(sor, SOR_NV_PDISP_SOR_HDMI_CTRL_0, val);
@@ -228,6 +231,10 @@ static void hdmi_avi_infoframe(struct hdmi *hdmi)
 {
 	struct sor_data *sor = hdmi->sor;
 
+	if (!(hdmi->is_panel_hdmi)) {
+		return;
+	}
+
 	pr_debug("%s: entry\n", __func__);
 
 	/* disable avi infoframe before configuring */
@@ -279,6 +286,10 @@ static void hdmi_vendor_infoframe_update(struct hdmi *hdmi)
 static void hdmi_vendor_infoframe(struct hdmi *hdmi)
 {
 	struct sor_data *sor = hdmi->sor;
+
+	if (!(hdmi->is_panel_hdmi)) {
+		return;
+	}
 
 	pr_debug("%s: entry\n", __func__);
 
@@ -509,7 +520,7 @@ static void hdmi_prod_settings(struct hdmi *hdmi)
 		for (j = 0; j < prod_list->prod_settings[i].count; j++) {
 			prod_tuple = prod_settings[i].prod_tuple[j];
 			val = sor_readl(sor, prod_tuple.addr / 4);
-			val = ((val & prod_tuple.mask) |
+			val = ((val & ~prod_tuple.mask) |
 				(prod_tuple.val & prod_tuple.mask));
 				/*the above logic is based on 1-style masking*/
 			sor_writel(sor, prod_tuple.addr / 4, val);

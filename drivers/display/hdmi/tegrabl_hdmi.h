@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -241,6 +241,7 @@ struct hdmi {
 	struct hdmi_vendor_infoframe vsi;
 	int32_t sor_instance;
 	bool enabled;
+	bool is_panel_hdmi; /*true if hdmi, false if dvi*/
 };
 
 #endif

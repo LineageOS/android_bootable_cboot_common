@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2015-2018, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -569,8 +569,10 @@ tegrabl_error_t tegrabl_partition_manager_init(void)
 	list_initialize(storage_list);
 
 	while ((dev = tegrabl_blockdev_next_device(dev))) {
-		pr_debug("Finding partitions in %08x\n", dev->device_id);
-		tegrabl_partition_publish(dev, 0);
+		if (tegrabl_blockdev_get_storage_type(dev) != TEGRABL_STORAGE_SDMMC_RPMB) {
+			pr_debug("Finding partitions in %08x\n", dev->device_id);
+			tegrabl_partition_publish(dev, 0);
+		}
 	}
 
 #if defined(CONFIG_ENABLE_RECOVERY_VERIFY_WRITE)

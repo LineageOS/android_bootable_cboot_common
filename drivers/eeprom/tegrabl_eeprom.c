@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -16,9 +16,34 @@
 #include <tegrabl_malloc.h>
 #include <tegrabl_utils.h>
 #include <tegrabl_error.h>
+#include <string.h>
 
 #define TEGRABL_I2C_DEFAULT_RETRY_COUNT	1
 #define TEGRABL_I2C2_RETRY_COUNT		2
+
+/* Applicable only to CVM EEPROM */
+#define EEPROM_VER_OFFSET	0
+#define EEPROM_MAJ_VER_OFFSET	EEPROM_VER_OFFSET
+#define EEPROM_MIN_VER_OFFSET	(EEPROM_VER_OFFSET + 1)
+#define EEPROM_MAJ_VER		1
+#define EEPROM_MIN_VER		0
+
+static tegrabl_error_t verify_cvm_eeprom_version(struct tegrabl_eeprom *eeprom)
+{
+	/* First two bytes are version 0th byte is major and 1st byte is minor */
+	uint8_t major_ver = eeprom->data[EEPROM_MAJ_VER_OFFSET];
+	uint8_t minor_ver = eeprom->data[EEPROM_MIN_VER_OFFSET];
+
+	/*
+	 * If version does not match, we do not know what layout it is
+	 * dealing with
+	 */
+	if ((major_ver != EEPROM_MAJ_VER) || (minor_ver != EEPROM_MIN_VER)) {
+		pr_error("%s: EEPROM incompatible version found\n", __func__);
+		return TEGRABL_ERROR(TEGRABL_ERR_VERIFY_FAILED, 0);
+	}
+	return TEGRABL_NO_ERROR;
+}
 
 static tegrabl_error_t verify_eeprom_data(struct tegrabl_eeprom *eeprom)
 {
@@ -81,6 +106,17 @@ tegrabl_error_t tegrabl_eeprom_read(struct tegrabl_eeprom *eeprom)
 	if (error != TEGRABL_NO_ERROR) {
 		pr_error("eeprom: Failed to read I2C slave device\n");
 		goto fail;
+	}
+
+	/*
+	 * Only applicable to CVM as it stores NVCB (nvidia configuration block)
+	 * and we are only concern about the version of that EEPROM and its layout
+	 */
+	if (eeprom->name && !strcmp(eeprom->name, "cvm")) {
+		error = verify_cvm_eeprom_version(eeprom);
+		if (error != TEGRABL_NO_ERROR) {
+			goto fail;
+		}
 	}
 
 	if (eeprom->crc_valid)

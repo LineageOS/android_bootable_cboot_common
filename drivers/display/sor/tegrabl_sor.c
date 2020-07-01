@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -33,7 +33,7 @@ tegrabl_error_t sor_init(struct sor_data **phsor, uint32_t instance)
 	struct sor_data *hsor;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
-	hsor = tegrabl_malloc(sizeof(struct sor_data));
+	hsor = tegrabl_calloc(1, sizeof(struct sor_data));
 	if (hsor == NULL) {
 		pr_error("%s, memory allocation failed\n", __func__);
 		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);

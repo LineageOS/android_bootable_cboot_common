@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2017, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2014-2018, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -168,6 +168,7 @@ static tegrabl_error_t add_memory_info(void *fdt, int nodeoffset)
 	tegrabl_error_t status = TEGRABL_NO_ERROR;
 	int err;
 	char *name;
+	uint32_t odmdata = tegrabl_odmdata_get();
 
 	/*TOS In-sync structures - BEGIN*/
 	struct tos_ns_mem_map_entry_t {
@@ -211,6 +212,19 @@ static tegrabl_error_t add_memory_info(void *fdt, int nodeoffset)
 					(memblock.size == 0) ||
 					(num_memory_chunks >= MAX_MEM_CHUNKS)) {
 			break;
+		}
+
+		/* if odmdata bit[6] is set, only pass lower 4G memory to kernel */
+		#define ODMDATA_EVAL_4G_MEM (1 << 6)
+		#define SDRAM_START_ADDRESS (0x80000000)
+		#define SDRAM_OFFSET_4G (SDRAM_START_ADDRESS + 0x100000000LLU)
+		if ((odmdata & ODMDATA_EVAL_4G_MEM) &&
+			(memblock.size + memblock.base > SDRAM_OFFSET_4G)) {
+			if (memblock.base >= SDRAM_OFFSET_4G) {
+				break;
+			} else {
+				memblock.size = SDRAM_OFFSET_4G - memblock.base;
+			}
 		}
 
 		/* Align start/base to 2MB */
@@ -557,17 +571,16 @@ static tegrabl_error_t add_mac_addr_info(void *fdt, int nodeoffset)
 
 		status = tegrabl_get_mac_address(i, (uint8_t *)mac_addr);
 		if (status != TEGRABL_NO_ERROR) {
-			pr_error("Failed to get %s MAC address\n",
+			pr_warn("Failed to get %s MAC address\n",
 					 mac_addr_meta_data[i].type_of_interface);
 			/* MAC Address failure is not critical enough to stop booting */
-			return TEGRABL_NO_ERROR;
+			continue;
 		}
 
 		status = install_mac_addr(fdt, nodeoffset, i, mac_addr);
 		if (status != TEGRABL_NO_ERROR) {
-			pr_error("Failed to update DT for %s MAC address\n",
+			pr_warn("Failed to update DT for %s MAC address\n",
 					 mac_addr_meta_data[i].type_of_interface);
-			return TEGRABL_NO_ERROR;
 		}
 	}
 

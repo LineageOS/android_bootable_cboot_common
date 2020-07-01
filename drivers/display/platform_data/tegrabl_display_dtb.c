@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -31,10 +31,6 @@
 #define HOST1X_NODE "nvidia,tegra186-host1x\0simple-bus"
 #define DC_OR_NODE "nvidia,dc-or-node"
 #define MAX_NVDISP_CONTROLLERS 3
-#define HDMI_PROD_TUPLES 7
-#define DPAUX_PROD_TUPLES 1
-#define DP_PROD_TUPLES 9
-#define DP_BR_PROD_TUPLES 1
 
 static char *dpaux_node[] = {
 	"nvidia,tegra186-dpaux",
@@ -263,15 +259,14 @@ static tegrabl_error_t tegrabl_display_get_pdata(void *fdt,
 		}
 
 		err = parse_prod_settings(fdt, prod_offset,
-					&(pdata_l->dp_dtb.prod_list), dp_node, num_dp_nodes,
-					DP_PROD_TUPLES);
+					&(pdata_l->dp_dtb.prod_list), dp_node, num_dp_nodes);
 		if (err != TEGRABL_NO_ERROR) {
 			goto fail_parse;
 		}
 
 		err = parse_prod_settings(fdt, prod_offset,
 					&(pdata_l->dp_dtb.br_prod_list), dp_br_nodes,
-					num_dp_br_nodes, DP_BR_PROD_TUPLES);
+					num_dp_br_nodes);
 		if (err != TEGRABL_NO_ERROR) {
 			goto fail_parse;
 		}
@@ -285,7 +280,7 @@ static tegrabl_error_t tegrabl_display_get_pdata(void *fdt,
 		}
 		err = parse_prod_settings(fdt, prod_offset,
 					&(pdata_l->dp_dtb.dpaux_prod_list), dp_dpaux_node,
-					num_dpaux_nodes, DPAUX_PROD_TUPLES);
+					num_dpaux_nodes);
 		if (err != TEGRABL_NO_ERROR) {
 			goto fail_parse;
 		}
@@ -315,7 +310,7 @@ static tegrabl_error_t tegrabl_display_get_pdata(void *fdt,
 
 		err = parse_prod_settings(fdt, prod_offset,
 					&(pdata_l->hdmi_dtb.prod_list), tmds_config_modes,
-					num_tmds_config_modes, HDMI_PROD_TUPLES);
+					num_tmds_config_modes);
 		if (err != TEGRABL_NO_ERROR) {
 			goto fail_parse;
 		}

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2015-2018, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -197,6 +197,17 @@ enum tegrabl_tos_type {
 	TEGRABL_TOS_TYPE_TLK,
 	TEGRABL_TOS_TYPE_TRUSTY,
 };
+
+/**
+ * @brief Calculates the list of free dram regions by excluding permanent
+ * carveouts from DRAM
+ *
+ * @param address of list of free dram regions
+ *
+ * @return count of the free dram regions
+ */
+uint32_t get_free_dram_regions_info(struct tegrabl_linuxboot_memblock
+		**free_dram_regions);
 
 #if defined(__cplusplus)
 }

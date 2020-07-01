@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -600,7 +600,7 @@ static tegrabl_error_t tegrabl_set_pid(uint32_t class)
 	tegrabl_error_t e = TEGRABL_NO_ERROR;
 
 	/** Product ID definition (2 bytes as per USB 2.0 Spec)
-	 *  idProduct(LSB - 8bits) = Chip ID for 3p, 0xFB for fastboot
+	 *  idProduct(LSB - 8bits) = Chip ID for 3p, 0x16 for fastboot
 	 *  idProduct(MSB - 8bits) = (HIDFAM << 4 | SKU)
 	*/
 
@@ -608,7 +608,9 @@ static tegrabl_error_t tegrabl_set_pid(uint32_t class)
 	regval  = NV_READ32(NV_ADDRESS_MAP_MISC_BASE + MISCREG_HIDREV_0);
 
 	if (class == TEGRABL_USB_CLASS_FASTBOOT) {
-		s_hs_device_descr[10] = s_ss_device_descr[10] = 0xFB;
+		s_hs_device_descr[10] = s_ss_device_descr[10] = 0x16;
+		s_hs_device_descr[11] = s_ss_device_descr[11] = 0xEE;
+		return e;
 	} else {
 		s_hs_device_descr[10] = s_ss_device_descr[10] =
 				(uint8_t)NV_DRF_VAL(MISCREG, HIDREV, CHIPID, regval);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -54,9 +54,10 @@ void parse_nvdisp_dtb_settings(const void *fdt, int32_t node_offset,
 
 tegrabl_error_t parse_prod_settings(const void *fdt, int32_t prod_offset,
 	struct prod_list **prod_list, struct prod_pair *node_config,
-	uint32_t num_nodes, uint32_t prod_tuple_count)
+	uint32_t num_nodes)
 {
-	int prod_subnode;
+	int32_t prod_subnode;
+	uint32_t prod_tuple_count;
 	const struct fdt_property *property;
 	uint32_t i;
 	uint32_t j;
@@ -92,6 +93,13 @@ tegrabl_error_t parse_prod_settings(const void *fdt, int32_t prod_offset,
 			err = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 0);
 			goto fail;
 		}
+
+		err = tegrabl_dt_count_elems_of_size(fdt, prod_subnode, "prod", sizeof(uint32_t), &prod_tuple_count);
+		if (err != TEGRABL_NO_ERROR) {
+			pr_error("%s: Failed to get number of prod tuples\n", __func__);
+			goto fail;
+		}
+		prod_tuple_count /= 3;
 
 		prod_list_l->prod_settings[i].prod_tuple =
 			tegrabl_malloc(prod_tuple_count * sizeof(struct prod_tuple));
