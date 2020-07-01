@@ -22,6 +22,7 @@
 #include <tegrabl_mb1_bct.h>
 #include <tegrabl_blockdev.h>
 #include <tegrabl_sdmmc_bdev.h>
+#include <tegrabl_mb2_bct.h>
 
 
 /**
@@ -40,30 +41,29 @@ tegrabl_storage_type_t tegrabl_storage_map_to_storage_dev_from_mb1bct_dev(
  * @param type Device type
  * @param instance Controller instance of the device
  * @param dev_params pointer to device params
- * @param sdmmc_init SDMMC init flag
+ * @param sdmmc_skip_init SDMMC skip init flag
  * @param ufs_reinit UFS device reinitialization
  *
  * @return On success return TEGRABL_NO_ERROR otherwise appropriate error
  */
 tegrabl_error_t tegrabl_storage_init_dev(
-								tegrabl_storage_type_t type, uint32_t instance,
-								struct tegrabl_mb1bct_device_params *dev_params,
-								enum sdmmc_init_flag sdmmc_init,
-								bool ufs_reinit);
+						tegrabl_storage_type_t type, uint32_t instance,
+						struct tegrabl_mb1bct_device_params *const dev_params,
+						bool sdmmc_skip_init, bool ufs_reinit);
 
 /**
  * @brief Initialize the boot device
  *
  * @param dev_params pointer to device params
  * @param boot_dev pointer to store boot device type
- * @param sdmmc_init SDMMC init flag
+ * @param sdmmc_skip_init SDMMC init flag
  *
  * @return On success return TEGRABL_NO_ERROR otherwise appropriate error
  */
 tegrabl_error_t tegrabl_storage_init_boot_dev(
-								struct tegrabl_mb1bct_device_params *dev_params,
-								tegrabl_storage_type_t *const boot_dev,
-								enum sdmmc_init_flag sdmmc_init);
+						struct tegrabl_mb1bct_device_params *const dev_params,
+						tegrabl_storage_type_t *const boot_dev,
+						bool sdmmc_skip_init);
 
 /**
  * @brief Initialize all storage devices
@@ -71,17 +71,17 @@ tegrabl_error_t tegrabl_storage_init_boot_dev(
  * @param storage_devs pointer to array of storage devices
  * @param dev_params pointer to device params
  * @param boot_dev boot device type
- * @param sdmmc_init SDMMC init flag
+ * @param sdmmc_flag SDMMC skip init flag
  * @param ufs_reinit UFS device reinitialization
  *
  * @return On success return TEGRABL_NO_ERROR otherwise appropriate error
  */
 tegrabl_error_t tegrabl_storage_init_storage_devs(
-								const struct tegrabl_device *storage_devs,
-								struct tegrabl_mb1bct_device_params *dev_params,
-								tegrabl_storage_type_t boot_dev,
-								enum sdmmc_init_flag sdmmc_init,
-								bool ufs_reinit);
+						const struct tegrabl_device *const storage_devs,
+						struct tegrabl_mb1bct_device_params *const dev_params,
+						tegrabl_storage_type_t boot_dev,
+						bool sdmmc_skip_init,
+						bool ufs_reinit);
 
 /**
  * @brief Partially initialize sdmmc if it's only a storage device
@@ -104,7 +104,7 @@ tegrabl_error_t tegrabl_storage_partial_sdmmc_init(
  */
 bool tegrabl_storage_is_storage_enabled(
 						const struct tegrabl_device *storage_devs,
-						const tegrabl_storage_type_t dev_type,
+						tegrabl_storage_type_t dev_type,
 						const uint32_t instance);
 
 #endif /* INCLUDED_TEGRABL_STORAGE_H */

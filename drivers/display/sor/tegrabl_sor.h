@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -15,10 +15,9 @@
 #include <tegrabl_nvdisp.h>
 #include <tegrabl_addressmap.h>
 
-enum {
-	TEGRA_SOR_SAFE_CLK = 1,
-	TEGRA_SOR_LINK_CLK = 2,
-};
+/* macro tegra sor clock */
+#define TEGRA_SOR_SAFE_CLK 1
+#define TEGRA_SOR_LINK_CLK 2
 
 #define MAX_1_4_FREQUENCY 340000000 /*340 MHz*/
 
@@ -88,7 +87,12 @@ struct tegrabl_dp_link_config {
 	uint32_t preemphasis[4];
 	uint32_t postcursor[4];
 
-	bool tps3_supported;
+	/*
+	 * Training Pattern Sequence to start channel equalization with,
+	 * calculated based on an intersection of source and sink capabilities
+	 */
+	uint32_t tps;
+
 	uint8_t aux_rd_interval;
 };
 
@@ -96,13 +100,13 @@ struct tegrabl_dp_link_config {
 * @brief data structure for Sor controller
 */
 struct sor_data {
-    struct tegrabl_nvdisp *nvdisp;
-    void *base;
+	struct tegrabl_nvdisp *nvdisp;
+	void *base;
 	uint32_t instance;
-    uint8_t portnum; /* 0 or 1 */
-    bool power_is_up;
-    uint8_t clk_type;
+	uint8_t portnum; /* 0 or 1 */
+	uint8_t clk_type;
 	uint32_t xbar_ctrl[5];
+	uint32_t parent_clk;
 	const struct tegrabl_dp_link_config *link_cfg;
 };
 
@@ -110,9 +114,9 @@ struct sor_data {
  *  @brief Initialize Sor controller
  *
  *  @param phsor pointer to SOR Handle
- *  @param instance sor instance (0 or 1)
+ *  @param sor_dtb pointer to sor dtb data structure
  */
-tegrabl_error_t sor_init(struct sor_data **phsor, uint32_t instance);
+tegrabl_error_t sor_init(struct sor_data **phsor, struct tegrabl_display_sor_dtb *sor_dtb);
 
 /**
  *  @brief Set panel settings in Sor register
@@ -148,8 +152,7 @@ void sor_hdmi_pad_power_up(struct sor_data *sor);
  *
  *  @return TEGRABL_NO_ERROR if success, error code if fails.
  */
-tegrabl_error_t sor_power_lanes(struct sor_data *sor, uint32_t lane_count,
-								bool pu);
+tegrabl_error_t sor_power_lanes(struct sor_data *sor, uint32_t lane_count, bool pu);
 
 /**
  *  @brief Set link bandwidth in Sor register
@@ -217,6 +220,46 @@ void sor_update(struct sor_data *sor);
  */
 void sor_enable_sor(struct sor_data *sor, bool enable);
 
+/**
+ *  @brief Configures Sor Xbar (lane sequence)
+ *
+ *  @param sor SOR Handle
+ */
+void sor_config_xbar(struct sor_data *sor);
+
+/**
+ *  @brief power on/off pad calibration logic
+ *
+ *  @param sor SOR Handle
+ *  @param power_up true or false
+ */
+void sor_pad_cal_power(struct sor_data *sor, bool power_up);
+
+/**
+ *  @brief sor termination calibration
+ *
+ *  @param sor SOR Handle
+ */
+void sor_termination_cal(struct sor_data *sor);
+
+/**
+ *  @brief rterm calibration for hdmi/DP
+ *
+ *  @param sor SOR Handle
+ */
+void sor_cal(struct sor_data *sor);
+
+/**
+ *  @brief configures prod settings for DP and HDMI
+ *
+ *  @param sor SOR Handle
+ *  @param prod_list prod settings to be configured
+ *  @param node dp or hdmi node to be configured
+ *  @param clk clock - valid for only hdmi
+ */
+void sor_config_prod_settings(struct sor_data *sor, struct prod_list *prod_list,
+	struct prod_pair *node, uint32_t clk);
+
 static inline uint32_t sor_readl(struct sor_data *sor, uint32_t reg)
 {
 	return NV_READ32(sor->base + reg * 4);
@@ -225,5 +268,14 @@ static inline uint32_t sor_readl(struct sor_data *sor, uint32_t reg)
 static inline void sor_writel(struct sor_data *sor, uint32_t reg, uint32_t val)
 {
 	NV_WRITE32(sor->base + reg * 4, val);
+}
+
+static inline void tegrabl_sor_write_field(struct sor_data *sor,
+	uint32_t reg, uint32_t mask, uint32_t val)
+{
+	uint32_t reg_val = sor_readl(sor, reg);
+	reg_val &= ~mask;
+	reg_val |= val;
+	sor_writel(sor, reg, reg_val);
 }
 #endif

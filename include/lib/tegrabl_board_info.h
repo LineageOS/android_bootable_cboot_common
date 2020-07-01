@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -38,27 +38,32 @@ struct board_info_ops {
 tegrabl_error_t tegrabl_get_serial_no(uint8_t *buf);
 
 #define MAC_ADDR_STRING_LEN 18	/* XX:XX:XX:XX:XX:XX */
-enum mac_addr_type {
-	MAC_ADDR_TYPE_WIFI,
-	MAC_ADDR_TYPE_BT,
-	MAC_ADDR_TYPE_ETHERNET,
-	MAC_ADDR_TYPE_MAX,
-};
+#define MAC_ADDR_BYTES 6
+/* macro mac addr type */
+typedef uint32_t mac_addr_type_t;
+#define MAC_ADDR_TYPE_WIFI 0
+#define MAC_ADDR_TYPE_BT 1
+#define MAC_ADDR_TYPE_ETHERNET 2
+#define MAC_ADDR_TYPE_MAX 3
+
 
 struct mac_addr {
-	enum mac_addr_type type;
-	uint8_t *buf;
+	mac_addr_type_t type;
+	uint8_t *mac_byte_array;
+	uint8_t *mac_string;
 };
 
 /**
  * @brief Load in mac address
  *
  * @param type - mac type WIFI, BT or ETHERNET
- * @param buf - Buffer to store mac addr in string format
+ * @param mac_bytes - Buffer to store mac addr in byte wise format
+ * @param mac_string - Buffer to store mac addr in string format
  *
  * @return TEGRABL_NO_ERROR if successful else appropriate error.
  */
-tegrabl_error_t tegrabl_get_mac_address(enum mac_addr_type type, uint8_t *buf);
+tegrabl_error_t tegrabl_get_mac_address(mac_addr_type_t type, uint8_t *mac_bytes,
+										uint8_t *mac_string);
 
 /**
  * @brief board id struct version.
@@ -66,10 +71,9 @@ tegrabl_error_t tegrabl_get_mac_address(enum mac_addr_type type, uint8_t *buf);
  * board id struct may change from time to time. Add new version here.
  * Version 1 format is based on EEPROM layout
  */
-enum board_id_version {
-	BOARD_ID_INFO_VERSION_1 = 0x0100,
-	BOARD_ID_INFO_VERSION_LAST,
-};
+typedef uint32_t board_id_version_t;
+#define BOARD_ID_INFO_VERSION_1 0x0100
+#define BOARD_ID_INFO_VERSION_LAST 0x0101
 
 /* Constands defined for version 1 */
 #define BOARD_ID_SZ		EEPROM_BDID_SZ
@@ -80,6 +84,7 @@ enum board_id_version {
 #define ID_SEPARATOR	'-'
 
 #define MAX_SUPPORTED_BOARDS	8
+#define MAX_BOARD_NAME			16
 #define MAX_BOARD_PART_NO_LEN	64
 #define MAX_BOARD_CONFIG_LEN	(64*2)
 #define MAX_BOARD_LOCATION_LEN	100
@@ -88,12 +93,14 @@ enum board_id_version {
  *
  * @customer_part_id: Tells whether board ID format is customer specific or
  *		      Nvidia specific. True for customer specific.
+ * @param name - board's info name, can be NULL. Eg: cvm
  * @param part_no - board's id, sku, fab, and rev. Eg: 3310-1000-100-A
  * @param config - board's configurations. Eg: mem-type:0, power-config:1, ...
  * @location: board's location to find out which bus it is connected.
  */
 struct board_part {
 	bool customer_part_id;
+	char name[MAX_BOARD_NAME];
 	uint8_t part_no[MAX_BOARD_PART_NO_LEN];
 	uint8_t config[MAX_BOARD_CONFIG_LEN];
 	uint8_t location[MAX_BOARD_LOCATION_LEN];

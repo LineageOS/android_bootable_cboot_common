@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -15,6 +15,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <tegrabl_blockdev.h>
+
+#define TEGRABL_SDMMC_BUF_ALIGN_SIZE 4U
 
 /** @brief Performs the requested ioctl.
  *
@@ -75,7 +77,34 @@ tegrabl_error_t sdmmc_bdev_write_block(tegrabl_bdev_t *dev,
  */
 tegrabl_error_t sdmmc_bdev_erase(tegrabl_bdev_t *dev, bnum_t block,
 	bnum_t count, bool is_secure);
+
+/**
+ *  @brief Initiates the given xfer
+ *
+ *  @param xfer Address of the xfer info structure
+ *
+ *  @return TEGRABL_NO_ERROR if success, error code if fails.
+ */
+static tegrabl_error_t sdmmc_bdev_xfer(struct tegrabl_blockdev_xfer_info *xfer);
+
+/**
+ *  @brief Checks the transfer status and triggers the next
+ *
+ *  @param xfer Address of the xfer info structure
+ *  @param timeout Maxmimum timeout to wait
+ *  @param status Address of the status flag to keep
+ *
+ *  @return TEGRABL_NO_ERROR if success, error code if fails.
+ */
+static tegrabl_error_t sdmmc_bdev_xfer_wait(struct tegrabl_blockdev_xfer_info *xfer, time_t timeout,
+		uint8_t *status);
 #endif
 
-
+/** @brief Deallocates the memory allocated to sdmmc context.
+ *
+ *  @param dev bdev_t handle to be deallocated.
+ *
+ *  @return Void.
+ */
+tegrabl_error_t sdmmc_bdev_close(tegrabl_bdev_t *dev);
 #endif /* TEGRABL_SDMM_BDEV_LOCAL_H */

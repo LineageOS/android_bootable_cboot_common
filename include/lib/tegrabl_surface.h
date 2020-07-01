@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -16,32 +16,32 @@
 /**
  * enum for different possible pixel formats
  */
-enum tegrabl_pixel_format {
-	PIXEL_FORMAT_A8R8G8B8,
-	PIXEL_FORMAT_R8G8B8A8,
-	PIXEL_FORMAT_B8G8R8A8,
-	PIXEL_FORMAT_A8B8G8R8,
-};
+/* macro tegrabl pixel format */
+typedef uint32_t tegrabl_pixel_format_t;
+#define PIXEL_FORMAT_A8R8G8B8 0
+#define PIXEL_FORMAT_R8G8B8A8 1
+#define PIXEL_FORMAT_B8G8R8A8 2
+#define PIXEL_FORMAT_A8B8G8R8 3
 
 /** Defines the different display scan formats in the video planes.
  *  This enumeration is built to support 2 display formats :
  *  progressive,
  *  interlaced
  */
-enum tegrabl_scan_format {
-	SCAN_FORMAT_PROGRESSIVE,
-	SCAN_FORMAT_INTERLACIVE,
-};
+/* macro tegrabl scan format */
+typedef uint32_t tegrabl_scan_format_t;
+#define SCAN_FORMAT_PROGRESSIVE 0
+#define SCAN_FORMAT_INTERLACIVE 1
 
 /**
  *  The possible layouts that a surface can presently have. More layouts can be
  *  added when invented by HW.
  */
-enum tegrabl_surface_layout {
-	SURFACE_LAYOUT_PITCH,
-	SURFACE_LAYOUT_LINEAR,
-	SURFACE_LAYOUT_BLOCKLINEAR,
-};
+/* macro tegrabl surgace layout */
+typedef uint32_t tegrabl_surface_layout_t;
+#define SURFACE_LAYOUT_PITCH 0
+#define SURFACE_LAYOUT_LINEAR 1
+#define SURFACE_LAYOUT_BLOCKLINEAR 2
 
 /**
  *  A structure representing a surface
@@ -53,9 +53,9 @@ struct tegrabl_surface {
 	uintptr_t base;
 	uint32_t size;
 	uint32_t alignment;
-	enum tegrabl_pixel_format pixel_format;
-	enum tegrabl_scan_format scan_format;
-	enum tegrabl_surface_layout layout;
+	tegrabl_pixel_format_t pixel_format;
+	tegrabl_scan_format_t scan_format;
+	tegrabl_surface_layout_t layout;
 	uint32_t second_field_offset;
 };
 

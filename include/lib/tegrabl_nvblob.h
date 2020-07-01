@@ -19,12 +19,12 @@
 #define UPDATE_MAGIC_SIZE  16
 #define BLOB_HEADER_ACCESSORY_SIZE 8
 
-enum tegrabl_blob_type {
-	BLOB_UPDATE = 0,
-	BLOB_BMP,
-	BLOB_NONE,
-	BLOB_FORCE32 = 0x7FFFFFFF
-};
+/* macro tegrabl blob type */
+typedef uint32_t tegrabl_blob_type_t;
+#define BLOB_UPDATE 0
+#define BLOB_BMP 1
+#define BLOB_NONE 2
+#define BLOB_FORCE32 0x7FFFFFFF
 
 /* elements need to be 32-bit aligned */
 struct tegrabl_image_entry {
@@ -36,40 +36,40 @@ struct tegrabl_image_entry {
 	char spec_info[IMG_SPEC_INFO_LENGTH];
 };
 
-enum tegrabl_image_type {
-	IMAGE_NVIDIA,
-	IMAGE_LOWBATTERY,
-	IMAGE_CHARGING,
-	IMAGE_CHARGED,
-	IMAGE_FULLYCHARGED,
-	IMAGE_SATA_FW_OTA,
-	IMAGE_VERITY_YELLOW_PAUSE,
-	IMAGE_VERITY_YELLOW_CONTINUE,
-	IMAGE_VERITY_ORANGE_PAUSE,
-	IMAGE_VERITY_ORANGE_CONTINUE,
-	IMAGE_VERITY_RED_PAUSE,
-	IMAGE_VERITY_RED_CONTINUE,
-	IMAGE_USER_DEFINED,
-	IMAGE_NUM,
-	IMAGE_FORCE32 = 0x7FFFFFFF
-};
+/* macro tegrabl image type */
+typedef uint32_t tegrabl_image_type_t;
+#define IMAGE_NVIDIA 0
+#define IMAGE_LOWBATTERY 1
+#define IMAGE_CHARGING 2
+#define IMAGE_CHARGED 3
+#define IMAGE_FULLYCHARGED 4
+#define IMAGE_SATA_FW_OTA 5
+#define IMAGE_VERITY_YELLOW_PAUSE 6
+#define IMAGE_VERITY_YELLOW_CONTINUE 7
+#define IMAGE_VERITY_ORANGE_PAUSE 8
+#define IMAGE_VERITY_ORANGE_CONTINUE 9
+#define IMAGE_VERITY_RED_PAUSE 10
+#define IMAGE_VERITY_RED_CONTINUE 11
+#define IMAGE_USER_DEFINED 12
+#define IMAGE_NUM 13
+#define IMAGE_FORCE32 0x7FFFFFFF
 
-enum tegrabl_bmp_resolution {
-	BMPRES_480P,
-	BMPRES_720P,
-	BMPRES_810P,
-	BMPRES_1080P,
-	BMPRES_4K,
-	BMPRES_1200P_P,
-	BMPRES_NUM,
-	BMPRES_FORCE32 = 0x7FFFFFFF
-};
+/* macro tegrabl bmp resolution */
+typedef uint32_t tegrabl_bmp_resolution_t;
+#define BMPRES_480P 0
+#define BMPRES_720P 1
+#define BMPRES_810P 2
+#define BMPRES_1080P 3
+#define BMPRES_4K 4
+#define BMPRES_1200P_P 5
+#define BMPRES_NUM 6
+#define BMPRES_FORCE32 0x7FFFFFFF
 
 struct tegrabl_bmp_entry {
-	enum tegrabl_image_type bmp_type;
+	tegrabl_image_type_t bmp_type;
 	uint32_t bmp_offset;
 	uint32_t bmp_size;
-	enum tegrabl_bmp_resolution bmp_res;
+	tegrabl_bmp_resolution_t bmp_res;
 	/* keep entry format identical with blob generator */
 	char reserved[36];
 };
@@ -121,7 +121,7 @@ struct blob_header {
 
 	uint32_t entries_offset;
 	uint32_t num_entries;
-	enum tegrabl_blob_type type;
+	tegrabl_blob_type_t type;
 
 	uint32_t uncomp_size;
 
@@ -174,7 +174,7 @@ bool tegrabl_blob_is_signed(tegrabl_blob_handle bh);
  * @return TEGRABL_NO_ERROR if successful else appropriate error.
  */
 tegrabl_error_t tegrabl_blob_get_type(tegrabl_blob_handle bh,
-									  enum tegrabl_blob_type *type);
+									  tegrabl_blob_type_t *type);
 
 /**
  * @brief Get memory-location and length of the signed section (actual Blob)

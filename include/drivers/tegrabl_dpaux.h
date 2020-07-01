@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -23,27 +23,29 @@
 #include <stdint.h>
 #include <tegrabl_i2c.h>
 
-enum dpaux_instance {
-	DPAUX_INSTANCE_0,
-	DPAUX_INSTANCE_1,
-	DPAUX_MAX,
-};
+/* macro dpaux instance */
+typedef uint32_t dpaux_instance_t;
+#define DPAUX_INSTANCE_0 0
+#define DPAUX_INSTANCE_1 1
+#define DPAUX_INSTANCE_2 2
+#define DPAUX_INSTANCE_3 3
 
-enum dpaux_aux_cmd {
-	AUX_CMD_I2CWR = 0,
-	AUX_CMD_I2CRD,
-	AUX_CMD_I2CREQWSTAT,
-	AUX_CMD_MOTWR = 4,
-	AUX_CMD_MOTRD,
-	AUX_CMD_MOTREQWSTAT,
-	AUX_CMD_AUXWR = 8,
-	AUX_CMD_AUXRD,
-};
+/* macro dpaux aux cmd */
+typedef uint32_t dpaux_aux_cmd_t;
+#define AUX_CMD_I2CWR 0
+#define AUX_CMD_I2CRD 1
+#define AUX_CMD_I2CREQWSTAT 2
+#define AUX_CMD_MOTWR 4
+#define AUX_CMD_MOTRD 5
+#define AUX_CMD_MOTREQWSTAT 6
+#define AUX_CMD_AUXWR 8
+#define AUX_CMD_AUXRD 9
 
 struct tegrabl_dpaux {
-	uint8_t instance;
+	uint32_t instance;
 	void *base;
 	uint8_t mode;
+	uint32_t module;
 };
 
 /**
@@ -53,7 +55,7 @@ struct tegrabl_dpaux {
 *
 * @return TEGRABL_NO_ERROR if success, error code if fails.
 */
-tegrabl_error_t tegrabl_dpaux_init_ddc_i2c(enum dpaux_instance instance);
+tegrabl_error_t tegrabl_dpaux_init_ddc_i2c(dpaux_instance_t instance);
 
 /**
 * @brief Initilizes the dpaux of given instance in AUX mode.
@@ -63,7 +65,7 @@ tegrabl_error_t tegrabl_dpaux_init_ddc_i2c(enum dpaux_instance instance);
 *
 * @return TEGRABL_NO_ERROR if success, error code if fails.
 */
-tegrabl_error_t tegrabl_dpaux_init_aux(enum dpaux_instance instance,
+tegrabl_error_t tegrabl_dpaux_init_aux(dpaux_instance_t instance,
 	struct tegrabl_dpaux **phdpaux);
 
 /**

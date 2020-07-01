@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -10,7 +10,6 @@
 
 #define MODULE TEGRABL_ERR_DPAUX
 
-#include <tegrabl_addressmap.h>
 #include <tegrabl_dpaux.h>
 #include <ardpaux.h>
 #include <tegrabl_clock.h>
@@ -22,6 +21,11 @@
 #include <tegrabl_debug.h>
 #include <string.h>
 #include <tegrabl_i2c.h>
+#include <tegrabl_dpaux_soc.h>
+#include <tegrabl_dpaux_soc_common.h>
+#include <tegrabl_devicetree.h>
+#include <libfdt.h>
+#include <tegrabl_addressmap.h>
 
 #define DPAUX_TIMEOUT_MS 1000
 #define DPAUX_RETRY_WAIT_TIME_US 100
@@ -41,32 +45,26 @@
 #define dpaux_readl(hdpaux, val) \
 	NV_READ32(hdpaux->base + (DPAUX_##val##_0 << SHIFT))
 
-
-uint32_t dpaux_base_addr[DPAUX_MAX] = {
-	NV_ADDRESS_MAP_DPAUX_BASE,
-	NV_ADDRESS_MAP_DPAUX1_BASE
-};
-
 /**
 * @brief DPAUX Pad modes
 */
-enum dpaux_pad_mode {
-	DPAUX_PAD_MODE_I2C,
-	DPAUX_PAD_MODE_AUX,
-};
+typedef uint32_t dpaux_pad_mode_t;
+#define DPAUX_PAD_MODE_I2C 0
+#define DPAUX_PAD_MODE_AUX 1
 
 /**
 * @brief DPAUX Signal voltage level
 */
-enum dpaux_sig_volt {
-	DPAUX_SIG_VOLT_3V3,
-	DPAUX_SIG_VOLT_1V8,
-};
+typedef uint32_t dpaux_sig_volt_t;
+#define DPAUX_SIG_VOLT_3V3 0
+#define DPAUX_SIG_VOLT_1V8 1
 
-static tegrabl_error_t dpaux_init(enum dpaux_instance instance,
-	struct tegrabl_dpaux **phdpaux)
+static tegrabl_error_t dpaux_init(dpaux_instance_t instance, struct tegrabl_dpaux **phdpaux)
 {
 	struct tegrabl_dpaux *hdpaux;
+	struct dpaux_soc_info *hdpaux_info = NULL;
+	static bool is_initialized;
+	static bool is_dpaux_initialized[4];
 	tegrabl_error_t err;
 
 	pr_debug("%s: entry\n", __func__);
@@ -79,61 +77,64 @@ static tegrabl_error_t dpaux_init(enum dpaux_instance instance,
 	}
 
 	hdpaux = tegrabl_malloc(sizeof(struct tegrabl_dpaux));
+	if (hdpaux == NULL) {
+		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
+		goto fail;
+	}
 	hdpaux->instance = instance;
-	hdpaux->base = (void *)(uintptr_t)(dpaux_base_addr[instance]);
 
-	/* enable host1x and sor safe clock. this is required for dpaux */
-	err = tegrabl_car_rst_set(TEGRABL_MODULE_HOST1X, 0);
-	if (err != TEGRABL_NO_ERROR)
-		goto fail;
+	dpaux_get_soc_info(&hdpaux_info);
 
-	err = tegrabl_car_clk_enable(TEGRABL_MODULE_HOST1X, 0, NULL);
-	if (err != TEGRABL_NO_ERROR)
-		goto fail;
+	hdpaux->base = (void *)(uintptr_t)(hdpaux_info[instance].base_addr);
+	hdpaux->module = hdpaux_info[instance].module;
 
-	err = tegrabl_car_rst_clear(TEGRABL_MODULE_HOST1X, 0);
-	if (err != TEGRABL_NO_ERROR)
-		goto fail;
-
-	err = tegrabl_car_clk_enable(TEGRABL_MODULE_SOR_SAFE, 0, NULL);
-	if (err != TEGRABL_NO_ERROR)
-		goto fail;
-
-	/* Reset and Enable clock based on Instance */
-	if (instance == DPAUX_INSTANCE_0) {
-		err = tegrabl_car_rst_set(TEGRABL_MODULE_DPAUX, 0);
+	if (is_initialized != true) {
+		/* enable host1x and sor safe clock. this is required for dpaux */
+		err = tegrabl_car_rst_set(TEGRABL_MODULE_HOST1X, 0);
 		if (err != TEGRABL_NO_ERROR)
 			goto fail;
 
-		err = tegrabl_car_clk_enable(TEGRABL_MODULE_DPAUX, 0, NULL);
+		err = tegrabl_car_clk_enable(TEGRABL_MODULE_HOST1X, 0, NULL);
 		if (err != TEGRABL_NO_ERROR)
 			goto fail;
 
-		err = tegrabl_car_rst_clear(TEGRABL_MODULE_DPAUX, 0);
-		if (err != TEGRABL_NO_ERROR)
-			goto fail;
-	} else {
-		err = tegrabl_car_rst_set(TEGRABL_MODULE_DPAUX1, 0);
+		err = tegrabl_car_rst_clear(TEGRABL_MODULE_HOST1X, 0);
 		if (err != TEGRABL_NO_ERROR)
 			goto fail;
 
-		err = tegrabl_car_clk_enable(TEGRABL_MODULE_DPAUX1, 0, NULL);
-		if (err != TEGRABL_NO_ERROR)
-			goto fail;
-
-		err = tegrabl_car_rst_clear(TEGRABL_MODULE_DPAUX1, 0);
+		err = tegrabl_car_clk_enable(TEGRABL_MODULE_SOR_SAFE, 0, NULL);
 		if (err != TEGRABL_NO_ERROR)
 			goto fail;
 	}
 
-	*phdpaux = hdpaux;
+	pr_debug("%s: set clock for DPAUX instance = %d\n", __func__, instance);
+	if (is_dpaux_initialized[instance] != true) {
+		/* Reset and Enable clock based on Instance */
+		err = tegrabl_car_rst_set(hdpaux->module, 0);
+		if (err != TEGRABL_NO_ERROR) {
+			goto fail;
+		}
 
+		err = tegrabl_car_clk_enable(hdpaux->module, 0, NULL);
+		if (err != TEGRABL_NO_ERROR) {
+			goto fail;
+		}
+
+		err = tegrabl_car_rst_clear(hdpaux->module, 0);
+		if (err != TEGRABL_NO_ERROR) {
+			goto fail;
+		}
+	}
+
+	*phdpaux = hdpaux;
+	is_initialized = true;
+	is_dpaux_initialized[instance] = true;
 fail:
 	return err;
 }
 
 static void dpaux_config_pad_mode(struct tegrabl_dpaux *hdpaux,
-	enum dpaux_pad_mode mode)
+	dpaux_pad_mode_t mode)
 {
 	uint32_t val = 0;
 
@@ -163,6 +164,83 @@ static void dpaux_config_pad_mode(struct tegrabl_dpaux *hdpaux,
 	return;
 }
 
+tegrabl_error_t dpaux_prod_set(struct tegrabl_dpaux *hdpaux, uint32_t mode)
+{
+	void *fdt = NULL;
+	const struct fdt_property *property;
+	int32_t prod_offset;
+	int32_t dpaux_off;
+	int32_t off = 0, mask = 0, val = 0;
+	int32_t temp_val;
+	int32_t propval;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+
+	err = tegrabl_dt_get_fdt_handle(TEGRABL_DT_BL, &fdt);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("Failed to get bl-dtb handle\n");
+		goto fail;
+	}
+
+	propval = fdt32_to_cpu(hdpaux->instance);
+	dpaux_off = fdt_node_offset_by_prop_value(fdt, -1, "nvidia,dpaux-ctrlnum", (void *)&propval, 4);
+	if (dpaux_off < 0) {
+		pr_error("dpaux node not found for instance = %d\n", hdpaux->instance);
+		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 0);
+		goto fail;
+	}
+
+	/* get prod-settings offset of dp*/
+	prod_offset = fdt_subnode_offset(fdt, dpaux_off, "prod-settings");
+	if (prod_offset < 0) {
+		pr_error("prod-settings subnode not found\n");
+		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 1);
+		goto fail;
+	}
+
+	if (mode == DPAUX_PAD_MODE_I2C) {
+		prod_offset = fdt_subnode_offset(fdt, prod_offset, "prod_c_dpaux_hdmi");
+		if (prod_offset < 0) {
+			pr_error("prod_c_dpaux_hdmi subnode not found\n");
+			err = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 2);
+			goto fail;
+		}
+	} else if (mode == DPAUX_PAD_MODE_AUX) {
+		prod_offset = fdt_subnode_offset(fdt, prod_offset, "prod_c_dpaux_dp");
+		if (prod_offset < 0) {
+			pr_error("prod_c_dpaux_dp subnode not found\n");
+			err = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 3);
+			goto fail;
+		}
+	} else {
+		pr_error("%s: invalid dpaux mode\n", __func__);
+		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 13);
+		goto fail;
+	}
+
+	property = fdt_get_property(fdt, prod_offset, "prod", NULL);
+	if (!property) {
+		pr_error("error in reading \"prod\" property\n");
+		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 4);
+		goto fail;
+	}
+
+	off = fdt32_to_cpu(*(property->data32 + 1));
+	if ((off < 0) || (off > (NV_ADDRESS_MAP_DPAUX_SIZE - *(int32_t *)hdpaux->base))) {
+		pr_error("dpaux address offset is out of bounds\n");
+		goto fail;
+	}
+	mask = fdt32_to_cpu(*(property->data32 + 2));
+	val = fdt32_to_cpu(*(property->data32 + 3));
+	pr_debug("dpaux prod settings: addr = %#x, mask = %#x, val = %#x\n", off, mask, val);
+
+	temp_val = NV_READ32(hdpaux->base + off);
+	temp_val = ((temp_val & ~mask) | (val & mask));
+	NV_WRITE32(hdpaux->base + off, temp_val);
+
+fail:
+	return err;
+}
+
 void dpaux_pad_power(struct tegrabl_dpaux *hdpaux, bool is_on)
 {
 	uint32_t val = 0;
@@ -179,7 +257,7 @@ void dpaux_pad_power(struct tegrabl_dpaux *hdpaux, bool is_on)
 }
 
 static void dpaux_set_voltage(struct tegrabl_dpaux *hdpaux,
-	enum dpaux_sig_volt vol)
+	dpaux_sig_volt_t vol)
 {
 	uint32_t val = 0;
 
@@ -198,7 +276,7 @@ static void dpaux_set_voltage(struct tegrabl_dpaux *hdpaux,
 }
 
 
-tegrabl_error_t tegrabl_dpaux_init_ddc_i2c(enum dpaux_instance instance)
+tegrabl_error_t tegrabl_dpaux_init_ddc_i2c(dpaux_instance_t instance)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	struct tegrabl_dpaux *hdpaux;
@@ -207,6 +285,11 @@ tegrabl_error_t tegrabl_dpaux_init_ddc_i2c(enum dpaux_instance instance)
 
 	/* Enable DPAUX and get the dpaux handle */
 	err = dpaux_init(instance, &hdpaux);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+
+	err = dpaux_prod_set(hdpaux, DPAUX_PAD_MODE_I2C);
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
@@ -239,6 +322,12 @@ void dpaux_int_disable(struct tegrabl_dpaux *hdpaux)
 			NV_DRF_DEF(DPAUX, INTR_EN_AUX, AUX_DONE, DISABLED);
 
 	dpaux_writel(hdpaux, INTR_EN_AUX, val);
+
+	val = NV_DRF_DEF(DPAUX, INTR_AUX, PLUG_EVENT, PENDING) |
+			NV_DRF_DEF(DPAUX, INTR_AUX, UNPLUG_EVENT, PENDING) |
+			NV_DRF_DEF(DPAUX, INTR_AUX, IRQ_EVENT, PENDING) |
+			NV_DRF_DEF(DPAUX, INTR_AUX, AUX_DONE, PENDING);
+	dpaux_writel(hdpaux, INTR_AUX, val);
 
 	return;
 }
@@ -277,7 +366,7 @@ void dpaux_hpd_config(struct tegrabl_dpaux *hdpaux)
 	return;
 }
 
-tegrabl_error_t tegrabl_dpaux_init_aux(enum dpaux_instance instance,
+tegrabl_error_t tegrabl_dpaux_init_aux(dpaux_instance_t instance,
 	struct tegrabl_dpaux **phdpaux)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
@@ -290,6 +379,15 @@ tegrabl_error_t tegrabl_dpaux_init_aux(enum dpaux_instance instance,
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
+
+	/* disable all interrupts */
+	dpaux_int_disable(hdpaux);
+
+	err = dpaux_prod_set(hdpaux, DPAUX_PAD_MODE_AUX);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+
 	/* set in Aux mode */
 	dpaux_config_pad_mode(hdpaux, DPAUX_PAD_MODE_AUX);
 
@@ -302,14 +400,7 @@ tegrabl_error_t tegrabl_dpaux_init_aux(enum dpaux_instance instance,
 	/* configure hpd with plug and unplug min times */
 	dpaux_hpd_config(hdpaux);
 
-	/* disable all interrupts */
-	dpaux_int_disable(hdpaux);
-
 	*phdpaux = hdpaux;
-
-	/*TODO: added for stabilization, need to check why this
-	 * is required. */
-	tegrabl_mdelay(2);
 
 fail:
 	if (err != TEGRABL_NO_ERROR) {
@@ -626,13 +717,15 @@ tegrabl_error_t tegrabl_dpaux_write(struct tegrabl_dpaux *hdpaux, uint32_t cmd,
 
 	do {
 		cur_size = *size - finished;
-		if (cur_size > DPAUX_MAX_BYTES)
+		if (cur_size > DPAUX_MAX_BYTES) {
 			cur_size = DPAUX_MAX_BYTES;
+		}
 
 		err = tegrabl_dpaux_write_chunk(hdpaux, cmd, addr, data, &cur_size,
 				aux_stat);
-		if (err != TEGRABL_NO_ERROR)
+		if (err != TEGRABL_NO_ERROR) {
 			break;
+		}
 
 		finished += cur_size;
 		addr += cur_size;
@@ -670,13 +763,15 @@ tegrabl_error_t tegrabl_dpaux_read(struct tegrabl_dpaux *hdpaux, uint32_t cmd,
 
 	do {
 		cur_size = *size - finished;
-		if (cur_size > DPAUX_MAX_BYTES)
+		if (cur_size > DPAUX_MAX_BYTES) {
 			cur_size = DPAUX_MAX_BYTES;
+		}
 
 		err = tegrabl_dpaux_read_chunk(hdpaux, cmd, addr, data, &cur_size,
 				aux_stat);
-		if (err != TEGRABL_NO_ERROR)
+		if (err != TEGRABL_NO_ERROR) {
 			break;
+		}
 		pr_debug("cur size = %d\n", cur_size);
 		finished += cur_size;
 		addr += cur_size;
@@ -731,13 +826,15 @@ tegrabl_error_t tegrabl_dpaux_i2c_write(struct tegrabl_dpaux *hdpaux,
 			 __func__, slave_addr, *size);
 	do {
 		cur_size = *size - finished;
-		if (cur_size > DPAUX_MAX_BYTES)
+		if (cur_size > DPAUX_MAX_BYTES) {
 			cur_size = DPAUX_MAX_BYTES;
+		}
 
 		err = tegrabl_dpaux_write_chunk(hdpaux, AUX_CMD_MOTWR, slave_addr, data,
 										&cur_size, aux_stat);
-		if (err != TEGRABL_NO_ERROR)
+		if (err != TEGRABL_NO_ERROR) {
 			break;
+		}
 		pr_debug("cur size = %d\n", cur_size);
 		finished += cur_size;
 		data += cur_size;
@@ -765,15 +862,17 @@ tegrabl_error_t tegrabl_dpaux_i2c_read(struct tegrabl_dpaux *hdpaux,
 
 	do {
 		cur_size = *size - finished;
-		if (cur_size > DPAUX_MAX_BYTES)
+		if (cur_size > DPAUX_MAX_BYTES) {
 			cur_size = DPAUX_MAX_BYTES;
+		}
 
 		pr_debug("%s: MOTRD, slave_addr = %x, size = %d\n",
 				 __func__, slave_addr, cur_size);
 		err = tegrabl_dpaux_read_chunk(hdpaux, AUX_CMD_MOTRD, slave_addr, data,
 									   &cur_size, aux_stat);
-		if (err != TEGRABL_NO_ERROR)
+		if (err != TEGRABL_NO_ERROR) {
 			break;
+		}
 		pr_debug("cur size = %d\n", cur_size);
 		finished += cur_size;
 		data += cur_size;

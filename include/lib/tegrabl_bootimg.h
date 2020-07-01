@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2016, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2014-2018, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -38,6 +38,7 @@ extern "C"
  * @param tags_addr Holds the address for ATAGS.
  * @param page_size Holds the page size of the storage medium.
  * @param unused Unused field.
+ * @param os_version OS version and security patch level.
  * @param name Holds the project name, currently unused,
  * @param cmdline Holds the kernel command line to be appended to default
  *                command line.
@@ -68,7 +69,9 @@ union tegrabl_bootimg_header {
 
 		uint32_t tagsaddr;
 		uint32_t pagesize;
-		uint32_t unused[2];
+		uint32_t unused;
+
+		uint32_t os_version;
 
 		uint8_t  name[ANDROID_BOOT_NAME_SIZE];
 		uint8_t  cmdline[ANDROID_BOOT_CMDLINE_SIZE];
@@ -78,6 +81,24 @@ union tegrabl_bootimg_header {
 
 		uint32_t kernelcrc;
 		uint32_t ramdiskcrc;
+	};
+};
+
+/*
+ * operating system version and security patch level.
+ * for version "A.B.C" and patch level "Y-M-D":
+ *     ver = A << 14 | B << 7 | C         (7 bits for each of A, B, C)
+ *     lvl = ((Y - 2000) & 127) << 4 | M  (7 bits for Y, 4 bits for M)
+ *     os_version = ver << 11 | lvl
+ */
+union android_os_version {
+	uint32_t data;
+	struct {
+		uint32_t security_month:4; /* bits[3:0] */
+		uint32_t security_year:7; /* bits[10:4] */
+		uint32_t subminor_version:7; /* bits[17:11] */
+		uint32_t minor_version:7; /* bits[24:18] */
+		uint32_t major_version:7; /* bits[31:25] */
 	};
 };
 

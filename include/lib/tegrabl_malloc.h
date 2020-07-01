@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All Rights Reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -18,11 +18,11 @@
 /**
  * @brief specifies the type of heap
  */
-enum tegrabl_heap_type {
-	TEGRABL_HEAP_DEFAULT,
-	TEGRABL_HEAP_DMA,
-	TEGRABL_HEAP_TYPE_MAX,
-};
+/* macro tegrabl heap type */
+typedef uint32_t tegrabl_heap_type_t;
+#define TEGRABL_HEAP_DEFAULT 0U
+#define TEGRABL_HEAP_DMA 1U
+#define TEGRABL_HEAP_TYPE_MAX 2U
 
 /**
  * @brief Reserves a large pool of memory. Using tegrabl_malloc, tegrabl_calloc
@@ -35,7 +35,7 @@ enum tegrabl_heap_type {
  *
  * @return TEGRABL_NO_ERROR if successful, else error.
  */
-tegrabl_error_t tegrabl_heap_init(enum tegrabl_heap_type heap_type,
+tegrabl_error_t tegrabl_heap_init(tegrabl_heap_type_t heap_type,
 								  size_t start, size_t size);
 
 /**
@@ -87,7 +87,7 @@ void tegrabl_free(void *ptr);
  *
  * @return pointer to the allocated memory if successful else NULL
  */
-void *tegrabl_alloc(enum tegrabl_heap_type heap_type, size_t size);
+void *tegrabl_alloc(tegrabl_heap_type_t heap_type, size_t size);
 
 /**
  * @brief Frees memory
@@ -96,7 +96,7 @@ void *tegrabl_alloc(enum tegrabl_heap_type heap_type, size_t size);
  * @param ptr Specifies start address of the memory
  *
  */
-void tegrabl_dealloc(enum tegrabl_heap_type heap_type, void *ptr);
+void tegrabl_dealloc(tegrabl_heap_type_t heap_type, void *ptr);
 
 /**
  * @brief Allocates aligned memory from specified heap type and returns pointer
@@ -108,7 +108,7 @@ void tegrabl_dealloc(enum tegrabl_heap_type heap_type, void *ptr);
  *
  * @return pointer to the allocated memory if successful else NULL
  */
-void *tegrabl_alloc_align(enum tegrabl_heap_type heap_type,
+void *tegrabl_alloc_align(tegrabl_heap_type_t heap_type,
 		size_t alignment, size_t size);
 
 /**

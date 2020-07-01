@@ -10,15 +10,5 @@
 
 #ifndef INCLUDED_TEGRABL_NVTYPES_H
 #define INCLUDED_TEGRABL_NVTYPES_H
-#ifndef INCLUDED_NVCOMMON_H
-
-#include <stdint.h>
-
-typedef uint64_t NvU64;
-typedef uint32_t NvU32;
-typedef uint16_t NvU16;
-typedef uint8_t NvU8;
-typedef uint8_t NvBool;
-
-#endif /* INCLUDED_NVCOMMON_H */
+#include <nvcommon.h>
 #endif /* INCLUDED_TEGRABL_NVTYPES_H */

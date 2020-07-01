@@ -1,7 +1,7 @@
 /*
  * TCA9539 16-bit I2C I/O Expander Driver
  *
- * Copyright (c) 2016-2017, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -16,10 +16,16 @@
 #include <tegrabl_gpio.h>
 #include <tegrabl_debug.h>
 #include <tegrabl_error.h>
-#include <tegrabl_i2c_dev.h>
-#include <tegrabl_tca9539_gpio.h>
 #include <tegrabl_io.h>
 #include <tegrabl_malloc.h>
+#include <tegrabl_i2c.h>
+#include <tegrabl_i2c_dev.h>
+#include <tegrabl_gpio.h>
+#include <tegrabl_tca9539_gpio.h>
+#include <tegrabl_tca9539_plat_config.h>
+#if defined(CONFIG_ENABLE_GPIO_DT_BASED)
+#include <tegrabl_devicetree.h>
+#endif
 
 #define TCA9539_GPIO_DRIVER_NAME	"tca9539_gpio_driver"
 
@@ -28,30 +34,6 @@
 
 #define TCA9539_REG_ADDR_SIZE	1
 #define TCA9539_REG_BYTES		1
-
-struct tca9539_driver_property {
-	uint32_t chip_id;
-	int i2c_inst;
-	uint32_t i2c_addr;
-};
-
-static struct tca9539_driver_property tca9539_chips[] = {
-	{
-		.chip_id = TEGRA_GPIO_TCA9539_CHIPID_BASE,
-		.i2c_inst = TEGRABL_INSTANCE_I2C1,
-		.i2c_addr = 0x77,
-	},
-	{
-		.chip_id = TEGRA_GPIO_TCA9539_CHIPID_BASE + 1,
-		.i2c_inst = TEGRABL_INSTANCE_I2C1,
-		.i2c_addr = 0x74,
-	},
-	{
-		.chip_id = TEGRA_GPIO_TCA9539_CHIPID_BASE + 2,
-		.i2c_inst = TEGRABL_INSTANCE_I2C1,
-		.i2c_addr = 0x76,
-	},
-};
 
 /*
  * GPIO Number Bit Mapping(Bit0...Bit7)
@@ -108,6 +90,8 @@ struct tca9539_chip {
 	struct tegrabl_i2c_dev *hi2cdev;
 	/* i2c bus instance */
 	int i2c_inst;
+	/* i2c instance name */
+	char *i2c_name;
 	/* slave address */
 	uint32_t i2c_addr;
 	/* command register */
@@ -132,7 +116,7 @@ static bool is_gpio_valid(uint32_t gpio_num)
  *         state otherwise error
  */
 static tegrabl_error_t tca9539_gpio_read(uint32_t gpio_num,
-				enum gpio_pin_state *state, void *drv_data)
+				gpio_pin_state_t *state, void *drv_data)
 {
 	struct tca9539_chip *dev = (struct tca9539_chip *)drv_data;
 	uint8_t reg, shift, val;
@@ -175,7 +159,7 @@ static tegrabl_error_t tca9539_gpio_read(uint32_t gpio_num,
  * @return TEGRABL_NO_ERROR on success otherwise error
  */
 static tegrabl_error_t tca9539_gpio_write(uint32_t gpio_num,
-										  enum gpio_pin_state state,
+										  gpio_pin_state_t state,
 										  void *drv_data)
 {
 	struct tca9539_chip *dev = (struct tca9539_chip *)drv_data;
@@ -219,7 +203,7 @@ static tegrabl_error_t tca9539_gpio_write(uint32_t gpio_num,
  * @return TEGRABL_NO_ERROR on success otherwise error
  */
 static tegrabl_error_t tca9539_gpio_config(uint32_t gpio_num,
-										   enum gpio_pin_mode mode,
+										   gpio_pin_mode_t mode,
 										   void *drv_data)
 {
 	struct tca9539_chip *dev = (struct tca9539_chip *)drv_data;
@@ -314,7 +298,64 @@ fail:
 	return ret;
 }
 
+#if defined(CONFIG_ENABLE_GPIO_DT_BASED)
+static char *compatible_chips[] = {
+	"ti,tca9539",
+	"nxp,tca9539",
+};
 
+static tegrabl_error_t fetch_driver_phandle_from_dt(struct tca9539_chip *device,
+													struct gpio_driver *drv)
+{
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	void *fdt = NULL;
+	int node_itr, i2c_node;
+	uint16_t i;
+	uintptr_t slave_addr;
+
+	TEGRABL_ASSERT(device != NULL);
+	TEGRABL_ASSERT(drv != NULL);
+
+	err = tegrabl_dt_get_fdt_handle(TEGRABL_DT_BL, &fdt);
+	if (err != TEGRABL_NO_ERROR) {
+		goto done;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(compatible_chips); i++) {
+		err = tegrabl_dt_get_node_with_path(fdt, device->i2c_name, &i2c_node);
+		if (err != TEGRABL_NO_ERROR) {
+			pr_error("%s: failed to get i2c node for tca9539\n", __func__);
+			continue;
+		}
+
+		while (1) {
+			err = tegrabl_dt_get_node_with_compatible(fdt, i2c_node, compatible_chips[i],
+													  &node_itr);
+			if (err != TEGRABL_NO_ERROR) {
+				pr_error("%s: failed to get node with compatible %s\n", __func__,
+						 compatible_chips[i]);
+				break;
+			}
+			err = tegrabl_dt_read_reg_by_index(fdt, node_itr, 0, &slave_addr, NULL);
+			if (err != TEGRABL_NO_ERROR) {
+				pr_error("%s: failed to get i2c address\n", __func__);
+				break;
+			}
+			/* start from next node offset */
+			i2c_node = node_itr;
+			pr_debug("tca9539 i2c addr in dt: 0x%x\n", (uint32_t)slave_addr);
+			/* i2c_addr is shifted by 1 earlier */
+			if (slave_addr == (device->i2c_addr >> 1)) {
+				drv->phandle = fdt_get_phandle(fdt, node_itr);
+				goto done;
+			}
+		}
+	}
+
+done:
+	return err;
+}
+#endif
 
 tegrabl_error_t tegrabl_tca9539_init(void)
 {
@@ -332,6 +373,7 @@ tegrabl_error_t tegrabl_tca9539_init(void)
 		}
 
 		device->i2c_inst = tca9539_chips[i].i2c_inst;
+		device->i2c_name = tca9539_chips[i].i2c_name;
 
 		reg = (uintptr_t)tca9539_chips[i].i2c_addr;
 		/* 8 bit address */
@@ -350,13 +392,23 @@ tegrabl_error_t tegrabl_tca9539_init(void)
 		driver->chip_id = tca9539_chips[i].chip_id;
 		driver->driver_data = (void *)device;
 		driver->name = TCA9539_GPIO_DRIVER_NAME;
+		driver->phandle = -1;
 		driver->ops = &ops;
+
+#if defined(CONFIG_ENABLE_GPIO_DT_BASED)
+		/* fetch driver phandle from dt, error in this is not fatal */
+		ret = fetch_driver_phandle_from_dt(device, driver);
+		if (ret != TEGRABL_NO_ERROR) {
+			pr_warn("%s: failed to fetch phandle from dt\n", __func__);
+			continue;
+		}
+#endif
 
 		/* initialize device */
 		ret = tca9539_device_init(device);
 		if (ret != TEGRABL_NO_ERROR) {
 			pr_error("%s: failed to init device!\n", __func__);
-			goto fail;
+			continue;
 		}
 
 		/* register gpio driver to the driver list */

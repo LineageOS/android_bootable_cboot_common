@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
 #
 # NVIDIA CORPORATION and its licensors retain all intellectual property
 # and proprietary rights in and to this software, related documentation
@@ -16,10 +16,13 @@ MODULE_DEPS += \
 
 GLOBAL_INCLUDES += \
 	$(LOCAL_DIR) \
-	$(LOCAL_DIR)/../../include/soc/$(TARGET)
+	$(LOCAL_DIR)/../../include/soc/$(TARGET) \
+    $(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/drivers/soc/$(TARGET)/i2c \
+    $(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/lib/bpmp-abi
 
 MODULE_SRCS += \
 	$(LOCAL_DIR)/tegrabl_i2c.c \
-	$(LOCAL_DIR)/tegrabl_i2c_bpmpfw.c
+	$(LOCAL_DIR)/tegrabl_i2c_bpmpfw.c \
+    $(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/drivers/soc/$(TARGET)/i2c/tegrabl_i2c_soc.c
 
 include make/module.mk

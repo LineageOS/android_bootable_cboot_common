@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -21,9 +21,15 @@
 #define NVDISP_FLAG_CMU_DISABLE (0 << 1)
 #define NVDISP_FLAG_CMU_ENABLE  (1 << 1)
 
+#if defined(IS_T186)
+#define NVDISP_MAX_HEADS 3
+#else
+#define NVDISP_MAX_HEADS 4
+#endif
+
 struct tegrabl_nvdisp {
 	int32_t instance;
-	int32_t sor_instance;
+	int32_t parent_clk;
 	uintptr_t base_addr;
 	uint32_t module_nvdisp;
 	uint32_t module_host1x;
@@ -38,12 +44,8 @@ struct tegrabl_nvdisp {
 	uint32_t depth;
 	uint32_t dither;
 	struct nvdisp_mode *mode;
-	uint32_t n_modes;
-	uint32_t height; /* mm */
-	uint32_t width; /* mm */
 	uintptr_t cmu_base_addr;
 	struct nvdisp_cmu *cmu_adobe_rgb;
-	struct nvdisp_out_pin *out_pins;
 	uint32_t clk_rate;
 	struct nvdisp_out_ops *out_ops;
 	int32_t out_type;
@@ -96,15 +98,6 @@ tegrabl_error_t tegrabl_nvdisp_configure_window(struct tegrabl_nvdisp *nvdisp,
  */
 void tegrabl_nvdisp_win_set_surface(struct tegrabl_nvdisp *nvdisp,
 	uint32_t win_id, uintptr_t surf_buf);
-
-/** @brief Get the resolution of the display
- *
- *  @param nvdisp Handle of the nvdisp structure.
- *  @param height Height section of the resolution.
- *  @param width width section of the resolution.
- */
-void tegrabl_nvdisp_get_resolution(struct tegrabl_nvdisp *nvdisp,
-								   uint32_t *height, uint32_t *width);
 
 /*
  * Display function pointers for HDMI and DSI

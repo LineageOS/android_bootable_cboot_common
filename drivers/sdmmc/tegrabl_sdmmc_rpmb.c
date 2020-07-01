@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -9,19 +9,23 @@
  */
 
 #define MODULE TEGRABL_ERR_SDMMC
-
+#define NVBOOT_TARGET_FPGA 0
 #include <string.h>
 #include <tegrabl_blockdev.h>
 #include <tegrabl_sdmmc_defs.h>
-#include <tegrabl_sdmmc_protocol.h>
 #include <tegrabl_sdmmc_rpmb.h>
 #include <stdint.h>
 #include <tegrabl_clock.h>
-#include <tegrabl_sdmmc_bdev.h>
 #include <tegrabl_malloc.h>
 #include <tegrabl_error.h>
+#if defined(CONFIG_ENABLE_CCC)
+#include <tegrabl_crypto_se.h>
+#else
 #include <tegrabl_se.h>
-
+#endif
+#include <tegrabl_sdmmc_bdev.h>
+#include <tegrabl_sdmmc_protocol.h>
+#include <tegrabl_sdmmc_protocol_rpmb.h>
 
 #define SDMMC_RPMB_DEBUG			0
 #define SDMMC_RPMB_DUMP_DATA(x...)			\
@@ -50,25 +54,25 @@ static void sdmmc_rpmb_dump_data(const char *func, const char *str,
 	TEGRABL_UNUSED(str);
 	TEGRABL_UNUSED(buf);
 
-	pr_debug("%s: %s\n", func, str);
+	pr_trace("%s: %s\n", func, str);
 
 	for (i = 0; i < buflen; i++) {
-		if ((i % 32) == 0) {
-			pr_debug("%03x: ", i);
+		if ((i % 32U) == 0U) {
+			pr_trace("%03x: ", i);
 		}
 
-		pr_debug("%02x", buf[i]);
-		if (i == 0) {
+		pr_trace("%02x", buf[i]);
+		if (i == 0U) {
 			continue;
 		}
-		if (((i+1) % 8) == 0) {
-			pr_debug(" ");
+		if (((i+1U) % 8U) == 0U) {
+			pr_trace(" ");
 		}
-		if (((i+1) % 32) == 0)	{
-			pr_debug("\n");
+		if (((i+1U) % 32U) == 0U)	{
+			pr_trace("\n");
 		}
 	}
-	pr_debug("\n");
+	pr_trace("\n");
 }
 
 
@@ -98,10 +102,10 @@ static inline rpmb_u32_t sdmmc_convert_to_rpmb_u32(uint32_t u32_val)
 {
 	rpmb_u32_t rpmb_val;
 
-	rpmb_val.data[0] = (uint8_t)((u32_val >> 24) & 0xff);
-	rpmb_val.data[1] = (uint8_t)((u32_val >> 16) & 0xff);
-	rpmb_val.data[2] = (uint8_t)((u32_val >> 8) & 0xff);
-	rpmb_val.data[3] = (uint8_t)(u32_val & 0xff);
+	rpmb_val.data[0] = (uint8_t)((u32_val >> 24) & 0xffu);
+	rpmb_val.data[1] = (uint8_t)((u32_val >> 16) & 0xffu);
+	rpmb_val.data[2] = (uint8_t)((u32_val >> 8) & 0xffu);
+	rpmb_val.data[3] = (uint8_t)(u32_val & 0xffu);
 
 	return rpmb_val;
 }
@@ -116,7 +120,7 @@ static inline uint16_t sdmmc_convert_from_rpmb_u16(rpmb_u16_t rpmb_u16)
 {
 	uint16_t val;
 
-	val = (rpmb_u16.data[0] << 8) | rpmb_u16.data[1];
+	val = ((uint16_t)rpmb_u16.data[0] << 8) | rpmb_u16.data[1];
 
 	return val;
 }
@@ -131,8 +135,9 @@ static inline uint32_t sdmmc_convert_from_rpmb_u32(rpmb_u32_t rpmb_u32)
 {
 	uint32_t val;
 
-	val = ((rpmb_u32.data[0] << 24) | (rpmb_u32.data[1] << 16) |
-		(rpmb_u32.data[2] << 8) | rpmb_u32.data[3]);
+	val = (((uint32_t)rpmb_u32.data[0] << 24) |
+		   ((uint32_t)rpmb_u32.data[1] << 16) |
+		   ((uint32_t)rpmb_u32.data[2] << 8) | (uint32_t)rpmb_u32.data[3]);
 
 	return val;
 }
@@ -186,10 +191,10 @@ static tegrabl_error_t sdmmc_rpmb_check_response(sdmmc_rpmb_frame_t *frame,
 
 	/* Check result. */
 	val16 = sdmmc_convert_from_rpmb_u16(frame->result);
-	if (val16 != RPMB_RES_OK) {
+	if (val16 != (uint16_t)RPMB_RES_OK) {
 		pr_warn("frame result is %d\n",val16);
-		if (val16 == RPMB_RES_NO_AUTH_KEY) {
-			error = TEGRABL_ERROR(TEGRABL_ERR_RPMB_AUTH_KEY_NOT_PROGRAMMED, 0);
+		if (val16 == (uint16_t)RPMB_RES_NO_AUTH_KEY) {
+			error = TEGRABL_ERROR(TEGRABL_ERR_NOT_PROGRAMMED, 0);
 		} else {
 			error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 		}
@@ -198,7 +203,7 @@ static tegrabl_error_t sdmmc_rpmb_check_response(sdmmc_rpmb_frame_t *frame,
 
 	/* Check response type. */
 	val16 = sdmmc_convert_from_rpmb_u16(frame->req_or_resp);
-	pr_debug("val16 is %d\n",val16);
+	pr_trace("val16 = %d\n", val16);
 	if (val16 != resp) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 		goto fail;
@@ -213,9 +218,13 @@ fail:
 static tegrabl_error_t sdmmc_rpmb_generate_sha256_hash(uintptr_t input,
 	uintptr_t output, uint32_t size)
 {
+	tegrabl_error_t error = TEGRABL_NO_ERROR;
+
+#if defined(CONFIG_ENABLE_CCC)
+	error = tegrabl_crypto_compute_sha2((uint8_t *)input, size, (uint8_t *)output);
+#else
 	struct se_sha_input_params input_params;
 	struct se_sha_context context;
-	tegrabl_error_t error = TEGRABL_NO_ERROR;
 
 	context.input_size = size;
 	input_params.size_left = size;
@@ -225,9 +234,10 @@ static tegrabl_error_t sdmmc_rpmb_generate_sha256_hash(uintptr_t input,
 	context.hash_algorithm = 5;
 
 	error = tegrabl_se_sha_process_block(&input_params, &context);
+#endif
 	if (error != TEGRABL_NO_ERROR) {
 		TEGRABL_SET_HIGHEST_MODULE(error);
-		pr_error("sha256 mac calculation failed\n");
+		pr_error("SHA256 MAC calculation failed\n");
 	}
 	return error;
 }
@@ -241,7 +251,7 @@ static tegrabl_error_t sdmmc_rpmb_generate_sha256_hash(uintptr_t input,
  *
  *  @return TEGRABL_NO_ERROR on success and failure condition otherwise.
  */
-#define HMAC_BLOCK_SIZE		(64)
+#define HMAC_BLOCK_SIZE		(64U)
 
 static tegrabl_error_t sdmmc_rpmb_calculate_mac(sdmmc_rpmb_key_t *key,
 					sdmmc_rpmb_frame_t *frame,
@@ -255,7 +265,7 @@ static tegrabl_error_t sdmmc_rpmb_calculate_mac(sdmmc_rpmb_key_t *key,
 	uint32_t count = 0;
 
 	/* Error check. */
-	if (!key || !frame || !out_mac) {
+	if ((key == NULL) || (frame == NULL) || (out_mac == NULL)) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 		goto fail;
 	}
@@ -266,14 +276,14 @@ static tegrabl_error_t sdmmc_rpmb_calculate_mac(sdmmc_rpmb_key_t *key,
 	 */
 	buflen = HMAC_BLOCK_SIZE + RPMB_MAC_MSG_SIZE;
 	buf = tegrabl_alloc(TEGRABL_HEAP_DMA, buflen);
-	if (!buf) {
+	if (buf == NULL) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 11);
 		goto fail;
 	}
 	memset(buf, 0x0, buflen);
 
-	digest = tegrabl_alloc(TEGRABL_HEAP_DMA, RPMB_KEY_OR_MAC_SIZE + 1);
-	if (!digest) {
+	digest = tegrabl_alloc(TEGRABL_HEAP_DMA, RPMB_KEY_OR_MAC_SIZE + 1U);
+	if (digest == NULL) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 12);
 		goto fail;
 	}
@@ -282,14 +292,14 @@ static tegrabl_error_t sdmmc_rpmb_calculate_mac(sdmmc_rpmb_key_t *key,
 	memset(mkey, 0, sizeof(mkey));
 	memcpy(mkey, key->data, sizeof(key->data));
 
-	memset(digest, 0 , RPMB_KEY_OR_MAC_SIZE + 1);
+	memset(digest, 0 , RPMB_KEY_OR_MAC_SIZE + 1U);
 
 	/*
 	* ipad == <KEY> XOR <block(0x36)>
 	* buf = concatenate(ipad,msg)
 	*/
 	for (count = 0; count < HMAC_BLOCK_SIZE; count++) {
-		buf[count] = mkey[count] ^ 0x36;
+		buf[count] = mkey[count] ^ 0x36U;
 	}
 
 	memcpy(&buf[HMAC_BLOCK_SIZE], frame->mac_msg, RPMB_MAC_MSG_SIZE);
@@ -307,7 +317,7 @@ static tegrabl_error_t sdmmc_rpmb_calculate_mac(sdmmc_rpmb_key_t *key,
 	* buf = concatenate(opad,dgst)
 	*/
 	for (count = 0; count < HMAC_BLOCK_SIZE; count++) {
-		buf[count] = mkey[count] ^ 0x5c;
+		buf[count] = mkey[count] ^ 0x5cu;
 	}
 	memcpy(&buf[HMAC_BLOCK_SIZE], digest, RPMB_KEY_OR_MAC_SIZE);
 
@@ -332,7 +342,7 @@ fail:
 	}
 
 	if (error != TEGRABL_NO_ERROR) {
-		pr_debug("%s: exit error = %08X\n", __func__, error);
+		pr_debug("RPMB MAC calculation failed, error = %08X\n", error);
 	}
 
 	return error;
@@ -344,7 +354,7 @@ fail:
  *  @param key           Pointer to RPMB key.
  *  @param counter       Pointer to buffer in which current counter is returned.
  *  @param rpmb_context  RPMB context.
- *  @param context       Context for device on which RPMB access is desired.
+ *  @param hsdmmc       Context for device on which RPMB access is desired.
  *
  *  @return TEGRABL_NO_ERROR on success and failure condition otherwise.
  */
@@ -352,7 +362,7 @@ tegrabl_error_t sdmmc_rpmb_get_write_counter(tegrabl_bdev_t *dev,
 					sdmmc_rpmb_key_t *key,
 					uint32_t *counter,
 					sdmmc_rpmb_context_t *rpmb_context,
-					sdmmc_context_t *context)
+					struct tegrabl_sdmmc *hsdmmc)
 {
 	sdmmc_rpmb_frame_t *req_frame, *resp_frame;
 	uint8_t mac_buf[RPMB_KEY_OR_MAC_SIZE];
@@ -387,7 +397,7 @@ tegrabl_error_t sdmmc_rpmb_get_write_counter(tegrabl_bdev_t *dev,
 			(uint8_t *)resp_frame, sizeof(*resp_frame));
 
 	/* Send read request here. */
-	error = sdmmc_rpmb_io(0, rpmb_context, context);
+	error = sdmmc_rpmb_io(0, rpmb_context, hsdmmc);
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
@@ -414,10 +424,10 @@ tegrabl_error_t sdmmc_rpmb_get_write_counter(tegrabl_bdev_t *dev,
 	}
 
 	*counter = sdmmc_convert_from_rpmb_u32(resp_frame->write_counter);
-	pr_debug("counter value is %0x\n", *counter);
+	pr_trace("Counter value is %0x\n", *counter);
 fail:
 	if (error != TEGRABL_NO_ERROR) {
-		pr_debug("%s: exit error = %08X\n", __func__, error);
+		pr_debug("RPMB get write counter failed, error = %08X\n", error);
 	}
 	return error;
 }
@@ -430,14 +440,14 @@ fail:
  *  @param bufp          Pointer to buffer in which read data will be returned.
  *  @param buflen        Length of data to return in bufp.
  *  @param rpmb_context  RPMB context.
- *  @param context       Context for device on which RPMB access is desired.
+ *  @param hsdmmc       Context for device on which RPMB access is desired.
  *
  *  @return TEGRABL_NO_ERROR on success and failure condition otherwise.
  */
 static tegrabl_error_t sdmmc_rpmb_read(tegrabl_bdev_t *dev, sdmmc_rpmb_key_t *key,
 				uint16_t addr, uint8_t *bufp, uint32_t buflen,
 				sdmmc_rpmb_context_t *rpmb_context,
-				sdmmc_context_t *context)
+				struct tegrabl_sdmmc *hsdmmc)
 {
 	sdmmc_rpmb_frame_t *req_frame, *resp_frame;
 	uint8_t mac_buf[RPMB_KEY_OR_MAC_SIZE];
@@ -446,13 +456,13 @@ static tegrabl_error_t sdmmc_rpmb_read(tegrabl_bdev_t *dev, sdmmc_rpmb_key_t *ke
 
 	TEGRABL_UNUSED(dev);
 	/* Error check key arg. */
-	if (!key) {
+	if (key == NULL) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 		goto fail;
 	}
 
 	/* Error check buffer args. */
-	if (!bufp || !buflen || (buflen > RPMB_DATA_SIZE)) {
+	if ((bufp == NULL) || (buflen == 0U) || (buflen > RPMB_DATA_SIZE)) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 1);
 		goto fail;
 	}
@@ -474,7 +484,7 @@ static tegrabl_error_t sdmmc_rpmb_read(tegrabl_bdev_t *dev, sdmmc_rpmb_key_t *ke
 			(uint8_t *)resp_frame, sizeof(*resp_frame));
 
 	/* Send request to RPMB partition. */
-	error = sdmmc_rpmb_io(0, rpmb_context, context);
+	error = sdmmc_rpmb_io(0, rpmb_context, hsdmmc);
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
@@ -511,7 +521,7 @@ static tegrabl_error_t sdmmc_rpmb_read(tegrabl_bdev_t *dev, sdmmc_rpmb_key_t *ke
 
 fail:
 	if (error != TEGRABL_NO_ERROR) {
-		pr_debug("%s: exit error = %08X\n", __func__, error);
+		pr_debug("RPMB read failed, error = %08X\n", error);
 	}
 	return error;
 }
@@ -524,34 +534,34 @@ fail:
  *  @param bufp          Pointer to buffer containing data to write.
  *  @param buflen        Length of data in bufp.
  *  @param rpmb_context  RPMB context.
- *  @param context       Context for device on which RPMB access is desired.
+ *  @param hsdmmc       Context for device on which RPMB access is desired.
  *
  *  @return TEGRABL_NO_ERROR on success and failure condition otherwise.
  */
 static tegrabl_error_t sdmmc_rpmb_write(tegrabl_bdev_t *dev, sdmmc_rpmb_key_t *key,
 				uint16_t addr, uint8_t *bufp, uint32_t buflen,
 				sdmmc_rpmb_context_t *rpmb_context,
-				sdmmc_context_t *context)
+				struct tegrabl_sdmmc *hsdmmc)
 {
 	sdmmc_rpmb_frame_t *req_frame, *req_resp_frame, *resp_frame;
 	uint32_t counter = 0;
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 
 	/* Error check key arg. */
-	if (!key) {
+	if (key == NULL) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 		goto fail;
 	}
 
 	/* Error check buffer args. */
-	if (!bufp || !buflen || (buflen > RPMB_DATA_SIZE)) {
+	if ((bufp == NULL) || (buflen == 0U) || (buflen > RPMB_DATA_SIZE)) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 		goto fail;
 	}
 
 	/* Get current write counter. */
 	error = sdmmc_rpmb_get_write_counter(dev, key, &counter,
-				rpmb_context, context);
+				rpmb_context, hsdmmc);
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
@@ -589,7 +599,7 @@ static tegrabl_error_t sdmmc_rpmb_write(tegrabl_bdev_t *dev, sdmmc_rpmb_key_t *k
 			(uint8_t *)resp_frame, sizeof(*resp_frame));
 
 	/* Send request to RPMB partition. */
-	error = sdmmc_rpmb_io(1, rpmb_context, context);
+	error = sdmmc_rpmb_io(1, rpmb_context, hsdmmc);
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
@@ -605,7 +615,7 @@ static tegrabl_error_t sdmmc_rpmb_write(tegrabl_bdev_t *dev, sdmmc_rpmb_key_t *k
 
 fail:
 	if (error != TEGRABL_NO_ERROR) {
-		pr_debug("%s: exit error = %08X\n", __func__, error);
+		pr_error("RPMB write failed, error = %08X\n", error);
 	}
 	return error;
 }
@@ -615,25 +625,25 @@ fail:
  *  @param dev           Bio layer handle for RPMB device.
  *  @param key           RPMB key.
  *  @param rpmb_context  RPMB context.
- *  @param context       Context for device on which RPMB access is desired.
+ *  @param hsdmmc       Context for device on which RPMB access is desired.
  *
  *  @return TEGRABL_NO_ERROR on success and failure condition otherwise.
  */
 static tegrabl_error_t sdmmc_rpmb_test(tegrabl_bdev_t *dev,
 	sdmmc_rpmb_key_t *key, sdmmc_rpmb_context_t *rpmb_context,
-	sdmmc_context_t *context)
+	struct tegrabl_sdmmc *hsdmmc)
 {
 	uint8_t *write_buf = NULL, *read_buf = NULL;
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 
 	/* Allocate read/write data buffers */
 	write_buf = tegrabl_alloc(TEGRABL_HEAP_DMA, RPMB_DATA_SIZE);
-	if (!write_buf) {
+	if (write_buf == NULL) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 8);
 		goto fail;
 	}
 	read_buf = tegrabl_alloc(TEGRABL_HEAP_DMA, RPMB_DATA_SIZE);
-	if (!read_buf) {
+	if (read_buf == NULL) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 9);
 		goto fail;
 	}
@@ -641,7 +651,7 @@ static tegrabl_error_t sdmmc_rpmb_test(tegrabl_bdev_t *dev,
 	/* Zero out block 0. */
 	memset(write_buf, 0, RPMB_DATA_SIZE);
 	error = sdmmc_rpmb_write(dev, key, 0, write_buf, RPMB_DATA_SIZE,
-				rpmb_context, context);
+				rpmb_context, hsdmmc);
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
@@ -649,14 +659,14 @@ static tegrabl_error_t sdmmc_rpmb_test(tegrabl_bdev_t *dev,
 	/* Fill block 0 with some pattern. */
 	memset(write_buf, 0x4D, RPMB_DATA_SIZE);
 	error = sdmmc_rpmb_write(dev, key, 0, write_buf, RPMB_DATA_SIZE,
-				rpmb_context, context);
+				rpmb_context, hsdmmc);
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
 
 	/* Issue read of block 0. */
 	error = sdmmc_rpmb_read(dev, key, 0, read_buf, RPMB_DATA_SIZE,
-				rpmb_context, context);
+				rpmb_context, hsdmmc);
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
@@ -670,7 +680,7 @@ static tegrabl_error_t sdmmc_rpmb_test(tegrabl_bdev_t *dev,
 	/* Zero out block 0. */
 	memset(write_buf, 0, RPMB_DATA_SIZE);
 	error = sdmmc_rpmb_write(dev, key, 0, write_buf, RPMB_DATA_SIZE,
-				rpmb_context, context);
+				rpmb_context, hsdmmc);
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
@@ -682,11 +692,11 @@ fail:
 	if (write_buf != NULL) {
 		tegrabl_free(write_buf);
 	}
-	if (error != TEGRABL_NO_ERROR)
-		pr_debug("%s: exit error = %08X\n", __func__, error);
-	else
-		pr_info("rpmb test successful\n");
-
+	if (error != TEGRABL_NO_ERROR) {
+		pr_error("RPMB test failed, error = %08X\n", error);
+	} else {
+		pr_info("RPMB test successful\n");
+	}
 	return error;
 }
 
@@ -694,12 +704,12 @@ fail:
  *
  *  @param bdev Bio layer handle for RPMB device.
  *  @param key_blob Pointer to data to use for RPMB key.
- *  @param context Context for device on which RPMB access is desired.
+ *  @param hsdmmc Context for device on which RPMB access is desired.
  *
  *  @return TEGRABL_NO_ERROR on success and failure condition otherwise.
  */
 tegrabl_error_t sdmmc_rpmb_program_key(tegrabl_bdev_t *bdev, void *key_blob,
-									   sdmmc_context_t *context)
+									   struct tegrabl_sdmmc *hsdmmc)
 {
 	sdmmc_rpmb_key_t key;
 	sdmmc_rpmb_context_t *rpmb_context = NULL;
@@ -707,7 +717,7 @@ tegrabl_error_t sdmmc_rpmb_program_key(tegrabl_bdev_t *bdev, void *key_blob,
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 
 	/* Error check key arg. */
-	if ((key_blob == NULL) || (bdev == NULL) || (context == NULL)) {
+	if ((key_blob == NULL) || (bdev == NULL) || (hsdmmc == NULL)) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 		goto fail;
 	}
@@ -715,7 +725,7 @@ tegrabl_error_t sdmmc_rpmb_program_key(tegrabl_bdev_t *bdev, void *key_blob,
 	/* Allocate RPMB frame buffers. */
 	rpmb_context = tegrabl_alloc(TEGRABL_HEAP_DMA,
 		sizeof(sdmmc_rpmb_context_t));
-	if (!rpmb_context) {
+	if (rpmb_context == NULL) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 10);
 		goto fail;
 	}
@@ -750,7 +760,7 @@ tegrabl_error_t sdmmc_rpmb_program_key(tegrabl_bdev_t *bdev, void *key_blob,
 	sdmmc_rpmb_dump_data(__func__, "Dumping pre-response frame:",
 			(uint8_t *)resp_frame, sizeof(*resp_frame));
 	/* Send key programming request to RPMB partition. */
-	error = sdmmc_rpmb_io(1, rpmb_context, context);
+	error = sdmmc_rpmb_io(1, rpmb_context, hsdmmc);
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
@@ -763,7 +773,7 @@ tegrabl_error_t sdmmc_rpmb_program_key(tegrabl_bdev_t *bdev, void *key_blob,
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
-	error = sdmmc_rpmb_test(bdev, &key, rpmb_context, context);
+	error = sdmmc_rpmb_test(bdev, &key, rpmb_context, hsdmmc);
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
@@ -774,7 +784,7 @@ fail:
 		tegrabl_free(rpmb_context);
 	}
 	if (error != TEGRABL_NO_ERROR) {
-		pr_error("%s: exit error = %08X\n", __func__, error);
+		pr_error("RPMB program key, error = %08X\n", error);
 	}
 
 	return error;

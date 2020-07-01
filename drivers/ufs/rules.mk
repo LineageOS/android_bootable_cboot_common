@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2015-2016, NVIDIA CORPORATION.  All rights reserved.
 #
 # NVIDIA CORPORATION and its licensors retain all intellectual property
 # and proprietary rights in and to this software, related documentation
@@ -17,7 +17,7 @@ GLOBAL_INCLUDES += \
 
 MODULE_SRCS += \
 	$(LOCAL_DIR)/tegrabl_ufs_bdev.c \
-	$(LOCAL_DIR)/tegrabl_ufs_mphy.c \
+	$(LOCAL_DIR)/tegrabl_uphy_mphy.c \
 	$(LOCAL_DIR)/tegrabl_ufs.c
 
 include make/module.mk

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -16,7 +16,7 @@
 #include <tegrabl_error.h>
 #include <stdbool.h>
 
-#define TEGRABL_SPARSE_HEADER_MAGIC 0xED26FF3A
+#define TEGRABL_SPARSE_HEADER_MAGIC 0xED26FF3AUL
 
 /* Defines sparse header fields. */
 struct tegrabl_sparse_image_header {
@@ -53,31 +53,31 @@ struct tegrabl_sparse_chunk_header {
 /**
  * @brief Defines chunk types in sparse image.
  */
-enum tegrabl_sparse_chunk_type {
-	TEGRABL_SPARSE_CHUNK_TYPE_RAW = 0xCAC1,
-	TEGRABL_SPARSE_CHUNK_TYPE_FILL,
-	TEGRABL_SPARSE_CHUNK_TYPE_DONT_CARE,
-	TEGRABL_SPARSE_CHUNK_TYPE_CRC
-};
+/* macro tegrabl sparse chunk type */
+typedef uint32_t tegrabl_sparse_chunk_type_t;
+#define TEGRABL_SPARSE_CHUNK_TYPE_RAW 0xCAC1
+#define TEGRABL_SPARSE_CHUNK_TYPE_FILL 0xCAC2
+#define TEGRABL_SPARSE_CHUNK_TYPE_DONT_CARE 0xCAC3
+#define TEGRABL_SPARSE_CHUNK_TYPE_CRC 0xCAC4
 
 /**
  * @brief Defines different states of unsparse machine.
  */
-enum tegrabl_unsparse_state_type {
-	TEGRABL_UNSPARSE_PARTIAL_IMAGE_HEADER = 1,
-	TEGRABL_UNSPARSE_PARTIAL_CHUNK_HEADER,
-	TEGRABL_UNSPARSE_PARTIAL_CHUNK_RAW,
-	TEGRABL_UNSPARSE_PARTIAL_CHUNK_FILL,
-	TEGRABL_UNSPARSE_PARTIAL_CHUNK_DONT_CARE,
-	TEGRABL_UNSPARSE_PARTIAL_CHUNK_CRC,
-};
+/* macro tegrabl unsparse state type */
+typedef uint32_t tegrabl_unsparse_state_type_t;
+#define TEGRABL_UNSPARSE_PARTIAL_IMAGE_HEADER 1
+#define TEGRABL_UNSPARSE_PARTIAL_CHUNK_HEADER 2
+#define TEGRABL_UNSPARSE_PARTIAL_CHUNK_RAW 3
+#define TEGRABL_UNSPARSE_PARTIAL_CHUNK_FILL 4
+#define TEGRABL_UNSPARSE_PARTIAL_CHUNK_DONT_CARE 5
+#define TEGRABL_UNSPARSE_PARTIAL_CHUNK_CRC 6
 
 /* Defines information maintained by unsparse machine while unsparsing
  * buffers.
  */
 struct tegrabl_unsparse_state {
 	/* Current state of unsparsing */
-	enum tegrabl_unsparse_state_type state;
+	tegrabl_unsparse_state_type_t state;
 	/* Image header of sparse image */
 	struct tegrabl_sparse_image_header image_header;
 	/* Header of chunk which is being processed */
@@ -141,12 +141,12 @@ struct tegrabl_sparse_state {
 static TEGRABL_INLINE bool tegrabl_sparse_image_check(void *buffer,
 		uint64_t size)
 {
-	if (size < sizeof(uint32_t))
+	if (size < sizeof(uint32_t)) {
 		return false;
-
-	if (*(uint32_t *)buffer == TEGRABL_SPARSE_HEADER_MAGIC)
+	}
+	if (*(uint32_t *)buffer == TEGRABL_SPARSE_HEADER_MAGIC) {
 		return true;
-
+	}
 	return false;
 }
 
@@ -208,7 +208,7 @@ tegrabl_error_t tegrabl_sparse_init(
  */
 tegrabl_error_t tegrabl_sparse_add_chunk(
 		struct tegrabl_sparse_state *sparse_state,
-		enum tegrabl_sparse_chunk_type type, void *data,
+		tegrabl_sparse_chunk_type_t type, void *data,
 		uint32_t data_size, uint32_t write_size);
 
 /**

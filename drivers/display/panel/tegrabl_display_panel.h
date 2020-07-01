@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2017, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -24,6 +24,5 @@
  *
  * @return TEGRABL_NO_ERROR if pass, error code if fails.
  */
-tegrabl_error_t tegrabl_display_init_regulator(uint32_t du_type,
-	struct tegrabl_display_pdata *pdata);
+tegrabl_error_t tegrabl_display_init_regulator(uint32_t du_type, struct tegrabl_display_pdata *pdata);
 #endif

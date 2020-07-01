@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -20,18 +20,18 @@ extern "C"
 #include <tegrabl_gpcdma.h>
 
 /* Wrapper macros for reading/writing from/to QSPI */
-#define qspi_readl(reg) \
-		NV_READ32(NV_ADDRESS_MAP_QSPI_BASE + (QSPI_##reg##_0))
+#define qspi_readl(qspi, reg) \
+		NV_READ32((qspi)->base_address + (uint32_t)(QSPI_##reg##_0))
 
-#define qspi_writel(reg, val) \
-		NV_WRITE32((NV_ADDRESS_MAP_QSPI_BASE + (QSPI_##reg##_0)), (val))
+#define qspi_writel(qspi, reg, val) \
+		NV_WRITE32(((qspi)->base_address + (uint32_t)(QSPI_##reg##_0)), (val))
 
 /* Disable compiler optimization locally to ensure read after write */
-#define qspi_writel_flush(reg, val) \
+#define qspi_writel_flush(qspi, reg, val) \
 do { \
 	uint32_t reg32 = 0; \
-	NV_WRITE32((NV_ADDRESS_MAP_QSPI_BASE + (QSPI_##reg##_0)), (val)); \
-	reg32 = NV_READ32(NV_ADDRESS_MAP_QSPI_BASE + (QSPI_##reg##_0)); \
+	NV_WRITE32(((qspi)->base_address + (uint32_t)(QSPI_##reg##_0)), (val)); \
+	reg32 = NV_READ32((qspi)->base_address + (uint32_t)(QSPI_##reg##_0)); \
 	reg32 = reg32; \
 } while (0)
 
@@ -47,7 +47,7 @@ do { \
  * QSPI context structure
  */
 struct tegrabl_qspi_ctxt {
-	enum tegrabl_dmatype dma_type;
+	tegrabl_dmatype_t dma_type;
 	tegrabl_gpcdma_handle_t dma_handle;
 };
 

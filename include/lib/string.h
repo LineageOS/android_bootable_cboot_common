@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, NVIDIA CORPORATION.  All Rights Reserved.
+ * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -40,7 +40,7 @@ typedef int (*clib_dma_memcpy_t)(void *priv, void *dest,
  * @return 0 in case of success, non-0 in case of failure (this would be
  * used to do cpu-based memset)
  */
-typedef int (*clib_dma_memset_t)(void *priv, void *s, int c, size_t n);
+typedef int (*clib_dma_memset_t)(void *priv, void *s, uint32_t c, size_t n);
 
 struct tegrabl_clib_dma {
 	/**

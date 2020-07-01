@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -30,7 +30,7 @@
 struct tegrabl_eeprom {
 	char *name;
 	char *bus_node_name;
-	enum tegrabl_instance_i2c instance;
+	tegrabl_instance_i2c_t instance;
 	uint8_t slave_addr;
 	uint32_t size;
 	bool crc_valid;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -33,26 +33,18 @@
 #define NV_SOR_PR_LANE3_DP_LANE3_SHIFT (24)
 #define NV_SOR_PR_LANE3_DP_LANE3_MASK (0xff << 24)
 
-enum {
-	TRAINING_PATTERN_DISABLE = 0,
-	TRAINING_PATTERN_1 = 1,
-	TRAINING_PATTERN_2 = 2,
-	TRAINING_PATTERN_3 = 3,
-	TRAINING_PATTERN_D102 = 4,
-	TRAINING_PATTERN_SBLERRRATE = 5,
-	TRAINING_PATTERN_PRBS7 = 6,
-	TRAINING_PATTERN_CSTM = 7,
-	TRAINING_PATTERN_HBR2_COMPLIANCE = 8,
-};
-
-static inline void tegrabl_sor_write_field(struct sor_data *sor,
-	uint32_t reg, uint32_t mask, uint32_t val)
-{
-	uint32_t reg_val = sor_readl(sor, reg);
-	reg_val &= ~mask;
-	reg_val |= val;
-	sor_writel(sor, reg, reg_val);
-}
+/* macro training pattern */
+#define TRAINING_PATTERN_DISABLE 0
+#define TRAINING_PATTERN_1 1
+#define TRAINING_PATTERN_2 2
+#define TRAINING_PATTERN_3 3
+#define TRAINING_PATTERN_D102 4
+#define TRAINING_PATTERN_SBLERRRATE 5
+#define TRAINING_PATTERN_PRBS7 6
+#define TRAINING_PATTERN_CSTM 7
+#define TRAINING_PATTERN_HBR2_COMPLIANCE 8
+/* newly added for T19x */
+#define TRAINING_PATTERN_4 9
 
 /**
  *  @brief Program training pattern in Sor register
@@ -75,17 +67,8 @@ void tegrabl_sor_port_enable(struct sor_data *sor, bool enb);
  *  @brief Enabling Sor for DP by pad power up
  *
  *  @param sor SOR Handle
- *
- * @return TEGRABL_NO_ERROR if successful else appropriate error.
  */
-tegrabl_error_t tegrabl_sor_enable_dp(struct sor_data *sor);
-
-/**
- *  @brief Configures Sor Xbar (lane sequence)
- *
- *  @param sor SOR Handle
- */
-void tegrabl_sor_config_xbar(struct sor_data *sor);
+void tegrabl_sor_enable_dp(struct sor_data *sor);
 
 /**
  *  @brief Program lanes to output specific mode voltage

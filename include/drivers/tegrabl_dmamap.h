@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -23,11 +23,11 @@ typedef uint64_t dma_addr_t;
 /**
  * @brief Type to specify the direction of DMA transfer
  */
-typedef enum {
-	TEGRABL_DMA_TO_DEVICE = 0x1, /**< DMA from memory to device */
-	TEGRABL_DMA_FROM_DEVICE = 0x2, /**< DMA from device to memory */
-	TEGRABL_DMA_BIDIRECTIONAL = 0x3, /**< DMA from/to device to memory */
-} tegrabl_dma_data_direction;
+/* macro tegrabl dma data direction */
+#define TEGRABL_DMA_TO_DEVICE 0x1U /**< DMA from memory to device */
+#define TEGRABL_DMA_FROM_DEVICE 0x2U /**< DMA from device to memory */
+#define TEGRABL_DMA_BIDIRECTIONAL 0x3U /**< DMA from/to device to memory */
+typedef uint32_t tegrabl_dma_data_direction;
 
 /**
  * @brief Make DMA the owner of CPU-owned buffers, (i.e. perform any requisite
@@ -62,5 +62,15 @@ dma_addr_t tegrabl_dma_map_buffer(tegrabl_module_t module, uint8_t instance,
 void tegrabl_dma_unmap_buffer(tegrabl_module_t module, uint8_t instance,
 							  void *buffer, size_t size,
 							  tegrabl_dma_data_direction direction);
+
+/**
+ * @brief This maps BL component specific VA2PA for driver's use
+ *
+ * @params module Module owning the DMA
+ * @params va Virtual address of dma buffer
+ *
+ * @return Physical address
+ */
+dma_addr_t tegrabl_dma_va_to_pa(tegrabl_module_t module, void *va);
 
 #endif /* INCLUDED_TEGRABL_DMAMAP_H */

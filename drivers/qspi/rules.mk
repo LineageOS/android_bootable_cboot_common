@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
 #
 # NVIDIA CORPORATION and its licensors retain all intellectual property
 # and proprietary rights in and to this software, related documentation
@@ -16,6 +16,7 @@ GLOBAL_INCLUDES += \
 	$(LOCAL_DIR)
 
 MODULE_SRCS += \
-	$(LOCAL_DIR)/tegrabl_qspi.c
+	$(LOCAL_DIR)/tegrabl_qspi.c \
+	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/drivers/soc/$(TARGET)/qspi/tegrabl_qspi_soc.c
 
 include make/module.mk

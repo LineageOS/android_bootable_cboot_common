@@ -20,27 +20,26 @@
  * Defines USB string descriptor Index
  * As per USB Specification.
  */
-enum string_descriptor_index {
+typedef uint32_t string_descriptor_index_t;
 	/* Specifies a Language ID string descriptor index */
-	USB_LANGUAGE_ID = 0,
+#define USB_LANGUAGE_ID 0
 	/*Specifies a Manufacturer ID string descriptor index */
-	USB_MANF_ID = 1,
+#define USB_MANF_ID 1
 	/* Specifies a Product ID string descriptor index */
-	USB_PROD_ID = 2,
+#define USB_PROD_ID 2
 	/* Specifies a Serial No string descriptor index */
-	USB_SERIAL_ID = 3
-};
+#define USB_SERIAL_ID 3
 
 struct usb_descriptor {
 	void *desc;
-	size_t len;
+	uint16_t len;
 	uint32_t flags;
 };
 
 #define USB_DESC_FLAG_STATIC (0x1)
 
 #define USB_DESC_STATIC(x)      \
-	{ .desc = (void *)(x), .len = sizeof(x), .flags = USB_DESC_FLAG_STATIC}
+	{ .desc = (void *)(x), .len = (uint16_t)sizeof(x), .flags = USB_DESC_FLAG_STATIC}
 
 struct usb_string {
 	struct usb_descriptor string;

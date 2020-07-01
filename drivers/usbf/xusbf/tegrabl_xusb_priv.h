@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - 2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015 - 2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -23,10 +23,6 @@
 #define USB_DEV_QUALIFIER_LENGTH 10
 #define USB_DEV_STATUS_LENGTH
 
-#define USB_LANGUAGE_ID   0
-#define USB_MANF_ID       1
-#define USB_PROD_ID       2
-#define USB_SERIAL_ID     3
 #define USB_DEVICE_SELF_POWERED 1
 
 /* Feature Select */
@@ -97,15 +93,15 @@
 #define SETUP_PACKET_BUFFER_NUM 2
 
 #define DIR_OUT                 0
-#define DIR_IN                     1
+#define DIR_IN                  1U
 
 /* descriptor gets only 4 low bits */
 #define NVTBOOT_USBF_DESCRIPTOR_SKU_MASK  0xF
 
 /* Usb speed */
-#define XUSB_FULL_SPEED  1
-#define XUSB_HIGH_SPEED  3
-#define XUSB_SUPER_SPEED 4
+#define XUSB_FULL_SPEED  1U
+#define XUSB_HIGH_SPEED  3U
+#define XUSB_SUPER_SPEED 4U
 
 /* EndPoint types */
 #define EP_TYPE_CNTRL         4
@@ -115,52 +111,47 @@
 /* TRB Types */
 #define NONE_TRB                0
 #define NORMAL_TRB              1
-#define DATA_STAGE_TRB          3
-#define STATUS_STAGE_TRB        4
-#define LINK_TRB                6
-#define TRANSFER_EVENT_TRB      32
-#define PORT_STATUS_CHANGE_TRB  34
-#define SETUP_EVENT_TRB         63
+#define DATA_STAGE_TRB          3U
+#define STATUS_STAGE_TRB        4U
+#define LINK_TRB                6U
+#define TRANSFER_EVENT_TRB      32U
+#define PORT_STATUS_CHANGE_TRB  34U
+#define SETUP_EVENT_TRB         63U
 
 /* Error codes */
 #define TRB_ERR_CODE            5
-#define SUCCESS_ERR_CODE        1
+#define SUCCESS_ERR_CODE        1U
 #define DATA_BUF_ERR_CODE       2
-#define SHORT_PKT_ERR_CODE      13
-#define CTRL_SEQ_NUM_ERR_CODE  223
-#define CTRL_DIR_ERR_CODE      222
+#define SHORT_PKT_ERR_CODE      13U
+#define CTRL_SEQ_NUM_ERR_CODE  223U
+#define CTRL_DIR_ERR_CODE      222U
 
 /* XUSB speed */
 #define XUSB_SUPERSPEED 0x4
 #define XUSB_HIGHSPEED  0x3
 #define XUSB_FULLSPEED  0x2
 
-
-/**
- * @brief Defines the enum for endpoint number
- */
-enum  endpoint {
-	EP0_IN = 0, /* Bi-directional */
-	EP0_OUT, /* Note: This is not used. */
-	EP1_OUT,
-	EP1_IN,
-	EPX_MAX = 0xFFFF, /* half word size */
-};
+/* endpoint number */
+#define  EP0_IN  0U         /* Bi-directional */
+#define  EP0_OUT 1U         /* Note: This is not used. */
+#define  EP1_OUT 2U
+#define  EP1_IN  3U
+#define  EPX_MAX 0xFFFFU    /* half word size */
 
 /**
  * @brief Defines the device state
  */
-enum device_state {
-	DEFAULT,
-	CONNECTED,
-	DISCONNECTED,
-	RESET,
-	ADDRESSED_STATUS_PENDING,
-	ADDRESSED,
-	CONFIGURED_STATUS_PENDING,
-	CONFIGURED,
-	SUSPENDED,
-};
+/* macro device state */
+typedef uint32_t device_state_t;
+#define DEFAULT 0U
+#define CONNECTED 1U
+#define DISCONNECTED 2U
+#define RESET 3U
+#define ADDRESSED_STATUS_PENDING 4U
+#define ADDRESSED 5U
+#define CONFIGURED_STATUS_PENDING 6U
+#define CONFIGURED 7U
+#define SUSPENDED 8U
 
 /**
  * @brief USB function interface structure
@@ -184,7 +175,7 @@ struct xusb_device_context {
 	uint32_t event_ccs; /* Consumer Cycle State */
 	dma_addr_t dma_er_start_address; /* DMA addr for endpoint ring start ptr*/
 	dma_addr_t dma_ep_context_start_addr; /* DMA addr for ep context start ptr*/
-	enum device_state device_state;
+	device_state_t device_state;
 	uint32_t initialized;
 	uint32_t enumerated;
 	uint32_t bytes_txfred;

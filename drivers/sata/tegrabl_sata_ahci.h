@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <tegrabl_error.h>
 
+#define TEGRABL_SATA_BUF_ALIGN_SIZE 4U
 #define TEGRABL_SATA_SECTOR_SIZE_LOG2 (9)
 
 #define TEGRABL_SATA_AHCI_RFIS_SIZE (256)
@@ -21,7 +22,7 @@
 #define TEGRABL_SATA_AHCI_COMMAND_LIST_BUF_SIZE (1024)
 #define TEGRABL_SATA_AHCI_COMMAND_TABLE_SIZE (1024)
 #define SATA_BUFFER_ALIGNEMENTS (4096)
-#define SATA_MAX_READ_WRITE_SECTORS 0xFF
+#define SATA_MAX_READ_WRITE_SECTORS 0x1FFFUL
 
 #define SATA_COMINIT_TIMEOUT 200000 /* us */
 #define SATA_D2H_FIS_TIMEOUT 1000000 /* us */
@@ -31,58 +32,73 @@
 #define TEGRABL_SATA_READ_TIMEOUT 1000000 /* us */
 #define TEGRABL_SATA_IDENTIFY_TIMEOUT 1000000 /* us */
 
-#define AHCI_CMD_HEADER_PRDTL (1 << 16)
-#define AHCI_CMD_HEADER_CFL 0x5
-#define AHCI_CMD_HEADER_WRITE (1 << 6)
+#define AHCI_CMD_HEADER_PRDTL (1UL << 16)
+#define AHCI_CMD_HEADER_CFL 0x5U
+#define AHCI_CMD_HEADER_WRITE (1UL << 6)
 
-#define SATA_SUPPORTS_FLUSH 4
-#define SATA_SUPPORTS_FLUSH_EXT 5
-#define SATA_SUPPORTS_48_BIT_ADDRESS 2
+#define SATA_SUPPORTS_FLUSH 4U
+#define SATA_SUPPORTS_FLUSH_EXT 5U
+#define SATA_SUPPORTS_48_BIT_ADDRESS 2U
 
-#define CMD_HEADER_WRITE (1 << 6)
+#define CMD_HEADER_WRITE (1UL << 6)
 
-#define SATA_COMMAND_DMA_WRITE_EXTENDED 0x35
-#define SATA_COMMAND_DMA_WRITE 0xCA
-#define SATA_COMMAND_DMA_READ 0xC8
-#define SATA_COMMAND_DMA_READ_EXTENDED 0x25
-#define SATA_COMMAND_IDENTIFY 0xec
-#define SATA_COMMAND_FLUSH 0xE7
-#define SATA_COMMAND_FLUSH_EXTENDED 0xEA
+#define SATA_COMMAND_DMA_WRITE_EXTENDED 0x35U
+#define SATA_COMMAND_DMA_WRITE 0xCAU
+#define SATA_COMMAND_DMA_READ 0xC8U
+#define SATA_COMMAND_DMA_READ_EXTENDED 0x25U
+#define SATA_COMMAND_IDENTIFY 0xECU
+#define SATA_COMMAND_FLUSH 0xE7U
+#define SATA_COMMAND_FLUSH_EXTENDED 0xEAU
 
 /**
  * @brief defines the mode supported by sata device driver
  */
-enum tegrabl_sata_mode {
+/* macro tegrabl sata mode */
+typedef uint32_t tegrabl_sata_mode_t;
 	/* Legacy mode without dma */
-	TEGRABL_SATA_MODE_LEGACY = 1,
+#define TEGRABL_SATA_MODE_LEGACY 1
 
 	/* With dma */
-	TEGRABL_SATA_MODE_AHCI,
+#define TEGRABL_SATA_MODE_AHCI 2
 
-	TEGRABL_SATA_MODE_MAX
+#define TEGRABL_SATA_MODE_MAX 3
+
+/* macro tegrabl sata interface */
+typedef uint32_t tegrabl_sata_interface_speed_t;
+#define TEGRABL_SATA_INTERFACE_GEN1 0U
+#define TEGRABL_SATA_INTERFACE_GEN2 1U
+#define TEGRABL_SATA_INTERFACE_GEN3 2U
+
+struct tegrabl_sata_xfer_info {
+	struct tegrabl_blockdev_xfer_info *bdev_xfer_info;
+	bool dma_in_progress;
+
+	/* Current outstanding block count */
+	uint32_t bulk_count;
+
+	/* Specifies the block count for the
+	   current outstanding dma */
+	uint32_t count;
+	void *buf;
+	bool is_write;
 };
-
-enum tegrabl_sata_interface_speed {
-	TEGRABL_SATA_INTERFACE_GEN1,
-	TEGRABL_SATA_INTERFACE_GEN2,
-	TEGRABL_SATA_INTERFACE_GEN3
-};
-
 
 /**
  * @brief Defines the structure for book keeping
  */
 struct tegrabl_sata_context {
 	/* Sata instance id */
-	uint32_t instance;
+	uint8_t instance;
 	/* Size of a block */
 	size_t block_size_log2;
 	/* Number of blocks in device */
 	uint64_t block_count;
 	/* Mode of operation */
-	enum tegrabl_sata_mode mode;
+	tegrabl_sata_mode_t mode;
 	/* Interface speed */
-	enum tegrabl_sata_interface_speed speed;
+	tegrabl_sata_interface_speed_t speed;
+
+	struct tegrabl_sata_xfer_info xfer_info;
 
 	/* Buffers required by controller */
 	uint32_t *rfis;
@@ -103,24 +119,23 @@ struct tegrabl_sata_context {
 /**
  * @brief Defines AHCI FIS types.
  */
-enum tegrabl_ahci_fis_type {
+typedef uint32_t tegrabl_ahci_fis_type_t;
 	/* Register FIS - host to device */
-	TEGRABL_AHCI_FIS_TYPE_REG_H2D	= 0x27,
+#define TEGRABL_AHCI_FIS_TYPE_REG_H2D 0x27
 	/* Register FIS - device to host */
-	TEGRABL_AHCI_FIS_TYPE_REG_D2H	= 0x34,
+#define TEGRABL_AHCI_FIS_TYPE_REG_D2H 0x34
 	/* DMA activate FIS - device to host */
-	TEGRABL_AHCI_FIS_TYPE_DMA_ACT	= 0x39,
+#define TEGRABL_AHCI_FIS_TYPE_DMA_ACT 0x39
 	/* DMA setup FIS - bidirectional */
-	TEGRABL_AHCI_FIS_TYPE_DMA_SETUP	= 0x41,
+#define TEGRABL_AHCI_FIS_TYPE_DMA_SETUP 0x41
 	/* Data FIS - bidirectional */
-	TEGRABL_AHCI_FIS_TYPE_DATA		= 0x46,
+#define TEGRABL_AHCI_FIS_TYPE_DATA 0x46
 	/* BIST activate FIS - bidirectional */
-	TEGRABL_AHCI_FIS_TYPE_BIST		= 0x58,
+#define TEGRABL_AHCI_FIS_TYPE_BIST 0x58
 	/* PIO setup FIS - device to host */
-	TEGRABL_AHCI_FIS_TYPE_PIO_SETUP	= 0x5F,
+#define TEGRABL_AHCI_FIS_TYPE_PIO_SETUP 0x5F
 	/* Set device bits FIS - device to host */
-	TEGRABL_AHCI_FIS_TYPE_DEV_BITS	= 0xA1,
-};
+#define TEGRABL_AHCI_FIS_TYPE_DEV_BITS 0xA1
 
 /**
  * @brief Defines FIS transferred between host and device
@@ -215,6 +230,30 @@ tegrabl_error_t tegrabl_sata_ahci_io(struct tegrabl_sata_context *context,
 		void *buf, bnum_t block, bnum_t count, bool is_write, time_t timeout);
 
 /**
+ * @brief Async/sync Read or write number block starting from specified
+ * block
+ *
+ * @param context Context information
+ * @param buf Buffer to save read content or to write to device
+ * @param block Start sector for read/write
+ * @param count Number of sectors to read/write
+ * @param is_write True if write operation
+ *
+ * @return TEGRABL_NO_ERROR if successful else appropriate error.
+ */
+tegrabl_error_t tegrabl_sata_ahci_xfer(struct tegrabl_sata_context *context,
+		void *buf, bnum_t block, bnum_t count, bool is_write, time_t timeout, bool is_async);
+
+/**
+ * @brief checks for command completion
+ *
+ * @return TEGRABL_NO_ERROR if transfer is successful else
+ * TEGRABL_ERR_TIMEOUT.
+ */
+tegrabl_error_t tegrabl_sata_xfer_complete(struct tegrabl_sata_context *context,
+		time_t timeout);
+
+/**
  * @brief Erases storage device connected to sata controller
  *
  * @param context Context information
@@ -252,6 +291,16 @@ void tegrabl_sata_ahci_free_buffers(struct tegrabl_sata_context *context);
  * @return TEGRABL_NO_ERROR if successful else appropriate error.
  */
 tegrabl_error_t tegrabl_sata_ahci_flush_device(
+		struct tegrabl_sata_context *context);
+
+/**
+ * @brief initialize the sata controller partially
+ *
+ * @param context SATA context
+ *
+ * @return TEGRABL_NO_ERROR if successful else appropriate error.
+ */
+tegrabl_error_t tegrabl_sata_ahci_skip_init(
 		struct tegrabl_sata_context *context);
 
 #endif

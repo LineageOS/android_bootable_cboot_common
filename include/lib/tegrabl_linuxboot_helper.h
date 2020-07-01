@@ -21,19 +21,20 @@ extern "C"
 /**
  * @brief Describes the type of information required by linuxboot library
  */
-enum tegrabl_linux_boot_info {
-	TEGRABL_LINUXBOOT_INFO_EXTRA_CMDLINE_PARAMS,
-	TEGRABL_LINUXBOOT_INFO_EXTRA_DT_NODES,
-	TEGRABL_LINUXBOOT_INFO_DEBUG_CONSOLE,
-	TEGRABL_LINUXBOOT_INFO_EARLYUART_BASE,
-	TEGRABL_LINUXBOOT_INFO_CARVEOUT,
-	TEGRABL_LINUXBOOT_INFO_BOARD,
-	TEGRABL_LINUXBOOT_INFO_MEMORY,
-	TEGRABL_LINUXBOOT_INFO_INITRD,
-	TEGRABL_LINUXBOOT_INFO_BOOTIMAGE_CMDLINE,
-	TEGRABL_LINUXBOOT_INFO_SECUREOS,
-	TEGRABL_LINUXBOOT_INFO_MAX,
-};
+/* macro tegrabl linux boot info */
+typedef uint32_t tegrabl_linux_boot_info_t;
+#define TEGRABL_LINUXBOOT_INFO_EXTRA_CMDLINE_PARAMS 0
+#define TEGRABL_LINUXBOOT_INFO_EXTRA_DT_NODES 1
+#define TEGRABL_LINUXBOOT_INFO_DEBUG_CONSOLE 2
+#define TEGRABL_LINUXBOOT_INFO_EARLYUART_BASE 3
+#define TEGRABL_LINUXBOOT_INFO_TCU_MBOX_ADDR 4
+#define TEGRABL_LINUXBOOT_INFO_CARVEOUT 5
+#define TEGRABL_LINUXBOOT_INFO_BOARD 6
+#define TEGRABL_LINUXBOOT_INFO_MEMORY 7
+#define TEGRABL_LINUXBOOT_INFO_INITRD 8
+#define TEGRABL_LINUXBOOT_INFO_BOOTIMAGE_CMDLINE 9
+#define TEGRABL_LINUXBOOT_INFO_SECUREOS 10
+#define TEGRABL_LINUXBOOT_INFO_MAX 11
 
 /**
  * @brief Helper API (with BL-specific implementation), to extract what information
@@ -46,34 +47,19 @@ enum tegrabl_linux_boot_info {
  * @return TEGRABL_NO_ERROR if successful, otherwise appropriate error code
  */
 tegrabl_error_t tegrabl_linuxboot_helper_get_info(
-					enum tegrabl_linux_boot_info info,
+					tegrabl_linux_boot_info_t info,
 					const void *in_data, void *out_data);
 
-
+#if defined(CONFIG_ENABLE_VERIFIED_BOOT)
 /**
- * @brief Helper API (with BL-specific implementation), to compare based on
- * base address as required for calculating free dram regions
+ * @brief Helper API (with BL-specific implementation), to set vbmeta info to
+ *        be used in cmdline if needed
  *
- * @param index-1
- * @param index-2
+ * @param vbmeta vbmeta info string provided by libavb
  *
- * @return 0 or 1 based on comparision and -1 otherwise
+ * @return TEGRABL_NO_ERROR if successful, otherwise appropriate error code
  */
-int32_t bom_compare(const uint32_t a, const uint32_t b);
-
-/**
- * @brief Helper API (with BL-specific implementation), to sort in ascending order
- * based on base addresses of permanent carveouts. This will be used to calcuate
- * free dram regions.
- *
- * @param parm_carveout array
- * @param number of parm carvouts
- *
- * @return void
- */
-void sort(uint32_t array[], int32_t count);
-
-
+tegrabl_error_t tegrabl_linuxboot_set_vbmeta_info(const char *vbmeta);
 
 /**
  * @brief Helper API (with BL-specific implementation), to set vbstate to be
@@ -84,6 +70,16 @@ void sort(uint32_t array[], int32_t count);
  * @return TEGRABL_NO_ERROR if successful, otherwise appropriate error code
  */
 tegrabl_error_t tegrabl_linuxboot_set_vbstate(const char *vbstate);
+#endif
+
+#if defined(CONFIG_ENABLE_A_B_SLOT)
+/**
+ * @brief check if system as root is enabled
+ *
+ * @return true if it is enabled
+ */
+bool is_system_as_root_enabled(void);
+#endif
 
 /**
  * @brief Represents what processing is required for a commandline parameter
@@ -130,13 +126,13 @@ struct tegrabl_linuxboot_dtnode_info {
 /**
  * @brief Type of carveout
  */
-enum tegrabl_linuxboot_carveout_type {
-	TEGRABL_LINUXBOOT_CARVEOUT_VPR,
-	TEGRABL_LINUXBOOT_CARVEOUT_TOS,
-	TEGRABL_LINUXBOOT_CARVEOUT_BPMPFW,
-	TEGRABL_LINUXBOOT_CARVEOUT_LP0,
-	TEGRABL_LINUXBOOT_CARVEOUT_NVDUMPER,
-};
+/* macro tegrabl linuxboot carveout type */
+typedef uint32_t tegrabl_linuxboot_carveout_type_t;
+#define TEGRABL_LINUXBOOT_CARVEOUT_VPR 0
+#define TEGRABL_LINUXBOOT_CARVEOUT_TOS 1
+#define TEGRABL_LINUXBOOT_CARVEOUT_BPMPFW 2
+#define TEGRABL_LINUXBOOT_CARVEOUT_LP0 3
+#define TEGRABL_LINUXBOOT_CARVEOUT_NVDUMPER 4
 
 /**
  * @brief Structure for representing a memory block
@@ -149,54 +145,58 @@ struct tegrabl_linuxboot_memblock {
 /**
  * @brief Charging related android-boot mode
  */
-enum tegrabl_linuxboot_androidmode {
-	TEGRABL_LINUXBOOT_ANDROIDMODE_REGULAR,
-	TEGRABL_LINUXBOOT_ANDROIDMODE_CHARGER,
-};
+/* macro tegrabl linuxboot androidmode */
+typedef uint32_t tegrabl_linuxboot_androidmode_t;
+#define TEGRABL_LINUXBOOT_ANDROIDMODE_REGULAR 0
+#define TEGRABL_LINUXBOOT_ANDROIDMODE_CHARGER 1
 
 /**
  * @brief Debug console type
  */
-enum tegrabl_linuxboot_debug_console {
-	TEGRABL_LINUXBOOT_DEBUG_CONSOLE_NONE,
-	TEGRABL_LINUXBOOT_DEBUG_CONSOLE_DCC,
-	TEGRABL_LINUXBOOT_DEBUG_CONSOLE_UARTA,
-	TEGRABL_LINUXBOOT_DEBUG_CONSOLE_UARTB,
-	TEGRABL_LINUXBOOT_DEBUG_CONSOLE_UARTC,
-	TEGRABL_LINUXBOOT_DEBUG_CONSOLE_UARTD,
-	TEGRABL_LINUXBOOT_DEBUG_CONSOLE_UARTE,
-	TEGRABL_LINUXBOOT_DEBUG_CONSOLE_AUTOMATION,
-};
+/* macro tegrabl linuxboot debug console */
+typedef uint32_t tegrabl_linuxboot_debug_console_t;
+#define TEGRABL_LINUXBOOT_DEBUG_CONSOLE_NONE 0
+#define TEGRABL_LINUXBOOT_DEBUG_CONSOLE_DCC 1
+#define TEGRABL_LINUXBOOT_DEBUG_CONSOLE_UARTA 2
+#define TEGRABL_LINUXBOOT_DEBUG_CONSOLE_UARTB 3
+#define TEGRABL_LINUXBOOT_DEBUG_CONSOLE_UARTC 4
+#define TEGRABL_LINUXBOOT_DEBUG_CONSOLE_UARTD 5
+#define TEGRABL_LINUXBOOT_DEBUG_CONSOLE_UARTE 6
+#define TEGRABL_LINUXBOOT_DEBUG_CONSOLE_UARTF 7
+#define TEGRABL_LINUXBOOT_DEBUG_CONSOLE_UARTG 8
+#define TEGRABL_LINUXBOOT_DEBUG_CONSOLE_UARTH 9
+#define TEGRABL_LINUXBOOT_DEBUG_CONSOLE_AUTOMATION 10
+#define TEGRABL_LINUXBOOT_DEBUG_CONSOLE_COMB_UART 11
 
 /**
  * @brief Board-type
  */
-enum tegrabl_linuxboot_board_type {
-	TEGRABL_LINUXBOOT_BOARD_TYPE_PROCESSOR,
-	TEGRABL_LINUXBOOT_BOARD_TYPE_PMU,
-	TEGRABL_LINUXBOOT_BOARD_TYPE_DISPLAY,
-};
+/* macro tegrabl linuxboot board type */
+typedef uint32_t tegrabl_linuxboot_board_type_t;
+#define TEGRABL_LINUXBOOT_BOARD_TYPE_PROCESSOR 0
+#define TEGRABL_LINUXBOOT_BOARD_TYPE_PMU 1
+#define TEGRABL_LINUXBOOT_BOARD_TYPE_DISPLAY 2
 
 /**
  * @brief Fields of board-info structure
  */
-enum tegrabl_linuxboot_board_info {
-	TEGRABL_LINUXBOOT_BOARD_ID,
-	TEGRABL_LINUXBOOT_BOARD_SKU,
-	TEGRABL_LINUXBOOT_BOARD_FAB,
-	TEGRABL_LINUXBOOT_BOARD_MAJOR_REV,
-	TEGRABL_LINUXBOOT_BOARD_MINOR_REV,
-	TEGRABL_LINUXBOOT_BOARD_MAX_FIELDS,
-};
+/* macro tegrabl linuxboot board info */
+typedef uint32_t tegrabl_linuxboot_board_info_t;
+#define TEGRABL_LINUXBOOT_BOARD_ID 0
+#define TEGRABL_LINUXBOOT_BOARD_SKU 1
+#define TEGRABL_LINUXBOOT_BOARD_FAB 2
+#define TEGRABL_LINUXBOOT_BOARD_MAJOR_REV 3
+#define TEGRABL_LINUXBOOT_BOARD_MINOR_REV 4
+#define TEGRABL_LINUXBOOT_BOARD_MAX_FIELDS 5
 
 /*******************************************************************************
  * Enum to define supported Trusted OS types
  ******************************************************************************/
-enum tegrabl_tos_type {
-	TEGRABL_TOS_TYPE_UNDEFINED,
-	TEGRABL_TOS_TYPE_TLK,
-	TEGRABL_TOS_TYPE_TRUSTY,
-};
+/* macro tegrabl tos type */
+typedef uint32_t tegrabl_tos_type_t;
+#define TEGRABL_TOS_TYPE_UNDEFINED 0
+#define TEGRABL_TOS_TYPE_TLK 1
+#define TEGRABL_TOS_TYPE_TRUSTY 2
 
 /**
  * @brief Calculates the list of free dram regions by excluding permanent
@@ -208,6 +208,54 @@ enum tegrabl_tos_type {
  */
 uint32_t get_free_dram_regions_info(struct tegrabl_linuxboot_memblock
 		**free_dram_regions);
+
+#if defined(CONFIG_ENABLE_STAGED_SCRUBBING)
+/**
+ * @brief Scrubs the DRAM regions not already scrubbed by early BL
+ *
+ * @return TEGRABL_NO_ERROR if success; relevant error codes in case of failure
+ */
+tegrabl_error_t dram_staged_scrub(void);
+#endif
+
+/**
+ * @brief Get NCT image load address
+ *
+ * @param load_addr ptr to load address of NCT image (output)
+ *
+ * @return TEGRABL_NO_ERROR if success; relevant error code in case of failure
+ */
+tegrabl_error_t tegrabl_get_nct_load_addr(void **load_addr);
+
+/**
+ * @brief Get boot image load address
+ *
+ * @param load_addr ptr to load address of boot image (output)
+ *
+ * @return TEGRABL_NO_ERROR if success; relevant error code in case of failure
+ */
+tegrabl_error_t tegrabl_get_boot_img_load_addr(void **load_addr);
+
+/**
+ * @brief Get kernel load address
+ *
+ * @return kernel load address
+ */
+uint64_t tegrabl_get_kernel_load_addr(void);
+
+/**
+ * @brief Get dtb load address
+ *
+ * @return dtb load address
+ */
+uint64_t tegrabl_get_dtb_load_addr(void);
+
+/**
+ * @brief Get ramdisk load address
+ *
+ * @return ramdisk load address
+ */
+uint64_t tegrabl_get_ramdisk_load_addr(void);
 
 #if defined(__cplusplus)
 }

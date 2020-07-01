@@ -28,44 +28,60 @@
 static bool tegra_dp_debug = true;
 
 /* configures sor clock for DP */
-tegrabl_error_t tegrabl_dp_clock_config(struct tegrabl_nvdisp *nvdisp,
-										int32_t instance, uint32_t clk_type)
+tegrabl_error_t tegrabl_dp_clock_config(struct tegrabl_nvdisp *nvdisp, int32_t instance, uint32_t clk_type)
 {
 	uint32_t clk_rate = 0;
 	uint32_t pclk = nvdisp->mode->pclk / 1000;
+	uint32_t parent_pad_clk = 0;
 	tegrabl_error_t ret = TEGRABL_NO_ERROR;
 
 	pr_debug("%s: entry\n", __func__);
 	if (clk_type == TEGRA_SOR_SAFE_CLK) {
-		CHECK_RET(tegrabl_car_set_clk_src(TEGRABL_MODULE_SOR_SAFE, 0,
-										  TEGRABL_CLK_SRC_PLLP_OUT0));
+		CHECK_RET(tegrabl_car_set_clk_src(TEGRABL_MODULE_SOR_SAFE, 0, TEGRABL_CLK_SRC_PLLP_OUT0));
 		CHECK_RET(tegrabl_car_clk_enable(TEGRABL_MODULE_SOR_SAFE, 0, NULL));
 
-		CHECK_RET(tegrabl_car_set_clk_src(TEGRABL_MODULE_SOR_OUT, instance,
-										  TEGRABL_CLK_SRC_SOR_SAFE_CLK));
-		CHECK_RET(tegrabl_car_clk_enable(TEGRABL_MODULE_SOR_OUT, instance,
-										 NULL));
+		CHECK_RET(tegrabl_car_set_clk_src(TEGRABL_MODULE_SOR_OUT, instance, TEGRABL_CLK_SRC_SOR_SAFE_CLK));
+		CHECK_RET(tegrabl_car_clk_enable(TEGRABL_MODULE_SOR_OUT, instance, NULL));
 		tegrabl_udelay(20);
 
 		CHECK_RET(tegrabl_car_rst_set(TEGRABL_MODULE_SOR, instance));
-		CHECK_RET(tegrabl_car_set_clk_src(TEGRABL_MODULE_SOR, instance,
-										  TEGRABL_CLK_SRC_PLLDP));
+		CHECK_RET(tegrabl_car_set_clk_src(TEGRABL_MODULE_SOR, instance, TEGRABL_CLK_SRC_PLLDP));
+		CHECK_RET(tegrabl_car_clk_enable(TEGRABL_MODULE_SOR, instance, NULL));
 		CHECK_RET(tegrabl_car_rst_clear(TEGRABL_MODULE_SOR, instance));
 		tegrabl_udelay(20);
 	} else if (clk_type == TEGRA_SOR_LINK_CLK) {
-		CHECK_RET(tegrabl_car_set_clk_src(TEGRABL_MODULE_SOR_PAD_CLKOUT,
-										  instance, TEGRABL_CLK_SRC_PLLDP));
-		CHECK_RET(tegrabl_car_set_clk_rate(TEGRABL_MODULE_SOR_PAD_CLKOUT,
-										   instance, pclk, &clk_rate));
-		CHECK_RET(tegrabl_car_clk_enable(TEGRABL_MODULE_SOR_PAD_CLKOUT,
-										 instance, NULL));
-		CHECK_RET(tegrabl_car_set_clk_src(TEGRABL_MODULE_SOR_OUT, instance,
-					TEGRABL_CLK_SRC_SOR0_PAD_CLKOUT + instance));
-		CHECK_RET(tegrabl_car_clk_enable(TEGRABL_MODULE_SOR_OUT, instance,
-										 NULL));
-		tegrabl_udelay(250);
+		CHECK_RET(tegrabl_car_set_clk_src(TEGRABL_MODULE_SOR_PAD_CLKOUT, instance, TEGRABL_CLK_SRC_PLLDP));
+		CHECK_RET(tegrabl_car_set_clk_rate(TEGRABL_MODULE_SOR_PAD_CLKOUT, instance, pclk, &clk_rate));
+		CHECK_RET(tegrabl_car_clk_enable(TEGRABL_MODULE_SOR_PAD_CLKOUT, instance, NULL));
+
+		switch (instance) {
+		case 0:
+			parent_pad_clk = TEGRABL_CLK_SRC_SOR0_PAD_CLKOUT;
+			break;
+		case 1:
+			parent_pad_clk = TEGRABL_CLK_SRC_SOR1_PAD_CLKOUT;
+			break;
+#if !defined(IS_T186)
+		case 2:
+			parent_pad_clk = TEGRABL_CLK_SRC_SOR2_PAD_CLKOUT;
+			break;
+		case 3:
+			parent_pad_clk = TEGRABL_CLK_SRC_SOR3_PAD_CLKOUT;
+			break;
+#endif
+		default:
+			pr_error("%s: invalid SOR instance %d\n", __func__, instance);
+			ret = TEGRABL_ERROR(TEGRABL_ERR_INVALID_CONFIG, 0);
+		}
+
+		if (parent_pad_clk != TEGRABL_CLK_SRC_INVALID) {
+			CHECK_RET(tegrabl_car_set_clk_src(TEGRABL_MODULE_SOR_OUT, instance, parent_pad_clk));
+			CHECK_RET(tegrabl_car_clk_enable(TEGRABL_MODULE_SOR_OUT, instance, NULL));
+			tegrabl_udelay(250);
+		}
 	} else {
 		pr_error("%s: invalid clk type\n", __func__);
+		ret = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 	}
 
 	pr_debug("%s: exit\n", __func__);
@@ -83,9 +99,10 @@ tegrabl_error_t tegrabl_dp_dpcd_read(struct tegrabl_dp *dp, uint32_t addr,
 	ret = tegrabl_dpaux_read(dp->hdpaux, AUX_CMD_AUXRD, addr, data_ptr, &size,
 							 &status);
 
-	if (ret != TEGRABL_NO_ERROR)
+	if (ret != TEGRABL_NO_ERROR) {
 		pr_error("dp: Failed to read DPCD data. CMD 0x%x, Status 0x%x\n", addr,
 				 status);
+	}
 
 	return ret;
 }
@@ -101,9 +118,10 @@ tegrabl_error_t tegrabl_dp_dpcd_write(struct tegrabl_dp *dp, uint32_t addr,
 	ret = tegrabl_dpaux_write(dp->hdpaux, AUX_CMD_AUXWR, addr, &data, &size,
 							  &status);
 
-	if (ret != TEGRABL_NO_ERROR)
+	if (ret != TEGRABL_NO_ERROR) {
 		pr_error("dp: Failed to write DPCD data. CMD 0x%x, Status 0x%x\n", addr,
 				 status);
+	}
 	return ret;
 }
 
@@ -148,8 +166,9 @@ static tegrabl_error_t dp_panel_power_state(struct tegrabl_dp *dp,
 static void dp_dump_link_cfg(struct tegrabl_dp *dp,
 							 const struct tegrabl_dp_link_config *cfg)
 {
-	if (!tegra_dp_debug)
+	if (!tegra_dp_debug) {
 		return;
+	}
 
 	pr_info("DP config: cfg_name : cfg_value\n");
 	pr_info("           Lane Count             %d\n",
@@ -219,8 +238,9 @@ bool tegrabl_dp_calc_config(struct tegrabl_dp *dp,
 	cfg->is_valid = false;
 	rate = dp->mode->pclk;
 
-	if (!link_rate || !cfg->lane_count || !rate || !cfg->bits_per_pixel)
+	if (!link_rate || !cfg->lane_count || !rate || !cfg->bits_per_pixel) {
 		return false;
+	}
 
 	if ((uint64_t)rate * cfg->bits_per_pixel >=
 		(uint64_t)link_rate * 8 * cfg->lane_count) {
@@ -258,8 +278,9 @@ bool tegrabl_dp_calc_config(struct tegrabl_dp *dp,
 					(uint32_t)tegra_div64(frac_f, (uint32_t)f);
 		}
 
-		if (activefrac == 1)
+		if (activefrac == 1) {
 			activepolarity = 0;
+		}
 
 		if (activepolarity == 1)
 			approx_value_f = activefrac ? tegra_div64(
@@ -287,8 +308,9 @@ bool tegrabl_dp_calc_config(struct tegrabl_dp *dp,
 			lowest_neg_activepolarity = activepolarity;
 			lowest_neg_activefrac = activefrac;
 
-			if (accumulated_error_f == 0)
+			if (accumulated_error_f == 0) {
 				break;
+			}
 		}
 	}
 
@@ -335,8 +357,9 @@ bool tegrabl_dp_calc_config(struct tegrabl_dp *dp,
 		mode->h_front_porch + mode->h_sync_width - 7) * link_rate, rate) - 3
 		* cfg->enhanced_framing - (12 / cfg->lane_count);
 
-	if (cfg->hblank_sym < 0)
+	if (cfg->hblank_sym < 0) {
 		cfg->hblank_sym = 0;
+	}
 
 
 	/* Refer to dev_disp.ref for more information.
@@ -347,8 +370,9 @@ bool tegrabl_dp_calc_config(struct tegrabl_dp *dp,
 	cfg->vblank_sym = (int)tegra_div64((uint64_t)(mode->h_active - 25)
 		* link_rate, rate) - (36 / cfg->lane_count) - 4;
 
-	if (cfg->vblank_sym < 0)
+	if (cfg->vblank_sym < 0) {
 		cfg->vblank_sym = 0;
+	}
 
 	cfg->is_valid = true;
 
@@ -376,9 +400,16 @@ static tegrabl_error_t dp_init_max_link_cfg(struct tegrabl_dp *dp,
 	else
 		cfg->max_lane_count = 1;
 
-	cfg->tps3_supported =
-		(dpcd_data & DPCD_MAX_LANE_COUNT_TPS3_SUPPORTED_YES) ?
-		true : false;
+	if (dp->pdata && dp->pdata->lanes && (dp->pdata->lanes < cfg->max_lane_count)) {
+			cfg->max_lane_count = dp->pdata->lanes;
+	}
+
+	if (dpcd_data & DPCD_MAX_LANE_COUNT_TPS3_SUPPORTED_YES) {
+		cfg->tps = TRAINING_PATTERN_3;
+	} else {
+		cfg->tps = TRAINING_PATTERN_2;
+	}
+
 	cfg->support_enhanced_framing =
 		(dpcd_data & DPCD_MAX_LANE_COUNT_ENHANCED_FRAMING_YES) ?
 		true : false;
@@ -388,6 +419,16 @@ static tegrabl_error_t dp_init_max_link_cfg(struct tegrabl_dp *dp,
 	else
 		CHECK_RET(tegrabl_dp_dpcd_read(dp, DPCD_MAX_DOWNSPREAD, &dpcd_data));
 
+#if !defined(IS_T186) /*added in t19x*/
+	/*
+	 * The check for TPS4 should be after the check for TPS3. That helps
+	 * assign a higher priority to TPS4
+	 */
+	if (dpcd_data & DPCD_MAX_DOWNSPREAD_TPS4_SUPPORTED_YES) {
+		cfg->tps = TRAINING_PATTERN_4;
+	}
+#endif
+
 	cfg->downspread = (dpcd_data & DPCD_MAX_DOWNSPREAD_VAL_0_5_PCT) ?
 		true : false;
 	cfg->support_fast_lt = (dpcd_data &
@@ -396,7 +437,7 @@ static tegrabl_error_t dp_init_max_link_cfg(struct tegrabl_dp *dp,
 	CHECK_RET(tegrabl_dp_dpcd_read(dp, DPCD_TRAINING_AUX_RD_INTERVAL,
 								   &dpcd_data));
 
-	cfg->aux_rd_interval = dpcd_data;
+	cfg->aux_rd_interval = dpcd_data & DPCD_TRAINING_AUX_RD_INTERVAL_MASK;
 
 	if (dp->sink_cap_valid)
 		cfg->max_link_bw = dp->sink_cap[DPCD_MAX_LINK_BANDWIDTH];
@@ -410,6 +451,10 @@ static tegrabl_error_t dp_init_max_link_cfg(struct tegrabl_dp *dp,
 		cfg->max_link_bw = SOR_LINK_SPEED_G2_7;
 	else
 		cfg->max_link_bw = SOR_LINK_SPEED_G1_62;
+
+	if (dp->pdata && dp->pdata->link_bw && (dp->pdata->link_bw < cfg->max_link_bw)) {
+			cfg->max_link_bw = dp->pdata->link_bw;
+	}
 
 	CHECK_RET(tegrabl_dp_dpcd_read(dp, DPCD_EDP_CONFIG_CAP, &dpcd_data));
 
@@ -439,6 +484,25 @@ static tegrabl_error_t dp_init_max_link_cfg(struct tegrabl_dp *dp,
 
 	dp->max_link_cfg = *cfg;
 
+	return ret;
+}
+
+static tegrabl_error_t dp_set_assr(struct tegrabl_dp *dp, bool ena)
+{
+	tegrabl_error_t ret = TEGRABL_NO_ERROR;
+
+	uint8_t dpcd_data = ena ? DPCD_EDP_CONFIG_SET_ASC_RESET_ENABLE :
+							DPCD_EDP_CONFIG_SET_ASC_RESET_DISABLE;
+
+	ret = tegrabl_dp_dpcd_write(dp, DPCD_EDP_CONFIG_SET, dpcd_data);
+	if (ret != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+
+	/* Also reset the scrambler to 0xfffe */
+	sor_set_internal_panel(dp->sor, ena);
+
+fail:
 	return ret;
 }
 
@@ -488,40 +552,6 @@ static tegrabl_error_t dp_set_lane_count(struct tegrabl_dp *dp,
 	return ret;
 }
 
-/* perform prod settings for DP and DPAUX */
-void tegrabl_dp_prod_settings(struct sor_data *sor, struct prod_list *prod_list,
-	struct prod_pair *node, uint32_t clk)
-{
-	uint32_t i, j;
-	struct prod_settings *prod_settings;
-	struct prod_tuple prod_tuple;
-	uint32_t val;
-
-	if (!prod_list) {
-		pr_error("dp prod settings not found!\n");
-		return;
-	}
-
-	prod_settings = prod_list->prod_settings;
-	for (i = 0; i < prod_list->num; i++) {
-		if (node[i].clk == 0)  /*then we don't need to check*/
-			break;
-		if (node[i].clk == clk)
-			break;
-	}
-
-	if (i < prod_list->num) {
-		for (j = 0; j < prod_list->prod_settings[i].count; j++) {
-			prod_tuple = prod_settings[i].prod_tuple[j];
-			val = sor_readl(sor, prod_tuple.addr / 4);
-			val = ((val & prod_tuple.mask) |
-				(prod_tuple.val & prod_tuple.mask));
-				/*the above logic is based on 1-style masking*/
-			sor_writel(sor, prod_tuple.addr / 4, val);
-		}
-	}
-}
-
 /* configure DP link speed */
 static tegrabl_error_t dp_link_cal(struct tegrabl_dp *dp)
 {
@@ -536,18 +566,15 @@ static tegrabl_error_t dp_link_cal(struct tegrabl_dp *dp)
 	switch (cfg->link_bw) {
 	case SOR_LINK_SPEED_G1_62:  /* RBR */
 		pr_debug("%s() --RBR\n", __func__);
-		tegrabl_dp_prod_settings(dp->sor, dp->pdata->br_prod_list, dp_br_nodes,
-								 SOR_LINK_SPEED_G1_62);
+		sor_config_prod_settings(dp->sor, dp->pdata->br_prod_list, dp_br_nodes, SOR_LINK_SPEED_G1_62);
 		break;
 	case SOR_LINK_SPEED_G2_7:   /* HBR */
 		pr_debug("%s() --HBR\n", __func__);
-		tegrabl_dp_prod_settings(dp->sor, dp->pdata->br_prod_list, dp_br_nodes,
-								 SOR_LINK_SPEED_G2_7);
+		sor_config_prod_settings(dp->sor, dp->pdata->br_prod_list, dp_br_nodes, SOR_LINK_SPEED_G2_7);
 		break;
 	case SOR_LINK_SPEED_G5_4:  /* HBR2 */
 		pr_debug("%s() --HBR2\n", __func__);
-		tegrabl_dp_prod_settings(dp->sor, dp->pdata->br_prod_list, dp_br_nodes,
-								 SOR_LINK_SPEED_G5_4);
+		sor_config_prod_settings(dp->sor, dp->pdata->br_prod_list, dp_br_nodes, SOR_LINK_SPEED_G5_4);
 		break;
 	default:
 		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID_CONFIG, 1);
@@ -558,15 +585,14 @@ fail:
 }
 
 /* DP initialization */
-static tegrabl_error_t tegrabl_dp_init(struct tegrabl_nvdisp *nvdisp,
-									   struct tegrabl_display_pdata *pdata)
+static tegrabl_error_t tegrabl_dp_init(struct tegrabl_nvdisp *nvdisp, struct tegrabl_display_pdata *pdata)
 {
 	struct tegrabl_dp *dp;
 	struct sor_data *sor;
-	int dp_num = pdata->sor_instance;
+	struct tegrabl_display_sor_dtb *sor_dtb = &(pdata->sor_dtb);
 	tegrabl_error_t ret = TEGRABL_NO_ERROR;
 
-	dp = tegrabl_calloc(1, sizeof(struct tegrabl_dp));
+	dp = tegrabl_malloc(sizeof(struct tegrabl_dp));
 	if (!dp) {
 		pr_error("%s, memory allocation failed\n", __func__);
 		ret = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
@@ -574,17 +600,17 @@ static tegrabl_error_t tegrabl_dp_init(struct tegrabl_nvdisp *nvdisp,
 	}
 	memset(dp, 0, sizeof(struct tegrabl_dp));
 
-	ret = sor_init(&sor, dp_num);
-	if (ret != TEGRABL_NO_ERROR)
+	ret = sor_init(&sor, sor_dtb);
+	if (ret != TEGRABL_NO_ERROR) {
 		goto fail;
+	}
 	sor->nvdisp = nvdisp;
 	sor->link_cfg = &(dp->link_cfg);
-	memcpy(sor->xbar_ctrl, pdata->xbar_ctrl, XBAR_CNT * sizeof(uint32_t));
+	memcpy(sor->xbar_ctrl, sor_dtb->xbar_ctrl, XBAR_CNT * sizeof(uint32_t));
 
 	dp->nvdisp = nvdisp;
 	dp->mode = nvdisp->mode;
 	dp->sor = sor;
-	dp->sor_instance = dp_num;
 	dp->enabled = false;
 	dp->pdata = &(pdata->dp_dtb);
 
@@ -593,11 +619,12 @@ static tegrabl_error_t tegrabl_dp_init(struct tegrabl_nvdisp *nvdisp,
 	tegrabl_dp_lt_init(&dp->lt_data, dp);
 	pr_debug("dp init end\n");
 
-	return tegrabl_dpaux_init_aux(dp_num, &(dp->hdpaux));
+	return tegrabl_dpaux_init_aux(sor_dtb->dpaux_instance, &(dp->hdpaux));
 
 fail:
-	if (dp)
+	if (dp) {
 		tegrabl_free(dp);
+	}
 	return ret;
 }
 
@@ -613,11 +640,13 @@ static void dp_dpcd_init(struct tegrabl_dp *dp)
 	};
 
 	/* Check DP version */
-	if (tegrabl_dp_dpcd_read(dp, DPCD_REV, &dp->revision))
+	if (tegrabl_dp_dpcd_read(dp, DPCD_REV, &dp->revision)) {
 		pr_error("dp: failed to read the revision number from sink\n");
+	}
 
-	if (dp_init_max_link_cfg(dp, cfg))
+	if (dp_init_max_link_cfg(dp, cfg)) {
 		pr_error("dp: failed to init link configuration\n");
+	}
 
 	tegrabl_dpaux_write(dp->hdpaux, AUX_CMD_AUXWR, DPCD_SOURCE_IEEE_OUI,
 						data_ieee_oui_be, &size_ieee_oui, &auxstat);
@@ -689,8 +718,9 @@ static tegrabl_error_t tegrabl_dp_enable(struct tegrabl_nvdisp *nvdisp)
 	int ret;
 	uint32_t val;
 
-	if (dp->enabled)
+	if (dp->enabled) {
 		return TEGRABL_NO_ERROR;
+	}
 
 	pr_debug("DP enable enter\n");
 
@@ -702,19 +732,31 @@ static tegrabl_error_t tegrabl_dp_enable(struct tegrabl_nvdisp *nvdisp)
 
 	dp_dpcd_init(dp);
 
-	CHECK_RET(tegrabl_sor_enable_dp(sor));
+	/*dp_prepare_pad*/
+	CHECK_RET(tegrabl_dp_clock_config(sor->nvdisp, sor->instance, TEGRA_SOR_SAFE_CLK));
+	sor_writel_def(SOR_CLK_CNTRL, DP_CLK_SEL, DIFF_DPCLK, val);
+	sor_set_link_bandwidth(sor, cfg->link_bw);
+	sor_config_prod_settings(sor, dp->pdata->prod_list, dp_node, 0);
+	dp_link_cal(dp);
 
-	sor_set_internal_panel(sor, false);
+	tegrabl_sor_enable_dp(sor);
+
+	if (cfg->alt_scramber_reset_cap) {
+		dp_set_assr(dp, true);
+	} else {
+		sor_set_internal_panel(sor, false);
+	}
 
 	tegrabl_dp_dpcd_write(dp, DPCD_MAIN_LINK_CHANNEL_CODING_SET,
 						  DPCD_MAIN_LINK_CHANNEL_CODING_SET_ANSI_8B10B);
 
 	val = sor_readl(sor, (SOR_NV_PDISP_SOR_DP_CONFIG0_0 + sor->portnum));
-	val = NV_FLD_SET_DRF_DEF(SOR_NV_PDISP, SOR_DP_CONFIG0, IDLE_BEFORE_ATTACH,
-							 ENABLE, val);
+	val = NV_FLD_SET_DRF_DEF(SOR_NV_PDISP, SOR_DP_CONFIG0, IDLE_BEFORE_ATTACH, ENABLE, val);
 	sor_writel(sor, (SOR_NV_PDISP_SOR_DP_CONFIG0_0 + sor->portnum), val);
 
-	dp_set_link_bandwidth(dp, cfg->link_bw);
+	tegrabl_dp_dpcd_write(dp, DPCD_DOWNSPREAD_CTRL, DPCD_DOWNSPREAD_CTRL_SPREAD_AMP_LT_0_5);
+
+	tegrabl_dp_dpcd_write(dp, DPCD_LINK_BANDWIDTH_SET, cfg->link_bw);
 
 	/*
 	 * enhanced framing enable field shares DPCD offset
@@ -722,26 +764,16 @@ static tegrabl_error_t tegrabl_dp_enable(struct tegrabl_nvdisp *nvdisp)
 	 * before enhanced framing enable. CTS waits on first
 	 * write to this offset to check for lane count set.
 	 */
-	dp_set_lane_count(dp, cfg->lane_count);
+	tegrabl_dp_dpcd_write_field(dp, DPCD_LANE_COUNT_SET, DPCD_LANE_COUNT_SET_MASK, cfg->lane_count);
 	dp_set_enhanced_framing(dp, cfg->enhanced_framing);
 
-	dp_link_cal(dp);
 	dp_tu_config(dp, cfg);
 
-	tegrabl_dp_tpg(dp, TRAINING_PATTERN_DISABLE, cfg->lane_count);
-
 	tegrabl_sor_port_enable(sor, true);
-	tegrabl_sor_config_xbar(sor);
+	sor_config_xbar(sor);
 
 	/* switch to macro feedback clock */
-	CHECK_RET(tegrabl_dp_clock_config(nvdisp, dp->sor_instance,
-									  TEGRA_SOR_LINK_CLK));
-
-	sor_writel_def(SOR_CLK_CNTRL, DP_CLK_SEL, SINGLE_DPCLK, val);
-	val = dp->link_cfg.link_bw ? :
-			NV_DRF_DEF(SOR_NV_PDISP, SOR_CLK_CNTRL, DP_LINK_SPEED, G1_62);
-
-	sor_set_link_bandwidth(sor, val);
+	CHECK_RET(tegrabl_dp_clock_config(nvdisp, sor->instance, TEGRA_SOR_LINK_CLK));
 
 	/* Host is ready. Start link training. */
 	ret = tegrabl_dp_lt(&dp->lt_data);

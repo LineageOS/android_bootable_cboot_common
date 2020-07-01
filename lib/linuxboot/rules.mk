@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2017, NVIDIA Corporation.  All Rights Reserved.
+# Copyright (c) 2015-2018, NVIDIA Corporation.  All Rights Reserved.
 #
 # NVIDIA Corporation and its licensors retain all intellectual property and
 # proprietary rights in and to this software and related documentation.  Any
@@ -12,29 +12,40 @@ LOCAL_DIR := $(GET_LOCAL_DIR)
 
 MODULE := $(LOCAL_DIR)
 
-MODULE_DEPS += \
-	$(LOCAL_DIR)/../libfdt \
-	$(LOCAL_DIR)/../tegrabl_devicetree \
-	$(LOCAL_DIR)/../tegrabl_decompress \
-	$(LOCAL_DIR)/../tegrabl_board_info \
-	$(LOCAL_DIR)/../../../t18x/common/lib/odmdata \
-	$(LOCAL_DIR)/../../../t18x/common/lib/a_b_boot_control \
-	$(LOCAL_DIR)/../../../t18x/common/lib/partitionloader
-
 GLOBAL_INCLUDES += \
 	$(LOCAL_DIR) \
 	$(LOCAL_DIR)/../../include \
 	$(LOCAL_DIR)/../../include/lib \
 	$(LOCAL_DIR)/../../include/soc/$(TARGET) \
-	$(LOCAL_DIR)/../../../t18x/common/include/soc/$(TARGET) \
-	$(LOCAL_DIR)/../../../t18x/common/include/drivers \
-	$(LOCAL_DIR)/../../../t18x/nvtboot/common/soc/$(TARGET)/include
+	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/include/lib \
+	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/include/soc/$(TARGET) \
+	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/include/drivers \
+	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/nvtboot/common/soc/$(TARGET)/include
+
+MODULE_DEPS += \
+	$(LOCAL_DIR)/../libfdt \
+	$(LOCAL_DIR)/../devicetree \
+	$(LOCAL_DIR)/../board_info \
+	$(LOCAL_DIR)/../plugin_manager \
+	$(LOCAL_DIR)/../external/libufdt \
+	$(LOCAL_DIR)/../odmdata \
+	$(LOCAL_DIR)/../../../t18x/common/lib/partitionloader \
+	$(LOCAL_DIR)/../decompress
+
+ifneq ($(filter t18x, $(TARGET_FAMILY)),)
+MODULE_DEPS += \
+	$(LOCAL_DIR)/../a_b_boot
+endif
+
+ifneq ($(filter t19x, $(TARGET_FAMILY)),)
+ALLMODULE_OBJS += $(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/lib/linuxboot/$(TARGET)/prebuilt/vpr.mod.o
+endif
 
 MODULE_SRCS += \
 	$(LOCAL_DIR)/cmdline.c \
 	$(LOCAL_DIR)/dtb_update.c \
-	$(LOCAL_DIR)/../../../t18x/common/lib/linuxboot/$(TARGET)/linuxboot_helper.c \
+	$(LOCAL_DIR)/dtb_overlay.c \
+	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/lib/linuxboot/$(TARGET)/linuxboot_helper.c \
 	$(LOCAL_DIR)/linux_load.c
 
 include make/module.mk
-

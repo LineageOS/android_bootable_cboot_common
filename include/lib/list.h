@@ -21,7 +21,7 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 /*
- * Copyright (c) 2015-2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -59,10 +59,11 @@ static inline void list_clear_node(struct list_node *item)
 
 static inline bool list_in_list(struct list_node *item)
 {
-	if (item->prev == 0 && item->next == 0)
+	if ((item->prev == 0) && (item->next == 0)) {
 		return false;
-	else
+	} else {
 		return true;
+	}
 }
 
 static inline void list_add_head(struct list_node *list, struct list_node *item)
@@ -103,13 +104,13 @@ static inline struct list_node* list_remove_head(struct list_node *list) {
 }
 
 #define list_remove_head_type(list, type, element) ({\
-    struct list_node *__nod = list_remove_head(list);\
-    type *__t;\
-    if(__nod)\
-        __t = containerof(__nod, type, element);\
-    else\
-        __t = (type *)0;\
-    __t;\
+	struct list_node *__nod = list_remove_head(list);\
+	type *__t;\
+	if (__nod != NULL)\
+		__t = containerof(__nod, type, element);\
+	else\
+		__t = (type *)0;\
+	__t;\
 })
 
 static inline struct list_node* list_remove_tail(struct list_node *list) {
@@ -123,13 +124,13 @@ static inline struct list_node* list_remove_tail(struct list_node *list) {
 }
 
 #define list_remove_tail_type(list, type, element) ({\
-    struct list_node *__nod = list_remove_tail(list);\
-    type *__t;\
-    if(__nod)\
-        __t = containerof(__nod, type, element);\
-    else\
-        __t = (type *)0;\
-    __t;\
+	struct list_node *__nod = list_remove_tail(list);\
+	type *__t;\
+	if (__nod != NULL)\
+		__t = containerof(__nod, type, element);\
+	else\
+		__t = (type *)0;\
+	__t;\
 })
 
 static inline struct list_node* list_peek_head(struct list_node *list) {
@@ -141,13 +142,13 @@ static inline struct list_node* list_peek_head(struct list_node *list) {
 }
 
 #define list_peek_head_type(list, type, element) ({\
-    struct list_node *__nod = list_peek_head(list);\
-    type *__t;\
-    if(__nod)\
-        __t = containerof(__nod, type, element);\
-    else\
-        __t = (type *)0;\
-    __t;\
+	struct list_node *__nod = list_peek_head(list);\
+	type *__t;\
+	if (__nod != NULL)\
+		__t = containerof(__nod, type, element);\
+	else\
+		__t = (type *)0;\
+	__t;\
 })
 
 static inline struct list_node* list_peek_tail(struct list_node *list) {
@@ -159,103 +160,107 @@ static inline struct list_node* list_peek_tail(struct list_node *list) {
 }
 
 #define list_peek_tail_type(list, type, element) ({\
-    struct list_node *__nod = list_peek_tail(list);\
-    type *__t;\
-    if(__nod)\
-        __t = containerof(__nod, type, element);\
-    else\
-        __t = (type *)0;\
-    __t;\
+	struct list_node *__nod = list_peek_tail(list);\
+	type *__t;\
+	if (__nod != NULL)\
+		__t = containerof(__nod, type, element);\
+	else\
+		__t = (type *)0;\
+	__t;\
 })
 
 static inline struct list_node* list_prev(struct list_node *list, struct list_node *item) {
-	if (item->prev != list)
+	if (item->prev != list) {
 		return item->prev;
-	else
+	} else {
 		return NULL;
+	}
 }
 
 #define list_prev_type(list, item, type, element) ({\
-    struct list_node *__nod = list_prev(list, item);\
-    type *__t;\
-    if(__nod)\
-        __t = containerof(__nod, type, element);\
-    else\
-        __t = (type *)0;\
-    __t;\
+	struct list_node *__nod = list_prev(list, item);\
+	type *__t;\
+	if (__nod != NULL)\
+		__t = containerof(__nod, type, element);\
+	else\
+		__t = (type *)0;\
+	__t;\
 })
 
 static inline struct list_node* list_prev_wrap(struct list_node *list, struct list_node *item) {
-	if (item->prev != list)
+	if (item->prev != list) {
 		return item->prev;
-	else if (item->prev->prev != list)
+	} else if (item->prev->prev != list) {
 		return item->prev->prev;
-	else
+	} else {
 		return NULL;
+	}
 }
 
 #define list_prev_wrap_type(list, item, type, element) ({\
-    struct list_node *__nod = list_prev_wrap(list, item);\
-    type *__t;\
-    if(__nod)\
-        __t = containerof(__nod, type, element);\
-    else\
-        __t = (type *)0;\
-    __t;\
+	struct list_node *__nod = list_prev_wrap(list, item);\
+	type *__t;\
+	if (__nod != NULL)\
+		__t = containerof(__nod, type, element);\
+	else\
+		__t = (type *)0;\
+	__t;\
 })
 
 static inline struct list_node* list_next(struct list_node *list, struct list_node *item) {
-	if (item->next != list)
+	if (item->next != list) {
 		return item->next;
-	else
+	} else {
 		return NULL;
+	}
 }
 
 #define list_next_type(list, item, type, element) ({\
-    struct list_node *__nod = list_next(list, item);\
-    type *__t;\
-    if(__nod)\
-        __t = containerof(__nod, type, element);\
-    else\
-        __t = (type *)0;\
-    __t;\
+	struct list_node *__nod = list_next(list, item);\
+	type *__t;\
+	if (__nod != NULL)\
+		__t = containerof(__nod, type, element);\
+	else\
+		__t = (type *)0;\
+	__t;\
 })
 
 static inline struct list_node* list_next_wrap(struct list_node *list, struct list_node *item) {
-	if (item->next != list)
+	if (item->next != list) {
 		return item->next;
-	else if (item->next->next != list)
+	} else if (item->next->next != list) {
 		return item->next->next;
-	else
+	} else {
 		return NULL;
+	}
 }
 
 #define list_next_wrap_type(list, item, type, element) ({\
-    struct list_node *__nod = list_next_wrap(list, item);\
-    type *__t;\
-    if(__nod)\
-        __t = containerof(__nod, type, element);\
-    else\
-        __t = (type *)0;\
-    __t;\
+	struct list_node *__nod = list_next_wrap(list, item);\
+	type *__t;\
+	if (__nod != NULL)\
+		__t = containerof(__nod, type, element);\
+	else\
+		__t = (type *)0;\
+	__t;\
 })
 
 // iterates over the list, node should be struct list_node*
 #define list_for_every(list, node) \
-    for(node = (list)->next; node != (list); node = node->next)
+	for (node = (list)->next; node != (list); node = node->next)
 
 // iterates over the list in a safe way for deletion of current node
 // node and temp_node should be struct list_node*
 #define list_for_every_safe(list, node, temp_node) \
-    for(node = (list)->next, temp_node = (node)->next;\
-    node != (list);\
-    node = temp_node, temp_node = (node)->next)
+	for (node = (list)->next, temp_node = (node)->next;\
+		node != (list);\
+		node = temp_node, temp_node = (node)->next)
 
 // iterates over the list, entry should be the container structure type *
 #define list_for_every_entry(list, entry, type, member) \
-    for((entry) = containerof((list)->next, type, member);\
-        &(entry)->member != (list);\
-        (entry) = containerof((entry)->member.next, type, member))
+	for ((entry) = containerof((list)->next, type, member);\
+		&(entry)->member != (list);\
+		(entry) = containerof((entry)->member.next, type, member))
 
 /* iterates over the list, entry should be the container structure type */
 #define list_for_every_entry_reverse(list, entry, type, member) \
@@ -266,10 +271,12 @@ static inline struct list_node* list_next_wrap(struct list_node *list, struct li
 // iterates over the list in a safe way for deletion of current node
 // entry and temp_entry should be the container structure type *
 #define list_for_every_entry_safe(list, entry, temp_entry, type, member) \
-    for(entry = containerof((list)->next, type, member),\
-        temp_entry = containerof((entry)->member.next, type, member);\
-        &(entry)->member != (list);\
-        entry = temp_entry, temp_entry = containerof((temp_entry)->member.next, type, member))
+	for ((entry) = containerof((list)->next, type, member),\
+		(temp_entry) = containerof((entry)->member.next, type, member);\
+		&(entry)->member != (list);\
+		(entry) = (temp_entry),\
+		(temp_entry) = containerof((temp_entry)->member.next,\
+		type, member))
 
 static inline bool list_is_empty(struct list_node *list)
 {

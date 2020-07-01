@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - 2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015 - 2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -18,21 +18,21 @@
 #include <tegrabl_error.h>
 #include <tegrabl_timer.h>
 
-enum tegrabl_instance_i2c {
-	TEGRABL_INSTANCE_I2C1,
-	TEGRABL_INSTANCE_I2C2,
-	TEGRABL_INSTANCE_I2C3,
-	TEGRABL_INSTANCE_I2C4,
-	TEGRABL_INSTANCE_I2C5,
-	TEGRABL_INSTANCE_I2C6,
-	TEGRABL_INSTANCE_I2C7,
-	TEGRABL_INSTANCE_I2C8,
-	TEGRABL_INSTANCE_I2C9,
-	TEGRABL_INSTANCE_I2C_MAX = TEGRABL_INSTANCE_I2C9,
-	TEGRABL_INSTANCE_I2C_INVALID,
-};
+/* macro tegrabl instance i2c */
+typedef uint32_t tegrabl_instance_i2c_t;
+#define TEGRABL_INSTANCE_I2C1 0
+#define TEGRABL_INSTANCE_I2C2 1
+#define TEGRABL_INSTANCE_I2C3 2
+#define TEGRABL_INSTANCE_I2C4 3
+#define TEGRABL_INSTANCE_I2C5 4
+#define TEGRABL_INSTANCE_I2C6 5
+#define TEGRABL_INSTANCE_I2C7 6
+#define TEGRABL_INSTANCE_I2C8 7
+#define TEGRABL_INSTANCE_I2C9 8
+#define TEGRABL_INSTANCE_I2C_MAX TEGRABL_INSTANCE_I2C9
+#define TEGRABL_INSTANCE_I2C_INVALID 9
 
-#define MAX_I2C_TRANSFER_SIZE (0x1000)
+#define MAX_I2C_TRANSFER_SIZE (0x1000U)
 
 /**
  * @brief Store information about controller.
@@ -40,20 +40,17 @@ enum tegrabl_instance_i2c {
 struct tegrabl_i2c {
 	struct list_node node;
 	bool is_initialized;
-	enum tegrabl_instance_i2c instance;
-	uintptr_t base;
-	bool requires_cldvfs;
+	tegrabl_instance_i2c_t instance;
+	uintptr_t base_addr;
+	bool is_bpmpfw_controlled;
+	bool is_enable_bpmpfw_i2c;
+	bool is_cldvfs_required;
 	uint32_t module_id;
 	uint32_t clk_freq;
 	time_t single_fifo_timeout;
 	time_t fifo_timeout;
 	time_t byte_xfer_timeout;
 	time_t xfer_timeout;
-#if defined(CONFIG_POWER_I2C_BPMPFW)
-	/* Specifies if the I2C interface is controlled through BPMP-FW or
-	 * through ccplex */
-	bool is_bpmpfw_controlled;
-#endif
 };
 
 /**
@@ -80,7 +77,7 @@ tegrabl_error_t tegrabl_i2c_register(void);
 *
 * @return NIL
 */
-void tegrabl_i2c_unregister_instance(enum tegrabl_instance_i2c instance);
+void tegrabl_i2c_unregister_instance(tegrabl_instance_i2c_t instance);
 
 /**
  * @brief Sets information about frequencies to be used per i2c bus
@@ -113,7 +110,7 @@ tegrabl_error_t tegrabl_i2c_register_prod_settings(uint32_t instance,
 *
 * @return Handle of the struct tegrabl_i2c if success, NULL if fails.
 */
-struct tegrabl_i2c *tegrabl_i2c_open(enum tegrabl_instance_i2c instance);
+struct tegrabl_i2c *tegrabl_i2c_open(tegrabl_instance_i2c_t instance);
 
 /**
 * @brief Writes the given data on the i2c interface.

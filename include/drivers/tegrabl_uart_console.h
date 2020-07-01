@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -42,11 +42,13 @@ tegrabl_error_t tegrabl_uart_console_putchar(struct tegrabl_console *hcnsl,
 *
 * @param instance Instance of the uart controller.
 * @param ch Address at which received character has to be stored.
+* @param timeout timout in ms
 *
 * @return TEGRABL_NO_ERROR if success. Error code in case of failure.
 */
 tegrabl_error_t tegrabl_uart_console_getchar(struct tegrabl_console *hcnsl,
-	char *ch);
+	char *ch, time_t timeout);
+
 /**
 * @brief Sends the string to uart serial console.
 *

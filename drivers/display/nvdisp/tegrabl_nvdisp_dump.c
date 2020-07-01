@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2017, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -81,7 +81,9 @@ struct reg_off_range disp_reg_list[] = {
 	{DC_DISP17_FIRST_REG, DC_DISP17_LAST_REG},
 	{DC_DISP18_FIRST_REG, DC_DISP18_LAST_REG},
 	{DC_DISP19_FIRST_REG, DC_DISP19_LAST_REG},
+#if defined(IS_T186)
 	{DC_DISP20_FIRST_REG, DC_DISP20_LAST_REG},
+#endif
 };
 
 struct reg_off_range winc_reg_list[] = {

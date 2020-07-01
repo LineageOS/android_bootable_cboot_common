@@ -16,70 +16,69 @@
 #include <tegrabl_sdmmc_card_reg.h>
 #include <tegrabl_debug.h>
 #include <tegrabl_timer.h>
+#include <tegrabl_blockdev.h>
 
-enum device_type {
-	DEVICE_TYPE_EMMC,
-	DEVICE_TYPE_SD,
-};
+#define MAX_SDMMC_INSTANCES 4UL
+
+typedef uint32_t device_type_t;
+#define DEVICE_TYPE_EMMC 0UL
+#define DEVICE_TYPE_SD 1UL
 
 /* Defines various widths for data line supported. */
-typedef enum {
 	/* Specifies a 1 bit interface to sdmmc */
-	DATA_WIDTH_1BIT = 0,
+#define DATA_WIDTH_1BIT 0UL
 
 	/* Specifies a 4 bit interface to sdmmc */
-	DATA_WIDTH_4BIT = 1,
+#define DATA_WIDTH_4BIT 1UL
 
 	/* Specifies a 8 bit interface to sdmmc */
-	DATA_WIDTH_8BIT = 2,
+#define DATA_WIDTH_8BIT 2UL
 
 	/* Specifies a 4 bit Ddr interface to sdmmc */
-	DATA_WIDTH_DDR_4BIT = 5,
+#define DATA_WIDTH_DDR_4BIT 5UL
 
 	/* Specifies a 8 bit Ddr interface to sdmmc */
-	DATA_WIDTH_DDR_8BIT = 6,
+#define DATA_WIDTH_DDR_8BIT 6UL
 
-} sdmmc_data_width;
+typedef uint32_t sdmmc_data_width;
 
-typedef enum {
 	/* Card is in idle mode */
-	DEVICE_STATUS_IDLE = 0,
+#define DEVICE_STATUS_IDLE 0UL
 
 	/* Card is under I/O operations */
-	DEVICE_STATUS_IO_PROGRESS,
+#define DEVICE_STATUS_IO_PROGRESS 1UL
 
 	/* I/O operations have failed */
-	DEVICE_STATUS_IO_FAILURE,
+#define DEVICE_STATUS_IO_FAILURE 2UL
 
 	/* CRC error observed */
-	DEVICE_STATUS_CRC_FAILURE,
+#define DEVICE_STATUS_CRC_FAILURE 3UL
 
 	/* Data timeout happened */
-	DEVICE_STATUS_DATA_TIMEOUT,
-} sdmmc_device_status;
+#define DEVICE_STATUS_DATA_TIMEOUT 4UL
+typedef uint32_t sdmmc_device_status;
 
 /* Defines Emmc card partitions. */
-typedef enum {
 	/* Access region is user partition */
-	USER_PARTITION = 0,
+#define USER_PARTITION 0UL
 
 	/* Access region is boot partition1 */
-	BOOT_PARTITION_1,
+#define BOOT_PARTITION_1 1UL
 
 	/* Access region is boot partition2 */
-	BOOT_PARTITION_2,
+#define BOOT_PARTITION_2 2UL
 
 	/* Access region is RPMB partition */
-	RPMB_PARTITION,
+#define RPMB_PARTITION 3UL
 
 	/* Access region reserved */
-	NUM_PARTITION,
+#define NUM_PARTITION 4UL
 
 	/* Access region is unknown */
-	UNKNOWN_PARTITION,
-} sdmmc_access_region;
+#define UNKNOWN_PARTITION 5UL
+typedef uint32_t sdmmc_access_region;
 
-typedef struct sdmmc_context {
+struct tegrabl_sdmmc {
 	/* Is Sdmmc controller initialized */
 	bool initialized;
 
@@ -192,9 +191,12 @@ typedef struct sdmmc_context {
 	uint8_t sanitize_support;
 
 	/* device type */
-	uint8_t device_type;
+	device_type_t device_type;
 
 	uint8_t manufacture_id;
+
+	/* extended csd revision */
+	uint8_t ext_csd_rev;
 
 	/* buffer for extended csd register */
 	uint8_t TEGRABL_ALIGN(4) ext_csd_buffer_address[ECSD_BUFFER_SIZE];
@@ -205,32 +207,42 @@ typedef struct sdmmc_context {
 	/* Best mode of operation */
 	uint32_t best_mode;
 
+	/* enhanced strobe enable */
+	bool enhanced_strobe;
+
 	uint32_t tap_value;
 
 	uint32_t trim_value;
 
 	bool is_hostv4_enabled;
 
+	/* context required for non-blocking xfer */
+	void *last_io_buf;
+	bool last_io_dma_dir;
+	uint32_t last_io_num_sectors;
+	bnum_t last_xfer_blocks;
+	void *last_xfer_buf;
+
 } sdmmc_context_t;
 
-#define SDMMC_BLOCK_SIZE_LOG2			9	/* 512 bytes */
+#define SDMMC_BLOCK_SIZE_LOG2			9U	/* 512 bytes */
 
-#define SDMMC_CONTEXT_BLOCK_SIZE(context)	(1U << (context)->block_size_log2)
+#define SDMMC_CONTEXT_BLOCK_SIZE(context)	(1UL << (context)->block_size_log2)
 
 /* Defines the regions under sdmmc device to be registered in bio layer */
-typedef enum {
-	/* defines invalid device type */
-	DEVICE_INVALID = 0x0,
+/* macro device */
+/* defines invalid device type */
+#define DEVICE_INVALID 0x0UL
 
 	/* defines boot device for bio layer */
-	DEVICE_BOOT,
+#define DEVICE_BOOT 0x1UL
 
 	/* defines user device for bio layer */
-	DEVICE_USER,
+#define DEVICE_USER 0x2UL
 
 	/* defines rpmb device for bio layer */
-	DEVICE_RPMB,
-} sdmmc_device;
+#define DEVICE_RPMB 0x3UL
+typedef uint32_t sdmmc_device;
 
 /* Defines the private data being used by sdmmc */
 typedef struct sdmmc_priv_data {

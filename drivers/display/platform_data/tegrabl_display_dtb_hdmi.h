@@ -20,8 +20,8 @@
  *
  *  @return TEGRABL_NO_ERROR if success, error code if fails.
  */
-tegrabl_error_t parse_hdmi_regulator_settings(const void *fdt,
-	int32_t node_offset, struct tegrabl_display_pdata *pdata);
+tegrabl_error_t parse_hdmi_regulator_settings(const void *fdt, int32_t node_offset,
+	struct tegrabl_display_pdata *pdata);
 
 
 /**
@@ -33,5 +33,4 @@ tegrabl_error_t parse_hdmi_regulator_settings(const void *fdt,
  *
  *  @return TEGRABL_NO_ERROR if success, error code if fails.
  */
-tegrabl_error_t parse_hpd_gpio(const void *fdt, int32_t sor_offset,
-							   struct tegrabl_display_pdata *pdata);
+tegrabl_error_t parse_hpd_gpio(const void *fdt, int32_t sor_offset, struct tegrabl_display_pdata *pdata);

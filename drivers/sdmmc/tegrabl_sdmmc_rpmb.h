@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -12,48 +12,46 @@
 #define TEGRABL_SDMMC_RPMB_H
 
 #include <tegrabl_blockdev.h>
+#include <tegrabl_sdmmc_defs.h>
 
 /* Defines supported RPMB request types. */
-typedef enum {
-	RPMB_REQ_PROGRAM_KEY = 1,
-	RPMB_REQ_GET_COUNTER = 2,
-	RPMB_REQ_WRITE = 3,
-	RPMB_REQ_READ = 4,
-	RPMB_REQ_GET_RESULT = 5,
-} sdmmc_rpmb_req;
+#define RPMB_REQ_PROGRAM_KEY 1
+#define RPMB_REQ_GET_COUNTER 2
+#define RPMB_REQ_WRITE 3
+#define RPMB_REQ_READ 4
+#define RPMB_REQ_GET_RESULT 5
+typedef uint32_t sdmmc_rpmb_req;
 
 /* Defines RPMB response values. */
-typedef enum {
-	RPMB_RESP_PROGRAM_KEY = 0x0100,
-	RPMB_RESP_GET_COUNTER = 0x0200,
-	RPMB_RESP_WRITE = 0x0300,
-	RPMB_RESP_READ = 0x0400,
-} sdmmc_rpmb_resp;
+#define RPMB_RESP_PROGRAM_KEY 0x0100
+#define RPMB_RESP_GET_COUNTER 0x0200
+#define RPMB_RESP_WRITE 0x0300
+#define RPMB_RESP_READ 0x0400
+typedef uint32_t sdmmc_rpmb_resp;
 
 /* Defines RPMB result values. */
-typedef enum {
-	RPMB_RES_OK = 0x0000,
-	RPMB_RES_GENERAL_FAILURE = 0x0001,
-	RPMB_RES_AUTH_FAILURE = 0x0002,
-	RPMB_RES_COUNT_FAILURE = 0x0003,
-	RPMB_RES_ADDR_FAILURE = 0x0004,
-	RPMB_RES_WRITE_FAILURE = 0x0005,
-	RPMB_RES_READ_FAILURE = 0x0006,
-	RPMB_RES_NO_AUTH_KEY = 0x0007,
-	RPMB_RES_WRITE_COUNTER_EXPIRED = 0x0080,
-} sdmmc_rpmb_result;
+#define RPMB_RES_OK 0x0000
+#define RPMB_RES_GENERAL_FAILURE 0x0001
+#define RPMB_RES_AUTH_FAILURE 0x0002
+#define RPMB_RES_COUNT_FAILURE 0x0003
+#define RPMB_RES_ADDR_FAILURE 0x0004
+#define RPMB_RES_WRITE_FAILURE 0x0005
+#define RPMB_RES_READ_FAILURE 0x0006
+#define RPMB_RES_NO_AUTH_KEY 0x0007
+#define RPMB_RES_WRITE_COUNTER_EXPIRED 0x0080
+typedef uint32_t sdmmc_rpmb_result;
 
 /* Defines RPMB frame format. */
 #define RPMB_STUFF_SIZE			196
-#define RPMB_KEY_OR_MAC_SIZE	32
+#define RPMB_KEY_OR_MAC_SIZE	32U
 #define RPMB_DATA_SIZE_LOG2		8
-#define RPMB_DATA_SIZE			(1 << RPMB_DATA_SIZE_LOG2)
+#define RPMB_DATA_SIZE			(1U << RPMB_DATA_SIZE_LOG2)
 #define RPMB_NONCE_SIZE			16
 /*
  * RPMB generates SHA256 MAC over 284 bytes starting at the first byte of the
  * the data field.
  */
-#define RPMB_MAC_MSG_SIZE	284
+#define RPMB_MAC_MSG_SIZE	284U
 
 typedef struct rpmb_u16 {
 	uint8_t data[2];
@@ -104,7 +102,7 @@ typedef struct rpmb_context {
  *  @param key           Pointer to RPMB key.
  *  @param counter       Pointer to buffer in which current counter is returned.
  *  @param rpmb_context  RPMB context.
- *  @param context       Context for device on which RPMB access is desired.
+ *  @param hsdmmc       Context for device on which RPMB access is desired.
  *
  *  @return TEGRABL_NO_ERROR on success and failure condition otherwise.
  */
@@ -113,17 +111,17 @@ tegrabl_error_t sdmmc_rpmb_get_write_counter(tegrabl_bdev_t *dev,
 				sdmmc_rpmb_key_t *key,
 				uint32_t *counter,
 				sdmmc_rpmb_context_t *rpmb_context,
-				sdmmc_context_t *context);
+				struct tegrabl_sdmmc *hsdmmc);
 
 /** @brief Issue RPMB program key command.
  *
- *  @param context  Context for device on which key should be programmed.
+ *  @param hsdmmc  Context for device on which key should be programmed.
  *  @param key_blob Pointer to data to use for RPMB key.
  *
  *  @return NO_ERROR on success and failure condition otherwise.
  */
 tegrabl_error_t sdmmc_rpmb_program_key(tegrabl_bdev_t *bdev, void *key_blob,
-				sdmmc_context_t *context);
+				struct tegrabl_sdmmc *hsdmmc);
 
 
 #endif /* TEGRABL_SDMMC_RPMB_H */

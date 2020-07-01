@@ -32,7 +32,7 @@ tegrabl_error_t tegrabl_display_init(void);
  *
  *  @return TEGRABL_NO_ERROR if success, error code if fails.
  */
-tegrabl_error_t tegrabl_display_printf(enum color color,
+tegrabl_error_t tegrabl_display_printf(color_t color,
 									   const char *format, ...);
 
 /**
@@ -65,7 +65,7 @@ tegrabl_error_t tegrabl_display_shutdown(void);
  *
  *  @return TEGRABL_NO_ERROR if success, error code if fails.
  */
-tegrabl_error_t tegrabl_display_text_set_cursor(enum cursor_position position);
+tegrabl_error_t tegrabl_display_text_set_cursor(cursor_position_t position);
 
 /**
  *  @brief Get display params like fb address, surface height/width etc.

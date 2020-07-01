@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -19,5 +19,13 @@ struct tegrabl_gpio_id {
 	uint32_t bank_count;
 	const uint32_t *bank_bases;
 };
+
+/* Main GPIO controller */
+extern struct tegrabl_gpio_id tegra_gpio_id_main;
+#define tegra_gpio_ops_main tegrabl_gpio_ops
+
+/* AON GPIO controller */
+extern struct tegrabl_gpio_id tegra_gpio_id_aon;
+#define tegra_gpio_ops_aon tegrabl_gpio_ops
 
 #endif

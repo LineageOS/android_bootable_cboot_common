@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software and related documentation
@@ -41,6 +41,10 @@
 #define clz							__builtin_clz
 #endif
 
+#if !defined(__cplusplus)
+#define TEGRABL_COMPILE_ASSERT(expr, message) _Static_assert((expr), message)
+#endif
+
 #elif defined(__arm)
 
 #define TEGRABL_INLINE				__inline
@@ -53,6 +57,7 @@
 #define TEGRABL_NAKED
 
 #define TEGRABL_PRINTFLIKE(__fmt, __varargs)
+
 #include <stdarg.h>
 
 #elif defined(_MSC_VER)
@@ -83,6 +88,7 @@
 #define TEGRABL_NAKED
 
 #define TEGRABL_PRINTFLIKE(__fmt, __varargs)
+
 #endif
 
 #ifdef __GNUC__    /* Excluded from previous to avoid MISRA error */
@@ -90,5 +96,14 @@ typedef __builtin_va_list   va_list;
 #endif
 
 #define TEGRABL_UNUSED(var)			((void)var)
+
+#if !defined(TEGRABL_COMPILE_ASSERT)
+#define TEGRABL_CONCAT_(a, b) a##b
+#define TEGRABL_CONCAT(a, b) TEGRABL_CONCAT_(a, b)
+
+/* Compiler is forced to error if expression is false */
+#define TEGRABL_COMPILE_ASSERT(expr, message) \
+	enum { TEGRABL_CONCAT(TEGRABL_COMPILE_ASSERT_ENUM_, __COUNTER__) = 1 / (int)(expr) }
+#endif
 
 #endif /*INCLUDED_TEGRABL_COMPILER_H*/

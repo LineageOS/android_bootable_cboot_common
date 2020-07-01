@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <tegrabl_error.h>
 #include <tegrabl_timer.h>
+#include "build_config.h"
 
 /**
 * @brief uart context structure
@@ -69,7 +70,18 @@ tegrabl_error_t tegrabl_uart_rx(struct tegrabl_uart *huart,  void *rx_buf,
 *
 * @return TEGRABL_NO_ERROR if success. Error code in case of failure.
 */
+#if defined(CONFIG_ENABLE_UART)
 tegrabl_error_t tegrabl_uart_get_address(uint32_t instance, uint64_t *addr);
+#else
+static inline tegrabl_error_t tegrabl_uart_get_address(uint32_t instance,
+													   uint64_t *addr)
+{
+	TEGRABL_UNUSED(instance);
+	*addr = 0;
+
+	return TEGRABL_NO_ERROR;
+}
+#endif
 
 /**
 * @brief Disables the uart controller.

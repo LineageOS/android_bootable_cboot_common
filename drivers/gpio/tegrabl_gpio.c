@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -17,12 +17,19 @@
 #include <tegrabl_drf.h>
 #include <tegrabl_io.h>
 
+#if defined(CONFIG_ENABLE_GPIO_DT_BASED)
+#include <tegrabl_devicetree.h>
+#endif
+
 #include <tegrabl_gpio.h>
 #include <tegrabl_gpio_local.h>
 #include <tegrabl_gpio_hw.h>
 
-#define TEGRA_GPIO_MAIN_DRIVER_NAME "tegra_gpio_main_driver"
-#define TEGRA_GPIO_AON_DRIVER_NAME  "tegra_gpio_aon_driver"
+#include <argpio_sw.h>
+#include <argpio_aon_sw.h>
+
+#define TEGRA_GPIO_MAIN_DRIVER_NAME	GPIO_MAIN_NODE
+#define TEGRA_GPIO_AON_DRIVER_NAME	GPIO_AON_NODE
 
 #define TEGRABL_MAX_GPIOS_PER_BANK 8
 
@@ -73,7 +80,7 @@ static inline uint32_t reg(const struct tegrabl_gpio_id *id,
  *         state otherwise error.
  */
 static tegrabl_error_t tegrabl_gpio_read(uint32_t gpio_num,
-										 enum gpio_pin_state *state,
+										 gpio_pin_state_t *state,
 										 void *drv_data)
 {
 	uint32_t reg_val;
@@ -107,14 +114,14 @@ static tegrabl_error_t tegrabl_gpio_read(uint32_t gpio_num,
  * @param state gpio config mode
  */
 static void gpio_set_direction(const struct tegrabl_gpio_id *id,
-							   uint32_t gpio, enum gpio_pin_mode state)
+							   uint32_t gpio, gpio_pin_mode_t state)
 {
 	uint32_t val;
 
 	val = NV_READ32(reg(id, gpio, GPIO_N_ENABLE_CONFIG_00_0));
 	if (state == GPIO_PINMODE_INPUT) {
-		val |= NV_DRF_DEF(GPIO, N_ENABLE_CONFIG_00, GPIO_ENABLE, ENABLE) |
-			   NV_DRF_DEF(GPIO, N_ENABLE_CONFIG_00, IN_OUT, IN);
+		val |= NV_DRF_DEF(GPIO, N_ENABLE_CONFIG_00, GPIO_ENABLE, ENABLE);
+		val &= ~NV_DRF_DEF(GPIO, N_ENABLE_CONFIG_00, IN_OUT, OUT);
 	} else if (state == GPIO_PINMODE_OUTPUT) {
 		val |= NV_DRF_DEF(GPIO, N_ENABLE_CONFIG_00, GPIO_ENABLE, ENABLE) |
 			   NV_DRF_DEF(GPIO, N_ENABLE_CONFIG_00, IN_OUT, OUT);
@@ -133,7 +140,7 @@ static void gpio_set_direction(const struct tegrabl_gpio_id *id,
  * @return TEGRABL_NO_ERROR on success otherwise error.
  */
 static tegrabl_error_t tegrabl_gpio_config(uint32_t gpio_num,
-										   enum gpio_pin_mode mode,
+										   gpio_pin_mode_t mode,
 										   void *drv_data)
 {
 	tegrabl_error_t status = TEGRABL_NO_ERROR;
@@ -172,7 +179,7 @@ static tegrabl_error_t tegrabl_gpio_config(uint32_t gpio_num,
  * @return TEGRABL_NO_ERROR on success otherwise error.
  */
 static tegrabl_error_t tegrabl_gpio_write(uint32_t gpio_num,
-										  enum gpio_pin_state state,
+										  gpio_pin_state_t state,
 										  void *drv_data)
 {
 	uint32_t reg_val;
@@ -205,17 +212,46 @@ static struct gpio_driver_ops tegra_gpio_ops = {
 static struct gpio_driver drv[] = {
 	{
 		.name = TEGRA_GPIO_MAIN_DRIVER_NAME,
+		.phandle = -1,
 		.ops = &tegra_gpio_ops,
 		.chip_id = TEGRA_GPIO_MAIN_CHIPID,
 		.driver_data = (void *)&tegra_gpio_id_main,
 	},
 	{
 		.name = TEGRA_GPIO_AON_DRIVER_NAME,
+		.phandle = -1,
 		.ops = &tegra_gpio_ops,
 		.chip_id = TEGRA_GPIO_AON_CHIPID,
 		.driver_data = (void *)&tegra_gpio_id_aon,
 	},
 };
+
+#if defined(CONFIG_ENABLE_GPIO_DT_BASED)
+static tegrabl_error_t fetch_phandle_from_dt(struct gpio_driver *drv)
+{
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	void *fdt = NULL;
+	int offset;
+
+	TEGRABL_ASSERT(drv != NULL);
+
+	err = tegrabl_dt_get_fdt_handle(TEGRABL_DT_BL, &fdt);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("%s: Failed to get BL-dtb handle\n", __func__);
+		goto done;
+	}
+
+	err = tegrabl_dt_get_node_with_compatible(fdt, 0, drv->name, &offset);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("%s: failed to get node %s\n", __func__, drv->name);
+		goto done;
+	}
+
+	drv->phandle = fdt_get_phandle(fdt, offset);
+done:
+	return err;
+}
+#endif
 
 tegrabl_error_t tegrabl_gpio_driver_init()
 {
@@ -227,6 +263,13 @@ tegrabl_error_t tegrabl_gpio_driver_init()
 	}
 
 	for (i = 0; i < ARRAY_SIZE(drv); i++) {
+#if defined(CONFIG_ENABLE_GPIO_DT_BASED)
+		/* read gpio driver phandle from dt, error in this is not fatal */
+		status = fetch_phandle_from_dt(&drv[i]);
+		if (status != TEGRABL_NO_ERROR) {
+			pr_warn("%s failed to fetch phandle for %s\n", __func__, drv[i].name);
+		}
+#endif
 		status = tegrabl_gpio_driver_register(&drv[i]);
 		if (status != TEGRABL_NO_ERROR)
 			pr_critical("%s: failed to register tegra gpio driver: %s\n",

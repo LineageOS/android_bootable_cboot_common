@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -33,11 +33,11 @@ tegrabl_error_t tegrabl_uart_console_putchar(struct tegrabl_console *hcnsl,
 	}
 
 	/* bytes transmitted dummy here */
-	return tegrabl_uart_tx(hcnsl->dev, &ch, 1, &bytes_transmitted, -1);
+	return tegrabl_uart_tx(hcnsl->dev, &ch, 1, &bytes_transmitted, 0XFFFFFFFFUL);
 }
 
 tegrabl_error_t tegrabl_uart_console_getchar(struct tegrabl_console *hcnsl,
-	char *ch)
+	char *ch, time_t timeout)
 {
 	uint32_t bytes_received;
 
@@ -46,7 +46,7 @@ tegrabl_error_t tegrabl_uart_console_getchar(struct tegrabl_console *hcnsl,
 	}
 
 	/* bytes received dummy here */
-	return tegrabl_uart_rx(hcnsl->dev, ch, 1, &bytes_received, -1);
+	return tegrabl_uart_rx(hcnsl->dev, ch, 1, &bytes_received, timeout);
 }
 
 tegrabl_error_t tegrabl_uart_console_puts(struct tegrabl_console *hcnsl,
@@ -59,8 +59,7 @@ tegrabl_error_t tegrabl_uart_console_puts(struct tegrabl_console *hcnsl,
 	}
 
 	/* bytes transmitted dummy here */
-	return tegrabl_uart_tx(hcnsl->dev, str, strlen(str), &bytes_transmitted,
-		-1);
+	return tegrabl_uart_tx(hcnsl->dev, str, strlen(str), &bytes_transmitted, 0XFFFFFFFFUL);
 }
 
 tegrabl_error_t tegrabl_uart_console_close(struct tegrabl_console *hcnsl)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -21,10 +21,6 @@
 #include "tegrabl_regulator_priv.h"
 
 #define FIXED_REGULATOR "fixed-regulators"
-
-/* FIXME - Temp fix to obtain regulator name */
-#define TEGRA_GPIO_TCA9539_CHIPID_BASE 2
-volatile char temp_name[20];
 
 /* global fdt handle */
 static void *fdt;
@@ -82,7 +78,9 @@ static tegrabl_error_t fixed_regulator_enable(int32_t phandle)
 	bool gpio_state = true;
 	bool is_fixed = false;
 	struct gpio_driver *gpio_drv;
-	char temp_name_backup[20];
+#if defined(CONFIG_ENABLE_GPIO_DT_BASED)
+	uint32_t chipid;
+#endif
 
 	/* find the regulator in the list */
 	err = fixed_regulator_lookup(phandle, &entry);
@@ -97,8 +95,6 @@ static tegrabl_error_t fixed_regulator_enable(int32_t phandle)
 			goto fail;
 		}
 
-		memcpy((void *)temp_name_backup, (void *)temp_name,
-					sizeof(temp_name));
 		if (is_fixed) {
 			tegrabl_regulator_enable(entry->supply_phandle);
 		} else {
@@ -106,23 +102,16 @@ static tegrabl_error_t fixed_regulator_enable(int32_t phandle)
 										  STANDARD_VOLTS);
 			tegrabl_regulator_enable(entry->supply_phandle);
 		}
-		memcpy((void *)temp_name, (void *)temp_name_backup,
-					sizeof(temp_name));
 	}
 
-	/* FIXME - To obtain GPIO chip_id based on regulator name */
-	if (strncmp((const char *)temp_name, "vdd-hdmi", sizeof("vdd-hdmi")) == 0) {
-		entry->gpio_phandle = (TEGRA_GPIO_TCA9539_CHIPID_BASE  + 1);
+#if defined(CONFIG_ENABLE_GPIO_DT_BASED)
+	err = tegrabl_gpio_get_chipid_with_phandle(entry->gpio_phandle, &chipid);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
 	}
+	entry->gpio_phandle = chipid;
+#endif
 
-	/* Fix hardcode: convert gpio_phandle */
-	if (strncmp((const char *)temp_name, "vdd-sys-5v",
-					sizeof("vdd-sys-5v")) == 0) {
-		entry->gpio_phandle = (TEGRA_GPIO_TCA9539_CHIPID_BASE  + 2);
-	}
-	if (strncmp((const char *)temp_name, "vdd-usb", 7) == 0) {
-		entry->gpio_phandle = TEGRA_GPIO_MAIN_CHIPID;
-	}
 	err = tegrabl_gpio_driver_get(entry->gpio_phandle, &gpio_drv);
 	if (err != TEGRABL_NO_ERROR) {
 		return err;
@@ -222,8 +211,8 @@ static tegrabl_error_t fixed_regulator_probe(void)
 		prop_p = fdt_getprop(fdt, offset,
 				     "gpio", NULL);
 
-		/* skip if phandle or gpio property is missing */
-		if (!phandle || !prop_p)
+		/* skip if phandle is missing */
+		if (0 == phandle)
 			continue;
 
 		r = (tegrabl_regulator_t *)
@@ -240,9 +229,14 @@ static tegrabl_error_t fixed_regulator_probe(void)
 			strlcpy(r->name, name, sizeof(r->name));
 		}
 
+		if (prop_p != NULL) {
+			r->is_gpio_available = true;
+		}
+
 		/* since its fixed regulator */
 		r->is_fixed = true;
-		r->is_enabled = false;
+		/* If gpio property is not found, regulator is already enabled, otherwise disabled by default */
+		r->is_enabled = !r->is_gpio_available;
 		r->enable = fixed_regulator_enable;
 		r->disable = fixed_regulator_disable;
 		/* register regulator */
@@ -263,24 +257,22 @@ static tegrabl_error_t fixed_regulator_probe(void)
 			f->is_active_high = false;
 		}
 
-		pr_debug("0x%x 0x%x 0x%x\n",
-				 fdt32_to_cpu(*((uint32_t *)prop_p)),
-				 fdt32_to_cpu(*((uint32_t *)(prop_p + 1))),
-				 fdt32_to_cpu(*((uint32_t *)(prop_p + 2))));
-
 		/* TODO Retrieve the gpio_driver handle here itself, and cache it in
 		 * local regulator data structure */
-		f->gpio_phandle =
-			fdt32_to_cpu(*((uint32_t *)prop_p));
-		f->gpio_pin_num =
-			fdt32_to_cpu(*((uint32_t *)(prop_p + 1)));
+		if (r->is_gpio_available) {
+			pr_debug("0x%x 0x%x 0x%x\n",
+					fdt32_to_cpu(*((uint32_t *)prop_p)),
+					fdt32_to_cpu(*((uint32_t *)(prop_p + 1))),
+					fdt32_to_cpu(*((uint32_t *)(prop_p + 2))));
+
+			f->gpio_phandle = fdt32_to_cpu(*((uint32_t *)prop_p));
+			f->gpio_pin_num = fdt32_to_cpu(*((uint32_t *)(prop_p + 1)));
+		}
 
 		/* check if there is any input supply */
 		if (fdt_get_property(fdt, offset, "vin-supply", NULL)) {
 			prop_p = fdt_getprop(fdt, offset, "vin-supply", NULL);
 			f->supply_phandle = fdt32_to_cpu(*((uint32_t *)prop_p));
-		} else {
-			f->supply_phandle = 0;
 		}
 
 		/* check if duplicate */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -17,10 +17,10 @@
 #include <tegrabl_error.h>
 
 /* defines regulator volt type */
-typedef enum {
-	USER_DEFINED_VOLTS = 0,
-	STANDARD_VOLTS,
-} regulator_volt_type;
+/* macro regular volt type */
+#define USER_DEFINED_VOLTS 0
+#define STANDARD_VOLTS 1
+typedef uint32_t regulator_volt_type;
 
 /* regulator info */
 typedef struct {
@@ -28,12 +28,14 @@ typedef struct {
 	struct list_node node;
 	/* regulator phandle */
 	int phandle;
-	/* gpio regulator */
-	bool is_fixed;
 	/* regulator name */
 	char name[20];
+	/* gpio regulator */
+	bool is_fixed;
 	/* enabled/disabled */
 	bool is_enabled;
+	/* gpio property available/unavailable */
+	bool is_gpio_available;
 	/* voltage to be set as per schematics */
 	uint32_t set_volts;
 	/* operations associated to regulator */

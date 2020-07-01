@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -20,8 +20,8 @@
  *
  *  We can add more font types later if supported.
  */
-enum tegrabl_font_type {
-	tegrabl_default = 0,
-};
+/* macro tegrabl font type */
+typedef uint32_t tegrabl_font_type_t;
+#define tegrabl_default 0
 
 #endif

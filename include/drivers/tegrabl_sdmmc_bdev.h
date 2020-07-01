@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -11,53 +11,37 @@
 #ifndef SDMMC_BDEV_H
 #define SDMMC_BDEV_H
 
-#include <tegrabl_blockdev.h>
-#include <tegrabl_mb1_bct.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <tegrabl_error.h>
+#include <tegrabl_sdmmc_param.h>
 
-enum tegrabl_sdmmc_mode {
-	TEGRABL_SDMMC_MODE_SDR26,
-	TEGRABL_SDMMC_MODE_DDR52,
-	TEGRABL_SDMMC_MODE_HS200,
-	TEGRABL_SDMMC_MODE_MAX,
-};
-
-enum sdmmc_init_flag {
-	SDMMC_INIT = 0,
-	SDMMC_INIT_REINIT,
-	SDMMC_INIT_SKIP,
-	SDMMC_INIT_SET_BITS = 3, /* for the mask */
-};
-
-#define SDMMC_INIT_MASK  (SDMMC_INIT_SET_BITS << 0)
+/* sdmmc modes */
+#define TEGRABL_SDMMC_MODE_SDR26  0U
+#define TEGRABL_SDMMC_MODE_DDR52  1U
+#define TEGRABL_SDMMC_MODE_HS200  2U
+#define TEGRABL_SDMMC_MODE_HS400  3U
+#define TEGRABL_SDMMC_MODE_MAX    4U
 
 /** @brief Initializes the host controller for sdmmc and card with the given
  *         instance. Registers boot & user devices in bio layer.
  *         Current configuration supported is DDR/SDR.
  *
- *  @param emmc_params Parameters to initialize sdmmc.
- *  @param flag flag to specify full init/reinit/skip enum
+ *  @param instance instance of the sdmmc controller.
+ *  @param params Parameters to initialize sdmmc.
  *
  *  @return NO_ERROR if init is successful else appropriate error code.
  */
-tegrabl_error_t sdmmc_bdev_open(
-		struct tegrabl_mb1bct_emmc_params *emmc_params, uint32_t flag);
-
-/** @brief Deallocates the memory allocated to sdmmc context.
- *
- *  @param dev bdev_t handle to be deallocated.
- *
- *  @return Void.
- */
-tegrabl_error_t sdmmc_bdev_close(tegrabl_bdev_t *dev);
+tegrabl_error_t sdmmc_bdev_open(uint32_t instance, struct tegrabl_sdmmc_platform_params *params);
 
 /** @brief send CMD0, Partial CMD1
  *   This is to avoid the waiting time in QB for emmc device to warm up/reset
  *
- *  @param emmc_params Parameters to initialize sdmmc.
+ *  @param instance instance of the sdmmc controller.
+ *  @param params Parameters to initialize sdmmc.
  *
  *  @return TEGRABL_NO_ERROR if successful, specific error if fails
  */
-tegrabl_error_t sdmmc_send_cmd0_cmd1(
-							struct tegrabl_mb1bct_emmc_params *emmc_params);
+tegrabl_error_t sdmmc_send_cmd0_cmd1(uint32_t instance, struct tegrabl_sdmmc_platform_params *params);
 
 #endif  /* SDMMC_BDEV_H */

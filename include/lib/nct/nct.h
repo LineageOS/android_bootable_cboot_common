@@ -35,68 +35,68 @@
 
 #define NCT_MAX_SPEC_LENGTH		64 /* SW spec max length */
 
-enum nct_tag {
-	NCT_TAG_1B_SINGLE  = 0x10,
-	NCT_TAG_2B_SINGLE  = 0x20,
-	NCT_TAG_4B_SINGLE  = 0x40,
-	NCT_TAG_STR_SINGLE = 0x80,
-	NCT_TAG_1B_ARRAY   = 0x1A,
-	NCT_TAG_2B_ARRAY   = 0x2A,
-	NCT_TAG_4B_ARRAY   = 0x4A,
-	NCT_TAG_STR_ARRAY  = 0x8A
-};
+/* macro nct tag */
+typedef uint32_t nct_tag_t;
+#define NCT_TAG_1B_SINGLE 0x10
+#define NCT_TAG_2B_SINGLE 0x20
+#define NCT_TAG_4B_SINGLE 0x40
+#define NCT_TAG_STR_SINGLE 0x80
+#define NCT_TAG_1B_ARRAY 0x1A
+#define NCT_TAG_2B_ARRAY 0x2A
+#define NCT_TAG_4B_ARRAY 0x4A
+#define NCT_TAG_STR_ARRAY 0x8A
 
-enum nct_id {
-	NCT_ID_START = 0,
-	NCT_ID_SERIAL_NUMBER = NCT_ID_START, /* ID: 0 */
-	NCT_ID_WIFI_ADDR,					 /* ID: 1 */
-	NCT_ID_BT_ADDR,                      /* ID: 2 */
-	NCT_ID_CM_ID,                        /* ID: 3 */
-	NCT_ID_LBH_ID,                       /* ID: 4 */
-	NCT_ID_FACTORY_MODE,                 /* ID: 5 */
-	NCT_ID_RAMDUMP,                      /* ID: 6 */
-	NCT_ID_TEST,                         /* ID: 7 */
-	NCT_ID_BOARD_INFO,                   /* ID: 8 */
-	NCT_ID_GPS_ID,                       /* ID: 9 */
-	NCT_ID_LCD_ID,                       /* ID:10 */
-	NCT_ID_ACCELEROMETER_ID,             /* ID:11 */
-	NCT_ID_COMPASS_ID,                   /* ID:12 */
-	NCT_ID_GYROSCOPE_ID,                 /* ID:13 */
-	NCT_ID_LIGHT_ID,                     /* ID:14 */
-	NCT_ID_CHARGER_ID,                   /* ID:15 */
-	NCT_ID_TOUCH_ID,                     /* ID:16 */
-	NCT_ID_FUELGAUGE_ID,                 /* ID:17 */
-	NCT_ID_WCC,                          /* ID:18 */
-	NCT_ID_ETH_ADDR,                     /* ID:19 */
-	NCT_ID_UNUSED3,                      /* ID:20 */
-	NCT_ID_UNUSED4,                      /* ID:21 */
-	NCT_ID_UNUSED5,                      /* ID:22 */
-	NCT_ID_UNUSED6,                      /* ID:23 */
-	NCT_ID_UNUSED7,                      /* ID:24 */
-	NCT_ID_UNUSED8,                      /* ID:25 */
-	NCT_ID_UNUSED9,                      /* ID:26 */
-	NCT_ID_UNUSED10,                     /* ID:27 */
-	NCT_ID_UNUSED11,                     /* ID:28 */
-	NCT_ID_UNUSED12,                     /* ID:29 */
-	NCT_ID_UNUSED13,                     /* ID:30 */
-	NCT_ID_UNUSED14,                     /* ID:31 */
-	NCT_ID_UNUSED15,                     /* ID:32 */
-	NCT_ID_UNUSED16,                     /* ID:33 */
-	NCT_ID_UNUSED17,                     /* ID:34 */
-	NCT_ID_UNUSED18,                     /* ID:35 */
-	NCT_ID_UNUSED19,                     /* ID:36 */
-	NCT_ID_UNUSED20,                     /* ID:37 */
-	NCT_ID_BATTERY_MODEL_DATA,           /* ID:38 */
-	NCT_ID_DEBUG_CONSOLE_PORT_ID,        /* ID:39 */
-	NCT_ID_BATTERY_MAKE,                 /* ID:40 */
-	NCT_ID_BATTERY_COUNT,                /* ID:41 */
-	NCT_ID_SPEC,                         /* ID:42 */
-	NCT_ID_UUID,                         /* ID:43 */
-	NCT_ID_UUID_END = NCT_ID_UUID + NCT_NUM_UUID_ENTRIES - 1,
-	NCT_ID_END = NCT_ID_UUID_END,
-	NCT_ID_DISABLED = 0xEEEE,
-	NCT_ID_MAX = 0xFFFF
-};
+/* macro nct id */
+typedef uint32_t nct_id_t;
+#define NCT_ID_START 0
+#define NCT_ID_SERIAL_NUMBER NCT_ID_START /* ID: 0 */
+#define NCT_ID_WIFI_ADDR 1					 /* ID: 1 */
+#define NCT_ID_BT_ADDR 2                      /* ID: 2 */
+#define NCT_ID_CM_ID 3                        /* ID: 3 */
+#define NCT_ID_LBH_ID 4                       /* ID: 4 */
+#define NCT_ID_FACTORY_MODE 5                 /* ID: 5 */
+#define NCT_ID_RAMDUMP 6                      /* ID: 6 */
+#define NCT_ID_TEST 7                         /* ID: 7 */
+#define NCT_ID_BOARD_INFO 8                   /* ID: 8 */
+#define NCT_ID_GPS_ID 9                       /* ID: 9 */
+#define NCT_ID_LCD_ID 10                       /* ID:10 */
+#define NCT_ID_ACCELEROMETER_ID 11             /* ID:11 */
+#define NCT_ID_COMPASS_ID 12                   /* ID:12 */
+#define NCT_ID_GYROSCOPE_ID 13                 /* ID:13 */
+#define NCT_ID_LIGHT_ID 14                     /* ID:14 */
+#define NCT_ID_CHARGER_ID 15                   /* ID:15 */
+#define NCT_ID_TOUCH_ID 16                     /* ID:16 */
+#define NCT_ID_FUELGAUGE_ID 17                 /* ID:17 */
+#define NCT_ID_WCC 18                          /* ID:18 */
+#define NCT_ID_ETH_ADDR 19                     /* ID:19 */
+#define NCT_ID_UNUSED3 20                      /* ID:20 */
+#define NCT_ID_UNUSED4 21                      /* ID:21 */
+#define NCT_ID_UNUSED5 22                      /* ID:22 */
+#define NCT_ID_UNUSED6 23                      /* ID:23 */
+#define NCT_ID_UNUSED7 24                      /* ID:24 */
+#define NCT_ID_UNUSED8 25                      /* ID:25 */
+#define NCT_ID_UNUSED9 26                      /* ID:26 */
+#define NCT_ID_UNUSED10 27                     /* ID:27 */
+#define NCT_ID_UNUSED11 28                     /* ID:28 */
+#define NCT_ID_UNUSED12 29                     /* ID:29 */
+#define NCT_ID_UNUSED13 30                     /* ID:30 */
+#define NCT_ID_UNUSED14 31                     /* ID:31 */
+#define NCT_ID_UNUSED15 32                     /* ID:32 */
+#define NCT_ID_UNUSED16 33                     /* ID:33 */
+#define NCT_ID_UNUSED17 34                     /* ID:34 */
+#define NCT_ID_UNUSED18 35                     /* ID:35 */
+#define NCT_ID_UNUSED19 36                     /* ID:36 */
+#define NCT_ID_UNUSED20 37                     /* ID:37 */
+#define NCT_ID_BATTERY_MODEL_DATA 38           /* ID:38 */
+#define NCT_ID_DEBUG_CONSOLE_PORT_ID 39        /* ID:39 */
+#define NCT_ID_BATTERY_MAKE 40                 /* ID:40 */
+#define NCT_ID_BATTERY_COUNT 41                /* ID:41 */
+#define NCT_ID_SPEC 42                         /* ID:42 */
+#define NCT_ID_UUID 43                         /* ID:43 */
+#define NCT_ID_UUID_END  (NCT_ID_UUID + NCT_NUM_UUID_ENTRIES - 1)
+#define NCT_ID_END NCT_ID_UUID_END
+#define NCT_ID_DISABLED 0xEEEE
+#define NCT_ID_MAX 0xFFFF
 
 struct nct_serial_number {
 	uint8_t sn[30];

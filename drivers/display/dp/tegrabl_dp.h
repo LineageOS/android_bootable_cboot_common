@@ -33,12 +33,11 @@
 			return ret;				 \
 	} while (0)
 
-enum {
-	DP_VS = 0,
-	DP_PE = 1,
-	DP_PC = 2,
-	DP_TX_PU = 3,
-};
+/* macro DP */
+#define DP_VS 0
+#define DP_PE 1
+#define DP_PC 2
+#define DP_TX_PU 3
 
 /**
 * @brief structure for DP configuration

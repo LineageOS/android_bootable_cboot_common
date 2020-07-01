@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -16,32 +16,35 @@
 #include <tegrabl_error.h>
 #include <tegrabl_compiler.h>
 
-#define TEGRABL_PROFILER_PAGE_SIZE	(64 * 1024)
+#define TEGRABL_PROFILER_PAGE_SIZE	(64U * 1024U)
 
-#define MB1_PROFILER_OFFSET		0x0
-#define MB1_PROFILER_SIZE		(8 * 1024)
+#define MB1_PROFILER_OFFSET		0x0U
+#define MB1_PROFILER_SIZE		(8U * 1024U)
 
 #define MB2_PROFILER_OFFSET		(MB1_PROFILER_OFFSET + MB1_PROFILER_SIZE)
-#define MB2_PROFILER_SIZE		(4 * 1024)
+#define MB2_PROFILER_SIZE		(4U * 1024U)
 
 #define BPMPFW_PROFILER_OFFSET	(MB2_PROFILER_OFFSET + MB2_PROFILER_SIZE)
-#define BPMPFW_PROFILER_SIZE	(4 * 1024)
+#define BPMPFW_PROFILER_SIZE	(4U * 1024U)
 
-#define CPUBL_PROFILER_OFFSET	(BPMPFW_PROFILER_OFFSET + BPMPFW_PROFILER_SIZE)
-#define CPUBL_PROFILER_SIZE		(4 * 1024)
+#define TOS_PROFILER_OFFSET		(BPMPFW_PROFILER_OFFSET + BPMPFW_PROFILER_SIZE)
+#define TOS_PROFILER_SIZE		(4U * 1024U)
 
-#define MAX_PROFILE_STRLEN	55
+#define CPUBL_PROFILER_OFFSET		(TOS_PROFILER_OFFSET + TOS_PROFILER_SIZE)
+#define CPUBL_PROFILER_SIZE		(4U * 1024U)
+
+#define MAX_PROFILE_STRLEN	55U
 
 /*
  * @brief enums to record various profiler levels
  */
-enum tegrabl_profiler_level {
+/* macro tegrabl profiler level */
+typedef uint32_t tegrabl_profiler_level_t;
 /* used to captures entry/exit and any important profiling pts */
-	PROFILER_RECORD_MINIMAL,
+#define PROFILER_RECORD_MINIMAL 0U
 
 /* used to capture detailed profiling pts */
-	PROFILER_RECORD_DETAILED,
-};
+#define PROFILER_RECORD_DETAILED 1U
 
 #if !defined(CONFIG_PROFILER_RECORD_LEVEL)
 #define CONFIG_PROFILER_RECORD_LEVEL PROFILER_RECORD_DETAILED
@@ -77,6 +80,11 @@ tegrabl_error_t tegrabl_profiler_relocate(uintptr_t new_profiler_page_addr);
 void tegrabl_profiler_dump(void);
 
 /**
+ * @brief returns timestamp of particular profiler record
+ */
+uint64_t tegrabl_get_profile_record_timestamp(const char *str);
+
+/**
  * @brief core api to add the profiler record
  *
  * @param str describes the profiling point
@@ -84,7 +92,7 @@ void tegrabl_profiler_dump(void);
  *                function captures the time stamp and adds to the record
  *
  */
-void tegrabl_profiler_add_record(const char *str, int64_t tstamp);
+void tegrabl_profiler_add_record(const char *str, uint64_t tstamp);
 
 #else
 
@@ -99,7 +107,7 @@ static inline tegrabl_error_t tegrabl_profiler_init(uint64_t page_addr,
 	return TEGRABL_NO_ERROR;
 }
 
-static tegrabl_error_t tegrabl_profiler_relocate(
+static inline tegrabl_error_t tegrabl_profiler_relocate(
 		uintptr_t new_profiler_data_addr)
 {
 	TEGRABL_UNUSED(new_profiler_data_addr);
@@ -111,7 +119,7 @@ static inline void tegrabl_profiler_dump(void)
 {
 }
 
-static inline void tegrabl_profiler_add_record(const char *str, int64_t tstamp)
+static inline void tegrabl_profiler_add_record(const char *str, uint64_t tstamp)
 {
 	TEGRABL_UNUSED(str);
 	TEGRABL_UNUSED(tstamp);
@@ -124,8 +132,9 @@ static inline void tegrabl_profiler_add_record(const char *str, int64_t tstamp)
  */
 #define tegrabl_profiler_record(str, tstamp, level)						\
 do {																	\
-		if (PROFILER_RECORD_##level <= CONFIG_PROFILER_RECORD_LEVEL)	\
+		if (PROFILER_RECORD_##level <= CONFIG_PROFILER_RECORD_LEVEL) {	\
 			tegrabl_profiler_add_record(str, tstamp);					\
+		}																\
 } while (0)
 
 #endif /* INCLUDED_TEGRABL_PROFILER_H */

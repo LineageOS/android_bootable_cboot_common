@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016-2017, NVIDIA Corporation.  All rights reserved.
+# Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
 #
 # NVIDIA Corporation and its licensors retain all intellectual property
 # and proprietary rights in and to this software, related documentation
@@ -13,7 +13,7 @@ LOCAL_DIR := $(GET_LOCAL_DIR)
 MODULE := $(LOCAL_DIR)
 
 MODULE_DEPS += \
-	$(LOCAL_DIR)/../../lib/tegrabl_graphics
+	$(LOCAL_DIR)/../../lib/graphics
 
 GLOBAL_INCLUDES += \
 	$(LOCAL_DIR) \
@@ -24,9 +24,11 @@ GLOBAL_INCLUDES += \
 	$(LOCAL_DIR)/edid \
 	$(LOCAL_DIR)/platform_data \
 	$(LOCAL_DIR)/panel \
-	$(LOCAL_DIR)/include \
+	$(LOCAL_DIR)/backlight \
 	$(LOCAL_DIR)/../../include/drivers/display \
-	$(LOCAL_DIR)/../../include/lib
+	$(LOCAL_DIR)/../../include/lib \
+	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/drivers/soc/$(TARGET)/display \
+	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/drivers/padctl
 
 MODULE_SRCS += \
 	$(LOCAL_DIR)/tegrabl_display.c \
@@ -47,6 +49,9 @@ MODULE_SRCS += \
 	$(LOCAL_DIR)/platform_data/tegrabl_display_dtb_hdmi.c \
 	$(LOCAL_DIR)/platform_data/tegrabl_display_dtb_dp.c \
 	$(LOCAL_DIR)/platform_data/tegrabl_display_dtb_util.c \
-	$(LOCAL_DIR)/panel/tegrabl_display_panel.c
+	$(LOCAL_DIR)/platform_data/tegrabl_display_dtb_backlight.c \
+	$(LOCAL_DIR)/backlight/lp8556.c \
+	$(LOCAL_DIR)/panel/tegrabl_display_panel.c \
+	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/drivers/soc/$(TARGET)/display/tegrabl_display_soc.c
 
 include make/module.mk

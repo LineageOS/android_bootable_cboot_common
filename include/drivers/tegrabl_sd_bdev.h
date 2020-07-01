@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <tegrabl_blockdev.h>
+#include <tegrabl_sd_param.h>
 
 /**
  * @brief Gives the instance of the sdcard and tells whether card is present
@@ -25,7 +26,7 @@
  *
  * @return TEGRABL_NO_ERROR if success, otherwise error code.
  */
-tegrabl_error_t sd_bdev_is_card_present(uint32_t *instance, bool *is_present);
+tegrabl_error_t sd_bdev_is_card_present(struct gpio_info *cd_gpio, bool *is_present);
 
 /** @brief Initializes the host controller for sdmmc and card with the given
  *         instance
@@ -35,7 +36,7 @@ tegrabl_error_t sd_bdev_is_card_present(uint32_t *instance, bool *is_present);
  *
  *  @return TEGRABL_NO_ERROR if success, otherwise error code.
  */
-tegrabl_error_t sd_bdev_open(uint32_t instance);
+tegrabl_error_t sd_bdev_open(uint32_t instance, struct tegrabl_sd_platform_params *params);
 
 /** @brief Deallocates the memory allocated to sdmmc context.
  *

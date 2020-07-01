@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - 2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -16,6 +16,7 @@
 #include <tegrabl_blockdev.h>
 
 #define MAX_PARTITION_NAME 40
+#define PART_GUID_STR_LEN  37
 
 /**
  * @brief Stores the information about partition.
@@ -24,23 +25,11 @@
  */
 struct tegrabl_partition_info {
 	char name[MAX_PARTITION_NAME];
+	char guid[PART_GUID_STR_LEN];
 	uint64_t start_sector;
 	uint64_t num_sectors;
 	uint64_t total_size;
 };
-
-/**
- * @brief Stores the partition list for storage devices
- */
-struct tegrabl_storage_info {
-	struct list_node node;
-	tegrabl_bdev_t *bdev;
-	uint32_t num_partitions;
-	struct tegrabl_partition_info *partitions;
-};
-
-/* List of storage device information */
-struct list_node *storage_list;
 
 /**
  * @brief Stores the information about partition and this
@@ -66,21 +55,21 @@ struct verify_list_info {
 /**
  * @brief Defines the origin for seek operation.
  */
-enum tegrabl_partition_seek {
-	TEGRABL_PARTITION_SEEK_SET,
-	TEGRABL_PARTITION_SEEK_CUR,
-	TEGRABL_PARTITION_SEEK_END,
-};
+/* macro tegrabl partition seek */
+typedef uint32_t tegrabl_partition_seek_t;
+#define TEGRABL_PARTITION_SEEK_SET 0
+#define TEGRABL_PARTITION_SEEK_CUR 1
+#define TEGRABL_PARTITION_SEEK_END 2
 
 /**
  * @brief Defines the operations that can be done
  * by ioctl function.
  */
-enum tegrabl_ioctl {
-	TEGRABL_IOCTL_SIZE,
-	TEGRABL_IOCTL_SECTOR_SIZE,
-	TEGRABL_IOCTL_ALGINMENT,
-};
+/* macro tegrabl ioctl */
+typedef uint32_t tegrabl_ioctl_t;
+#define TEGRABL_IOCTL_SIZE 0
+#define TEGRABL_IOCTL_SECTOR_SIZE 1
+#define TEGRABL_IOCTL_ALGINMENT 2
 
 /**
  * @brief Initializes the data structures used by partition
@@ -89,7 +78,6 @@ enum tegrabl_ioctl {
  * @return TEGRABL_NO_ERROR if successful else appropriate error.
  */
 tegrabl_error_t tegrabl_partition_manager_init(void);
-
 
 /**
  * @brief Looks up the partition name into published partitions
@@ -100,9 +88,20 @@ tegrabl_error_t tegrabl_partition_manager_init(void);
  *
  * @return TEGRABL_NO_ERROR if successful else appropriate error.
  */
-tegrabl_error_t tegrabl_partition_open(const char *partition_name,
-									   struct tegrabl_partition *partition);
+tegrabl_error_t tegrabl_partition_open(const char *partition_name, struct tegrabl_partition *partition);
 
+/**
+ * @brief Looks up the partition name into published partitions of given block device
+ * and updates the partition handle.
+ *
+ * @param partition_name Name of the partition.
+ * @param partition Handle of the partition.
+ * @param bdev block device to be looked into.
+ *
+ * @return TEGRABL_NO_ERROR if successful else appropriate error.
+ */
+tegrabl_error_t tegrabl_partition_lookup_bdev(const char *partition_name, struct tegrabl_partition *partition,
+											  tegrabl_bdev_t *bdev);
 
 /**
  * @brief Closes the partition. After this call same variable
@@ -172,7 +171,7 @@ tegrabl_error_t tegrabl_partition_start_in_block(
  * @return TEGRABL_NO_ERROR if successful else appropriate error.
  */
 tegrabl_error_t tegrabl_partition_seek(struct tegrabl_partition *partition,
-		int64_t offset, enum tegrabl_partition_seek origin);
+		int64_t offset, tegrabl_partition_seek_t origin);
 
 /**
  * @brief Returns the current value of the position indicator of partition.
@@ -205,12 +204,12 @@ tegrabl_error_t tegrabl_partition_erase(struct tegrabl_partition *partition,
  * @param buf Destination buffer in which data to read.
  * @param start_sector Relative sector number from which data to read.
  * @param num_sectors Number of sectors to be read.
+ * @param p_xfer Address of the xfer info handle
  *
- * @return Handle to asynchronous io operation which can be used to
- * get the status of the read operation if successful else NULL.
+ * @return TEGRABL_NO_ERROR if successful.
  */
-tegrabl_aio_t *tegrabl_partition_async_read(struct tegrabl_partition *partition,
-		void *buf, uint64_t start_sector, uint64_t num_sectors);
+tegrabl_error_t tegrabl_partition_async_read(struct tegrabl_partition *partition, void *buf,
+	uint64_t start_sector, uint64_t num_sectors, struct tegrabl_blockdev_xfer_info **p_xfer);
 
 /**
  * @brief Non blocking write operation on partition. Write of partial sector
@@ -222,24 +221,24 @@ tegrabl_aio_t *tegrabl_partition_async_read(struct tegrabl_partition *partition,
  * @param buf Source buffer containing the data.
  * @param start_sector Relative sector number from which data to write.
  * @param num_sectors Number of sectors to write.
+ * @param p_xfer Address of the xfer info handle
  *
- * @return Handle to asynchronous io operation which can be used to
- * get the status of the write operation if successful else NULL.
+ * @return TEGRABL_NO_ERROR if successful.
  */
-tegrabl_aio_t *tegrabl_partition_async_write(
-		struct tegrabl_partition *partition, void *buf, uint64_t start_sector,
-		uint64_t num_sectors);
+tegrabl_error_t tegrabl_partition_async_write(struct tegrabl_partition *partition, void *buf,
+	uint64_t start_sector, uint64_t num_sectors, struct tegrabl_blockdev_xfer_info **p_xfer);
 
 /**
  * @brief Returns the status of asynchronous io operation.
  *
  * @param partition Handle of the partition.
  * @param aio Handle of the asynchronous io operation.
+ * @param xfer xfer info handle
  *
  * @return TEGRABL_NO_ERROR if successfully completed else appropriate error.
  */
 tegrabl_error_t tegrabl_partition_getstatus(struct tegrabl_partition *partition,
-		tegrabl_aio_t *aio);
+		struct tegrabl_blockdev_xfer_info *xfer);
 
 /**
  * @brief Does ioctl operation on a partition. Input buffer will contain
@@ -259,7 +258,7 @@ tegrabl_error_t tegrabl_partition_getstatus(struct tegrabl_partition *partition,
  * @return TEGRABL_NO_ERROR if successful else appropriate error.
  */
 tegrabl_error_t tegrabl_partition_ioctl(struct tegrabl_partition *partition,
-		enum tegrabl_ioctl ioctl, void *in, size_t in_size, void *out,
+		tegrabl_ioctl_t ioctl, void *in, size_t in_size, void *out,
 		size_t *out_size);
 
 /**
@@ -286,6 +285,18 @@ tegrabl_error_t tegrabl_partitions_unpublish(tegrabl_bdev_t *dev);
  * caches.
  */
 void tegrabl_partition_manager_flush_cache(void);
+
+/**
+ * @brief Query whether system is booted with three level partition
+ * table layout.
+ *
+ * @param info points to buffer which will be updated with the three
+ * level PT information. It is set to true when syste is booted with
+ * three level PT layout and false otherwise.
+ *
+ * @return TEGRABL_NO_ERROR if successful else appropriate error.
+ */
+tegrabl_error_t tegrabl_partition_pt_has_3_levels(bool *info);
 
 #endif	/* TEGRABL_PARTITION_MANAGER_H */
 

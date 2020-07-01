@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -28,12 +28,12 @@ extern "C"
 /**
  * @brief holds definations of different device types
  */
-enum tegrabl_eeprom_device {
-	TEGRABL_EEPROM_CAM,
-	TEGRABL_EEPROM_CVM,
-	TEGRABL_EEPROM_NORMAL,
-	TEGRABL_EEPROM_DEVICE_MAX,
-};
+/* macro tegrabl eeprom device */
+typedef uint32_t tegrabl_eeprom_device_t;
+#define TEGRABL_EEPROM_CAM 0
+#define TEGRABL_EEPROM_CVM 1
+#define TEGRABL_EEPROM_GENERIC 2
+#define TEGRABL_EEPROM_DEVICE_MAX 3
 
 /**
  *@brief eeprom ops table

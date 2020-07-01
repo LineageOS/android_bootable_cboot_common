@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, NVIDIA CORPORATION.  All Rights Reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -43,9 +43,9 @@
 		NV_WRITE32(a, d);		\
 		reg = NV_READ32(a);		\
 		reg = reg;				\
-	} while (0)
+	} while (false)
 
-#define REG_ADDR(block, reg)		(NV_ADDRESS_MAP_##block##_BASE + reg##_0)
+#define REG_ADDR(block, reg)		((uint32_t)NV_ADDRESS_MAP_##block##_BASE + (uint32_t)reg##_0)
 #define REG_READ(block, reg)			NV_READ32(REG_ADDR(block, reg))
 #define REG_WRITE(block, reg, value)	NV_WRITE32(REG_ADDR(block, reg), value)
 

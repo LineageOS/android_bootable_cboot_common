@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -21,11 +21,8 @@
 #include <tegrabl_display_unit.h>
 #include <tegrabl_parse_bmp.h>
 #include <tegrabl_display_dtb.h>
-#include <tegrabl_bpmp_fw_interface.h>
-#include <bpmp_abi.h>
-#include <powergate-t186.h>
-#include <tegrabl_i2c.h>
 #include <tegrabl_timer.h>
+#include <tegrabl_display_soc.h>
 
 #define TEXT_SIZE   1024
 
@@ -40,8 +37,6 @@ tegrabl_error_t tegrabl_display_init(void)
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	uint32_t n_du = 0;
 	struct tegrabl_display_list *du_list = NULL;
-	struct mrq_pg_update_state_request pg_write_req;
-	uint32_t partition_id = TEGRA186_POWER_DOMAIN_DISP;
 
 	if (hdisplay) {
 		if (hdisplay->n_du > 0) {
@@ -60,36 +55,12 @@ tegrabl_error_t tegrabl_display_init(void)
 	}
 	hdisplay->n_du = 0;
 
+	tegrabl_display_unpowergate();
+
 	err = tegrabl_display_get_du_list(&du_list);
 	if (err != TEGRABL_NO_ERROR || (du_list == NULL)) {
 		goto fail;
 	}
-
-	/* TODO: move unpowergate code to separate driver */
-	while (partition_id <= 4) {
-		/* Write request */
-		pg_write_req.partition_id = partition_id;
-
-		pg_write_req.sram_state = 0x1; /* power ON partition */
-		pg_write_req.logic_state = 0x3; /* power ON partition */
-		pg_write_req.clock_state = 0x3; /* enable partition clocks */
-
-		pr_debug("%s: power on TEGRA186_POWER_DOMAIN_DISP%c\n", __func__,
-				 partition_id - TEGRA186_POWER_DOMAIN_DISP == 0 ?
-				 ' ' : partition_id - TEGRA186_POWER_DOMAIN_DISP + 'A');
-		if (tegrabl_ccplex_bpmp_xfer(&pg_write_req, NULL, sizeof(pg_write_req),
-					0, MRQ_PG_UPDATE_STATE) != TEGRABL_NO_ERROR) {
-			pr_error("%s: Unable to power on - TEGRA186_POWER_DOMAIN_DISP%c\n",
-					 __func__, partition_id - TEGRA186_POWER_DOMAIN_DISP == 0 ?
-					 ' ' : partition_id - TEGRA186_POWER_DOMAIN_DISP + 'A');
-		}
-
-		partition_id++;
-	}
-	/* Cleanup I2C4 (HDMI/SOR1) to force re-init after unpowergate */
-	tegrabl_i2c_unregister_instance(TEGRABL_INSTANCE_I2C4);
-	/* Cleanup I2C6 (HDMI/SOR) to force re-init after unpowergate */
-	tegrabl_i2c_unregister_instance(TEGRABL_INSTANCE_I2C6);
 
 	while (du_list != NULL) {
 		pr_debug("initialize du = %d, type = %d\n", n_du, du_list->du_type);
@@ -110,6 +81,7 @@ tegrabl_error_t tegrabl_display_init(void)
 fail:
 	if (hdisplay) {
 		if (hdisplay->n_du == 0) {
+			tegrabl_display_powergate();
 			tegrabl_free(hdisplay);
 			hdisplay = NULL;
 		}
@@ -117,7 +89,7 @@ fail:
 	return err;
 }
 
-tegrabl_error_t tegrabl_display_printf(enum color color,
+tegrabl_error_t tegrabl_display_printf(color_t color,
 									   const char *format, ...)
 {
 	va_list ap;
@@ -127,7 +99,7 @@ tegrabl_error_t tegrabl_display_printf(enum color color,
 
 	if (!hdisplay) {
 		pr_error("%s: display is not initialized\n", __func__);
-		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_INITIALIZED, 1);
+		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_INITIALIZED, 0);
 		goto fail;
 	}
 
@@ -157,7 +129,7 @@ tegrabl_error_t tegrabl_display_show_image(struct tegrabl_image_info *image)
 
 	if (!hdisplay) {
 		pr_error("%s: display is not initialized\n", __func__);
-		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_INITIALIZED, 2);
+		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_INITIALIZED, 1);
 		goto fail;
 	}
 
@@ -231,7 +203,7 @@ tegrabl_error_t tegrabl_display_clear(void)
 
 	if (!hdisplay) {
 		pr_error("%s: display is not initialized\n", __func__);
-		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_INITIALIZED, 3);
+		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_INITIALIZED, 2);
 		goto fail;
 	}
 
@@ -251,14 +223,14 @@ fail:
 	return err;
 }
 
-tegrabl_error_t tegrabl_display_text_set_cursor(enum cursor_position position)
+tegrabl_error_t tegrabl_display_text_set_cursor(cursor_position_t position)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	uint32_t du_idx = 0;
 
 	if (!hdisplay) {
 		pr_error("%s: display is not initialized\n", __func__);
-		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_INITIALIZED, 4);
+		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_INITIALIZED, 3);
 		goto fail;
 	}
 
@@ -283,7 +255,7 @@ tegrabl_error_t tegrabl_display_shutdown(void)
 
 	if (!hdisplay) {
 		pr_error("%s: display is not initialized\n", __func__);
-		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_INITIALIZED, 5);
+		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_INITIALIZED, 4);
 		goto fail;
 	}
 
@@ -309,7 +281,7 @@ tegrabl_error_t tegrabl_display_get_params(
 
 	if (!hdisplay || du_idx >= hdisplay->n_du) {
 		pr_debug("%s: display or du %d is not initialized\n", __func__, du_idx);
-		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_INITIALIZED, 6);
+		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_INITIALIZED, 5);
 		goto fail;
 	}
 	pr_debug("%s: Get disp_params of du %d from %d display(s)\n", __func__,

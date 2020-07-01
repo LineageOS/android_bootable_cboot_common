@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -20,111 +20,142 @@
 #include <tegrabl_timer.h>
 #include <libfdt.h>
 #include <string.h>
-#include <keyboard_config.h>
+#include <argpio_sw.h>
+#include <argpio_aon_sw.h>
+#include <libfdt.h>
+#include <tegrabl_devicetree.h>
+#include <tegrabl_keyboard_config.h>
 
 #define MAX_GPIO_KEYS 3
 #define INVALID_HANDLE -1
+#define GPIO_KEYS_COMPATIBLE "gpio-keys"
 
 struct gpio_pin_info {
 	uint32_t chip_id;
+	int32_t handle;
 	uint32_t pin;
-	enum key_code key_code;
-	enum key_event reported_state;
-	enum key_event new_state;
+	key_code_t key_code;
+	key_event_t reported_state;
+	key_event_t new_state;
 };
 
 static bool s_is_initialised;
 static struct gpio_pin_info gpio_keys[MAX_GPIO_KEYS];
 static uint32_t total_keys;
 
-static char *select_key[] = {
-	"power",
-	"home"
-};
-
-static char *up_key[] = {
-	"volume_up",
-	"back"
-};
-
-static char *down_key[] = {
-	"volume_down",
-	"menu"
-};
-
-static tegrabl_error_t config_gpio(char **key, uint32_t key_size,
-								   struct key_info *keys_info,
-								   uint32_t keys_info_size, enum key_code code,
-								   uint32_t *pin_count)
+static tegrabl_error_t get_and_config_gpio(void *fdt, int32_t node_offset, const char *node_name,
+										   uint32_t *pin_count)
 {
-	uint32_t i, j;
 	tegrabl_error_t ret = TEGRABL_NO_ERROR;
 	struct gpio_driver *gpio_drv;
+	const char *property_name;
+	int32_t subnode_offset;
+	const struct fdt_property *property;
+	uint32_t chip_id;
 
-	for (i = 0; key_size; i++) {
-		for (j = 0; j < keys_info_size; j++) {
-			if (!strcmp(key[i], keys_info[j].key_name)) {
-				pr_debug("Key %s found in config table\n", key[i]);
-				gpio_keys[*pin_count].chip_id = keys_info[j].chip_id;
-				gpio_keys[*pin_count].pin = keys_info[j].gpio_pin;
-				ret = tegrabl_gpio_driver_get(gpio_keys[*pin_count].chip_id,
-											  &gpio_drv);
-				if (ret != TEGRABL_NO_ERROR) {
-					TEGRABL_SET_HIGHEST_MODULE(ret);
-					return ret;
-				}
-				ret = gpio_config(gpio_drv, gpio_keys[*pin_count].pin,
-								  GPIO_PINMODE_INPUT);
-				if (ret != TEGRABL_NO_ERROR) {
-					pr_error("Failed to config GPIO pin %d: chip_id %d\n",
-							 gpio_keys[*pin_count].pin,
-							 gpio_keys[*pin_count].chip_id);
-					TEGRABL_SET_HIGHEST_MODULE(ret);
-					return ret;
-				}
-				gpio_keys[*pin_count].key_code = code;
-				*pin_count = *pin_count + 1;
-				pr_debug("Key %s config successful: pin_num %d chip_id %d\n",
-						 key[i], gpio_keys[*pin_count].pin,
-						 gpio_keys[*pin_count].chip_id);
-				return TEGRABL_NO_ERROR;
-			}
-		}
+	subnode_offset = fdt_subnode_offset(fdt, node_offset, node_name);
+	if (subnode_offset < 0) {
+		pr_warn("subnode %s not found\n", node_name);
+		ret = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 0);
+		goto fail;
 	}
-	return TEGRABL_ERROR(TEGRABL_ERR_NOT_SUPPORTED, 0);
+
+	property_name = "gpios";
+	property = fdt_get_property(fdt, subnode_offset, property_name, NULL);
+	if (property == NULL) {
+		pr_warn("error in getting property %s\n", property_name);
+		ret = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 1);
+		goto fail;
+	}
+
+	gpio_keys[*pin_count].handle = fdt32_to_cpu(*property->data32);
+	gpio_keys[*pin_count].pin = fdt32_to_cpu(*(property->data32 + 1));
+
+	ret = tegrabl_gpio_get_chipid_with_phandle(gpio_keys[*pin_count].handle, &chip_id);
+	if (ret != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+	gpio_keys[*pin_count].chip_id = chip_id;
+
+	pr_debug("Key %s found in config table\n", node_name);
+	ret = tegrabl_gpio_driver_get(chip_id, &gpio_drv);
+	if (ret != TEGRABL_NO_ERROR) {
+		TEGRABL_SET_HIGHEST_MODULE(ret);
+		goto fail;
+	}
+	ret = gpio_config(gpio_drv, gpio_keys[*pin_count].pin, GPIO_PINMODE_INPUT);
+	if (ret != TEGRABL_NO_ERROR) {
+		pr_error("Failed to config GPIO pin %d: chip_id %d\n",
+				 gpio_keys[*pin_count].pin, gpio_keys[*pin_count].chip_id);
+		TEGRABL_SET_HIGHEST_MODULE(ret);
+		goto fail;
+	}
+
+	*pin_count = *pin_count + 1;
+	pr_debug("Key %s config successful: pin_num %d chip_id %d\n",
+			 node_name, gpio_keys[*pin_count].pin, gpio_keys[*pin_count].chip_id);
+
+fail:
+	return ret;
 }
 
-/* Hard code keys property configs here
- * TODO
- * Remove this hard coding and use DT to config keyboard */
-static tegrabl_error_t get_hard_coded_keys(void)
+static tegrabl_error_t key_config(void *fdt, int32_t node_offset, char **key_array,
+								  uint32_t num_key_array, uint32_t *pin_count, key_code_t key)
+{
+	uint32_t i;
+	const char *name;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+
+	for (i = 0; i < num_key_array; i++) {
+		name = key_array[i];
+		if (name == NULL) {
+			break;
+		}
+		err = get_and_config_gpio(fdt, node_offset, name, pin_count);
+		if (err == TEGRABL_NO_ERROR) {
+			gpio_keys[*pin_count - 1].key_code = key;
+			s_is_initialised = true;
+			break;
+		}
+	}
+	return err;
+}
+
+static tegrabl_error_t get_keys_from_dtb(void)
 {
 	uint32_t pin_count = 0;
-	tegrabl_error_t status = TEGRABL_NO_ERROR;
+	void *fdt;
 	uint32_t i;
+	int32_t node_offset;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	err = tegrabl_dt_get_fdt_handle(TEGRABL_DT_BL, &fdt);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+
+	node_offset = fdt_node_offset_by_compatible(fdt, -1, GPIO_KEYS_COMPATIBLE);
+	if (node_offset < 0) {
+		pr_warn("'gpio-keys' compatible node not found\n");
+		total_keys = 0;
+		goto fail;
+	}
 
 	/* Selection Key */
-	status = config_gpio(select_key, ARRAY_SIZE(select_key), keys_info,
-						 ARRAY_SIZE(keys_info), KEY_ENTER, &pin_count);
-	if (status != TEGRABL_NO_ERROR) {
-		TEGRABL_SET_HIGHEST_MODULE(status);
-		return status;
+	err = key_config(fdt, node_offset, select_key, ARRAY_SIZE(select_key), &pin_count, KEY_ENTER);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_warn("Selection key not successfully initialised.\n");
 	}
 
 	/* Navigation Up Key */
-	status = config_gpio(up_key, ARRAY_SIZE(up_key), keys_info,
-						 ARRAY_SIZE(keys_info), KEY_UP, &pin_count);
-	if (status != TEGRABL_NO_ERROR) {
-		TEGRABL_SET_HIGHEST_MODULE(status);
-		return status;
+	err = key_config(fdt, node_offset, up_key, ARRAY_SIZE(up_key), &pin_count, KEY_UP);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_warn("Navigation Up key not successfully initialised.\n");
 	}
 
 	/* Navigation Down Key */
-	status = config_gpio(down_key, ARRAY_SIZE(down_key), keys_info,
-						 ARRAY_SIZE(keys_info), KEY_DOWN, &pin_count);
-	if (status != TEGRABL_NO_ERROR) {
-		TEGRABL_SET_HIGHEST_MODULE(status);
-		return status;
+	err = key_config(fdt, node_offset, down_key, ARRAY_SIZE(down_key), &pin_count, KEY_DOWN);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_warn("Navigation down key not successfully initialised.\n");
 	}
 
 	total_keys = pin_count;
@@ -140,7 +171,8 @@ static tegrabl_error_t get_hard_coded_keys(void)
 		gpio_keys[0].key_code = KEY_HOLD;
 	}
 
-	return TEGRABL_NO_ERROR;
+fail:
+	return err;
 }
 
 tegrabl_error_t tegrabl_gpio_keyboard_init(void)
@@ -150,22 +182,20 @@ tegrabl_error_t tegrabl_gpio_keyboard_init(void)
 		return TEGRABL_NO_ERROR;
 	}
 
-	ret = get_hard_coded_keys();
+	ret = get_keys_from_dtb();
 	if (ret != TEGRABL_NO_ERROR) {
 		TEGRABL_SET_HIGHEST_MODULE(ret);
 		return ret;
 	}
 
-	s_is_initialised = true;
-
 	return TEGRABL_NO_ERROR;
 }
 
-tegrabl_error_t tegrabl_gpio_keyboard_get_key_data(enum key_code *key_code,
-												   enum key_event *key_event)
+tegrabl_error_t tegrabl_gpio_keyboard_get_key_data(key_code_t *key_code,
+												   key_event_t *key_event)
 {
 	uint32_t i;
-	enum gpio_pin_state state;
+	gpio_pin_state_t state;
 	bool flag = false;
 	struct gpio_driver *gpio_drv;
 	tegrabl_error_t status = TEGRABL_NO_ERROR;

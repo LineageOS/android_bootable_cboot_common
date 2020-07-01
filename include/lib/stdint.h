@@ -62,3 +62,17 @@ typedef unsigned long long uintmax_t;
 
 #endif // #ifndef INCLUDED_STDINT_H
 
+/* The following 4 macros are helper macros used to convert
+ * signed integer macros to unsigned integer constants */
+
+#define temp8(x)  (x##U)
+#define temp16(x) (x##U)
+#define temp32(x) (x##UL)
+#define temp64(x) (x##ULL)
+
+/* Use these macros to convert a  signed integer macros to unsigned integer constants*/
+
+#define U8(x)  temp8(x)
+#define U16(x) temp16(x)
+#define U32(x) temp32(x)
+#define U64(x) temp64(x)

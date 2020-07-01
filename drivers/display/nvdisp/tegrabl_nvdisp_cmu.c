@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2017, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -8,7 +8,7 @@
  * license agreement from NVIDIA Corporation is strictly prohibited.
  */
 
-#define MODULE TEGRABL_ERR_NVDISP_H
+#define MODULE TEGRABL_ERR_NVDISP
 
 #include <stdint.h>
 #include <tegrabl_error.h>
@@ -239,10 +239,8 @@ void nvdisp_cmu_init_defaults(struct nvdisp_cmu *cmu)
 	}
 }
 
-tegrabl_error_t nvdisp_cmu_set(struct tegrabl_nvdisp *nvdisp,
-							   struct nvdisp_cmu *cmu)
+void nvdisp_cmu_set(struct tegrabl_nvdisp *nvdisp, struct nvdisp_cmu *cmu)
 {
-	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	uint32_t val;
 	dma_addr_t cmu_base_addr;
 
@@ -277,5 +275,4 @@ tegrabl_error_t nvdisp_cmu_set(struct tegrabl_nvdisp *nvdisp,
 	nvdisp_writel(nvdisp, DISP_DISP_COLOR_CONTROL, val);
 
 	pr_debug("%s: exit\n", __func__);
-	return err;
 }

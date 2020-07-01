@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -19,12 +19,8 @@
 #include <tegrabl_dp.h>
 #include <tegrabl_drf.h>
 #include <tegrabl_addressmap.h>
-#include <arsor.h>
+#include <arsor1.h>
 #include <ardisplay.h>
-
-#define NV_SOR_XBAR_BYPASS_MASK (1 << 0)
-#define NV_SOR_XBAR_LINK_SWAP_MASK (1 << 1)
-#define NV_SOR_XBAR_LINK_XSEL_MASK (0x7)
 
 void tegrabl_sor_tpg(struct sor_data *sor, uint32_t tp, uint32_t n_lanes)
 {
@@ -69,34 +65,21 @@ void tegrabl_sor_port_enable(struct sor_data *sor, bool enb)
 	sor_writel(sor, (SOR_NV_PDISP_SOR_DP_LINKCTL0_0 + sor->portnum), val);
 }
 
-/* power on/off pad calibration logic */
-void sor_pad_cal_power(struct sor_data *sor, bool power_up)
-{
-	uint32_t val = 0;
-
-	val = sor_readl(sor, SOR_NV_PDISP_SOR_DP_PADCTL0_0 + sor->portnum);
-	if (power_up)
-		val = NV_FLD_SET_DRF_DEF(SOR_NV_PDISP, SOR_DP_PADCTL0, PAD_CAL_PD,
-								 POWERUP, val);
-	else
-		val = NV_FLD_SET_DRF_DEF(SOR_NV_PDISP, SOR_DP_PADCTL0, PAD_CAL_PD,
-								 POWERDOWN, val);
-
-	sor_writel(sor, SOR_NV_PDISP_SOR_DP_PADCTL0_0 + sor->portnum, val);
-}
-
 /* The SOR power sequencer does not work for t124 so SW has to
  * go through the power sequence manually
  * Power up steps from spec:
  * STEP	PDPORT	PDPLL	PDBG	PLLVCOD	PLLCAPD	E_DPD	PDCAL
- * 1	1		1		1		1		1		1		1
- * 2	1		1		1		1		1		0		1
- * 3	1		1		0		1		1		0		1
- * 4	1		0		0		0		0		0		1
- * 5	0		0		0		0		0		0		1 */
-static void sor_dp_pad_power_up(struct sor_data *sor, bool is_lvds)
+ * 1		1		1		1		1		1		1		1
+ * 2		1		1		1		1		1		0		1
+ * 3		1		1		0		1		1		0		1
+ * 4		1		0		0		0		0		0		1
+ * 5		0		0		0		0		0		0		1 */
+static void sor_dp_pad_power_up(struct sor_data *sor)
 {
 	uint32_t val = 0;
+
+	sor_writel_def(SOR_PLL2, AUX2, OVERRIDE_POWERDOWN, val);
+	sor_writel_def(SOR_PLL2, AUX1, SEQ_PLLCAPPD_OVERRIDE, val);
 
 	/* step 1 */
 	sor_writel_def(SOR_PLL2, AUX7, PORT_POWERDOWN_ENABLE, val);/* PDPORT */
@@ -111,7 +94,7 @@ static void sor_dp_pad_power_up(struct sor_data *sor, bool is_lvds)
 
 	/* step 2 */
 	sor_writel_def(SOR_PLL2, AUX6, BANDGAP_POWERDOWN_DISABLE, val);
-	tegrabl_udelay(100); /* sleep > 20 us */
+	tegrabl_udelay(150);
 
 	/* step 3 */
 	sor_writel_def(SOR_PLL0, PWR, ON, val);/* PDPLL */
@@ -121,98 +104,75 @@ static void sor_dp_pad_power_up(struct sor_data *sor, bool is_lvds)
 
 	/* step 4 */
 	sor_writel_def(SOR_PLL2, AUX7, PORT_POWERDOWN_DISABLE, val);/* PDPORT */
+
+	/* TERM_ENABLE is disabled at the end of rterm calibration. Re-enable it here. */
+	sor_writel_def(SOR_PLL1, TMDS_TERM, ENABLE, val);
+	tegrabl_udelay(20);
 }
 
-static void sor_termination_cal(struct sor_data *sor)
+void tegrabl_sor_enable_dp(struct sor_data *sor)
 {
-	uint32_t termadj = 0x8;
-	uint32_t cur_try = 0x8;
-	uint32_t reg_val;
-
-	sor_writel_num(SOR_PLL1, TMDS_TERMADJ, termadj, reg_val);
-
-	while (cur_try) {
-		/* binary search the right value */
-		tegrabl_udelay(200);
-		reg_val = sor_readl(sor, SOR_NV_PDISP_SOR_PLL1_0);
-
-		if (reg_val & NV_DRF_DEF(SOR_NV_PDISP, SOR_PLL1, TERM_COMPOUT, HIGH))
-			termadj -= cur_try;
-		cur_try >>= 1;
-		termadj += cur_try;
-
-		sor_writel_num(SOR_PLL1, TMDS_TERMADJ, termadj, reg_val);
-	}
+	sor_cal(sor);
+	sor_dp_pad_power_up(sor);
+	sor_power_lanes(sor, sor->link_cfg->lane_count, true);
 }
 
-static void sor_dp_cal(struct sor_data *sor)
+static void sor_get_cm_tx_bitmap(struct sor_data *sor, uint32_t lane_count)
 {
+	uint32_t i;
 	uint32_t val = 0;
-	struct tegrabl_dp *dp = sor->nvdisp->out_data;
 
-	sor_pad_cal_power(sor, true);
+	pr_debug("%s() entry\n", __func__);
 
-	tegrabl_dp_prod_settings(sor, dp->pdata->prod_list, dp_node, 0);
+	val = sor_readl(sor, (SOR_NV_PDISP_SOR_DP_PADCTL0_0 + sor->portnum));
 
-	sor_writel_def(SOR_PLL2, AUX6, BANDGAP_POWERDOWN_DISABLE, val);
+	for (i = 0; i < lane_count; i++) {
+		uint32_t index = sor->xbar_ctrl[i];
+
+		switch (index) {
+		case 0:
+			val = NV_FLD_SET_DRF_DEF(SOR_NV_PDISP, SOR_DP_PADCTL0, COMMONMODE_TXD_2_DP_TXD_0, ENABLE, val);
+			break;
+		case 1:
+			val = NV_FLD_SET_DRF_DEF(SOR_NV_PDISP, SOR_DP_PADCTL0, COMMONMODE_TXD_1_DP_TXD_1, ENABLE, val);
+			break;
+		case 2:
+			val = NV_FLD_SET_DRF_DEF(SOR_NV_PDISP, SOR_DP_PADCTL0, COMMONMODE_TXD_0_DP_TXD_2, ENABLE, val);
+			break;
+		case 3:
+			val = NV_FLD_SET_DRF_DEF(SOR_NV_PDISP, SOR_DP_PADCTL0, COMMONMODE_TXD_3_DP_TXD_3, ENABLE, val);
+			break;
+		default:
+			pr_error("dp: incorrect lane cnt\n");
+		}
+	}
+
+	sor_writel(sor, (SOR_NV_PDISP_SOR_DP_PADCTL0_0 + sor->portnum), val);
+
+	pr_debug("%s() exit\n", __func__);
+}
+
+void tegrabl_sor_precharge_lanes(struct sor_data *sor)
+{
+	const struct tegrabl_dp_link_config *cfg = sor->link_cfg;
+	uint32_t val = 0;
+	pr_debug("%s() entry\n", __func__);
+
+	/* force lanes to output common mode voltage */
+	sor_get_cm_tx_bitmap(sor, cfg->lane_count);
+
+	/* precharge for atleast 10us */
 	tegrabl_udelay(100);
 
-	sor_writel_def(SOR_PLL0, PLLREG_LEVEL, V45, val);
-	sor_writel_def(SOR_PLL0, PWR, ON, val);
-	sor_writel_def(SOR_PLL0, VCOPD, RESCIND, val);
-	sor_writel_def(SOR_PLL2, AUX1, SEQ_PLLCAPPD_OVERRIDE, val);
-	sor_writel_def(SOR_PLL2, AUX9, LVDSEN_OVERRIDE, val);
-	sor_writel_def(SOR_PLL2, AUX8, SEQ_PLLCAPPD_ENFORCE_DISABLE, val);
-	sor_writel_def(SOR_PLL1, TERM_COMPOUT, HIGH, val);
+	/* fallback to normal operation */
+	val = sor_readl(sor, (SOR_NV_PDISP_SOR_DP_PADCTL0_0 + sor->portnum));
+	val = NV_FLD_SET_DRF_DEF(SOR_NV_PDISP, SOR_DP_PADCTL0, COMMONMODE_TXD_0_DP_TXD_2, DISABLE, val);
+	val = NV_FLD_SET_DRF_DEF(SOR_NV_PDISP, SOR_DP_PADCTL0, COMMONMODE_TXD_1_DP_TXD_1, DISABLE, val);
+	val = NV_FLD_SET_DRF_DEF(SOR_NV_PDISP, SOR_DP_PADCTL0, COMMONMODE_TXD_2_DP_TXD_0, DISABLE, val);
+	val = NV_FLD_SET_DRF_DEF(SOR_NV_PDISP, SOR_DP_PADCTL0, COMMONMODE_TXD_3_DP_TXD_3, DISABLE, val);
+	sor_writel(sor, (SOR_NV_PDISP_SOR_DP_PADCTL0_0 + sor->portnum), val);
 
-	if (sor_poll_register(sor, SOR_NV_PDISP_SOR_PLL2_0,
-			NV_DRF_DEF(SOR_NV_PDISP, SOR_PLL2, AUX8, DEFAULT_MASK),
-			NV_DRF_DEF(SOR_NV_PDISP, SOR_PLL2, AUX8,
-					   SEQ_PLLCAPPD_ENFORCE_DISABLE),
-			100, SOR_TIMEOUT_MS)) {
-		pr_error("DP failed to lock PLL\n");
-	}
-
-	sor_writel_def(SOR_PLL2, AUX2, OVERRIDE_POWERDOWN, val);
-	sor_writel_def(SOR_PLL2, AUX7, PORT_POWERDOWN_DISABLE, val);
-
-	sor_termination_cal(sor);
-
-	sor_pad_cal_power(sor, false);
-}
-
-tegrabl_error_t tegrabl_sor_enable_dp(struct sor_data *sor)
-{
-	tegrabl_error_t err = TEGRABL_NO_ERROR;
-
-	err = tegrabl_dp_clock_config(sor->nvdisp, sor->instance,
-								  TEGRA_SOR_SAFE_CLK);
-	if (err != TEGRABL_NO_ERROR)
-		goto fail;
-
-	sor_dp_cal(sor);
-	sor_dp_pad_power_up(sor, false);
-
-fail:
-	return err;
-}
-
-void tegrabl_sor_config_xbar(struct sor_data *sor)
-{
-	uint32_t val = 0;
-	uint32_t mask = 0;
-	uint32_t shift = 0;
-	uint32_t i = 0;
-
-	mask = (NV_SOR_XBAR_BYPASS_MASK | NV_SOR_XBAR_LINK_SWAP_MASK);
-	for (i = 0, shift = 2; i < (sizeof(sor->xbar_ctrl) / sizeof(uint32_t));
-		 shift += 3, i++) {
-		mask |= NV_SOR_XBAR_LINK_XSEL_MASK << shift;
-		val |= sor->xbar_ctrl[i] << shift;
-	}
-
-	tegrabl_sor_write_field(sor, SOR_NV_PDISP_SOR_XBAR_CTRL_0, mask, val);
-	sor_writel(sor, SOR_NV_PDISP_SOR_XBAR_POL_0, 0);
+	pr_debug("%s() exit\n", __func__);
 }
 
 void tegrabl_sor_detach(struct sor_data *sor)
@@ -222,58 +182,3 @@ void tegrabl_sor_detach(struct sor_data *sor)
 	 */
 }
 
-static uint32_t sor_get_pd_tx_bitmap(struct sor_data *sor, uint32_t lane_count)
-{
-	uint32_t i;
-	uint32_t val = 0;
-
-	pr_debug("%s() entry\n", __func__);
-
-	for (i = 0; i < lane_count; i++) {
-		uint32_t index = sor->xbar_ctrl[i];
-
-		switch (index) {
-		case 0:
-			val |= NV_DRF_DEF(SOR_NV_PDISP, SOR_DP_PADCTL0, PD_TXD_0, NO);
-			break;
-		case 1:
-			val |= NV_DRF_DEF(SOR_NV_PDISP, SOR_DP_PADCTL0, PD_TXD_1, NO);
-			break;
-		case 2:
-			val |= NV_DRF_DEF(SOR_NV_PDISP, SOR_DP_PADCTL0, PD_TXD_2, NO);
-			break;
-		case 3:
-			val |= NV_DRF_DEF(SOR_NV_PDISP, SOR_DP_PADCTL0, PD_TXD_3, NO);
-			break;
-		default:
-			pr_error("dp: incorrect lane cnt\n");
-		}
-	}
-
-	pr_debug("%s() exit\n", __func__);
-	return val;
-}
-
-void tegrabl_sor_precharge_lanes(struct sor_data *sor)
-{
-	const struct tegrabl_dp_link_config *cfg = sor->link_cfg;
-	uint32_t val = 0;
-	pr_debug("%s() entry\n", __func__);
-
-	val = sor_get_pd_tx_bitmap(sor, cfg->lane_count);
-
-	/* force lanes to output common mode voltage */
-	tegrabl_sor_write_field(sor, SOR_NV_PDISP_SOR_DP_PADCTL0_0 + sor->portnum,
-		(0xf << SOR_NV_PDISP_SOR_DP_PADCTL0_0_COMMONMODE_TXD_0_DP_TXD_2_SHIFT),
-		(val << SOR_NV_PDISP_SOR_DP_PADCTL0_0_COMMONMODE_TXD_0_DP_TXD_2_SHIFT));
-
-	/* precharge for atleast 10us */
-	tegrabl_udelay(100);
-
-	/* fallback to normal operation */
-	tegrabl_sor_write_field(sor, SOR_NV_PDISP_SOR_DP_PADCTL0_0 + sor->portnum,
-		(0xf << SOR_NV_PDISP_SOR_DP_PADCTL0_0_COMMONMODE_TXD_0_DP_TXD_2_SHIFT),
-		0);
-
-	pr_debug("%s() exit\n", __func__);
-}

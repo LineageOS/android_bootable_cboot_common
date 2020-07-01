@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -25,20 +25,14 @@
 #include <tegrabl_nvdisp.h>
 #include <tegrabl_nvdisp_local.h>
 #include <tegrabl_nvdisp_win.h>
-#include <tegrabl_edid.h>
 #include <tegrabl_nvdisp_cmu.h>
 #include <tegrabl_module.h>
-#include <arclk_rst.h>
 #include <tegrabl_display_dtb.h>
 #include <tegrabl_bpmp_fw_interface.h>
-#include <bpmp_abi.h>
-#include <powergate-t186.h>
-#include <tegrabl_i2c.h>
 
 #define NO_COLOR 0
 #define KHZ 1000
 #define TEGRABL_DP_CLK 270000 /* 270MHz */
-#define TEGRABL_DISPHUB_CLK 408000 /* 408MHz */
 
 /* Because of the upward page alignment done in kernel we are seeing linear
  * mapping failure for the lut_mem memory region passed by BL in cmdline.
@@ -49,6 +43,8 @@
 */
 #define CMU_ALLIGNMENT_SIZE 4096
 #define CP_ALLIGNMENT_SIZE 4096
+
+static int32_t sor_instance;
 
 uint32_t nvdisp_base_addr[] = {
 	NV_ADDRESS_MAP_DISPLAY_BASE,
@@ -66,12 +62,12 @@ static tegrabl_error_t nvdisp_out_init(struct tegrabl_nvdisp *nvdisp,
 	case DISPLAY_OUT_HDMI:
 		nvdisp->out_ops = &hdmi_ops;
 		break;
-#if CONFIG_ENABLE_DP
+#if defined(CONFIG_ENABLE_DP)
 	case DISPLAY_OUT_DP:
 		nvdisp->out_ops = &dp_ops;
 		break;
 #endif
-#if CONFIG_ENABLE_DSI
+#if defined(CONFIG_ENABLE_DSI)
 	case DISPLAY_OUT_DSI:
 		nvdisp->out_ops = &dsi_ops;
 		break;
@@ -92,7 +88,7 @@ static tegrabl_error_t nvdisp_out_init(struct tegrabl_nvdisp *nvdisp,
 	return err;
 }
 
-tegrabl_error_t nvdisp_set_color_control(struct tegrabl_nvdisp *nvdisp)
+static tegrabl_error_t nvdisp_set_color_control(struct tegrabl_nvdisp *nvdisp)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	uint32_t val = nvdisp_readl(nvdisp, DISP_DISP_COLOR_CONTROL);
@@ -333,22 +329,66 @@ fail:
 	return err;
 }
 
-void tegrabl_nvdisp_get_resolution(struct tegrabl_nvdisp *nvdisp,
-								   uint32_t *height, uint32_t *width)
-{
-	*height = nvdisp->height;
-	*width = nvdisp->width;
-}
-
 void nvdisp_clk_disable(struct tegrabl_nvdisp *nvdisp)
 {
 	/*DUMMY FUNC*/
+}
+
+static tegrabl_error_t nvdisp_set_control(struct tegrabl_nvdisp *nvdisp)
+{
+	uint32_t protocol;
+	bool use_sor = false;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+
+	if (nvdisp->type == DISPLAY_OUT_HDMI) {
+		protocol = NV_DRF_DEF(DC, DISP_CORE_SOR_SET_CONTROL, PROTOCOL, SINGLE_TMDS_A);
+		use_sor = true;
+	} else if (nvdisp->type == DISPLAY_OUT_DP) {
+		protocol = NV_DRF_DEF(DC, DISP_CORE_SOR_SET_CONTROL, PROTOCOL, DP_A);
+		use_sor = true;
+#if defined(IS_T186)
+	} else if (nvdisp->type == DISPLAY_OUT_DSI) {
+		protocol = NV_DRF_DEF(DC, DISP_CORE_DSI_SET_CONTROL, PROTOCOL, DSI);
+		nvdisp_writel(nvdisp, DISP_CORE_DSI_SET_CONTROL, protocol);
+#endif
+	} else {
+		pr_error("%s: unsupported out_type=%d\n", __func__, nvdisp->type);
+		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 13);
+		goto fail;
+	}
+
+	if (use_sor) {
+		switch (sor_instance) {
+		case 0:
+			nvdisp_writel(nvdisp, DISP_CORE_SOR_SET_CONTROL, protocol);
+			break;
+		case 1:
+			nvdisp_writel(nvdisp, DISP_CORE_SOR1_SET_CONTROL, protocol);
+			break;
+#if !defined(IS_T186)
+		case 2:
+			nvdisp_writel(nvdisp, DISP_CORE_SOR2_SET_CONTROL, protocol);
+			break;
+		case 3:
+			nvdisp_writel(nvdisp, DISP_CORE_SOR3_SET_CONTROL, protocol);
+			break;
+#endif
+		default:
+			pr_error("%s: invalid sor_num:%d\n", __func__, sor_instance);
+			err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 14);
+			goto fail;
+		}
+	}
+
+fail:
+	return err;
 }
 
 static tegrabl_error_t nvdisp_hw_init(struct tegrabl_nvdisp *nvdisp)
 {
 	uint32_t val;
 	struct nvdisp_cmu *cmu;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	pr_debug("%s: entry\n", __func__);
 
@@ -360,6 +400,7 @@ static tegrabl_error_t nvdisp_hw_init(struct tegrabl_nvdisp *nvdisp)
 		GENERAL_INCR_SYNCPT_NO_STALL, 1);
 	nvdisp_writel(nvdisp, CMD_GENERAL_INCR_SYNCPT_CNTRL, val);
 
+#if defined(IS_T186)
 	val = NV_DRF_NUM(DC, CMD_INT_TYPE, DSC_TO_UF_INT_TYPE, 1) |
 		NV_DRF_NUM(DC, CMD_INT_TYPE, DSC_BBUF_UF_INT_TYPE, 1) |
 		NV_DRF_NUM(DC, CMD_INT_TYPE, DSC_RBUF_UF_INT_TYPE, 1) |
@@ -371,6 +412,7 @@ static tegrabl_error_t nvdisp_hw_init(struct tegrabl_nvdisp *nvdisp)
 		NV_DRF_NUM(DC, CMD_INT_TYPE, DSC_RBUF_UF_INT_TYPE, 1) |
 		NV_DRF_NUM(DC, CMD_INT_TYPE, DSC_OBUF_UF_INT_TYPE, 1);
 	nvdisp_writel(nvdisp, CMD_INT_TYPE, val);
+#endif
 
 	val = NV_DRF_NUM(DC, CMD_INT_POLARITY, FRAME_END_INT_POLARITY, 1) |
 		NV_DRF_NUM(DC, CMD_INT_POLARITY, V_PULSE3_INT_POLARITY, 1) |
@@ -380,13 +422,14 @@ static tegrabl_error_t nvdisp_hw_init(struct tegrabl_nvdisp *nvdisp)
 		NV_DRF_NUM(DC, CMD_INT_POLARITY, REG_TMOUT_INT_POLARITY, 1) |
 		NV_DRF_NUM(DC, CMD_INT_POLARITY, MSF_INT_POLARITY, 1) |
 		NV_DRF_NUM(DC, CMD_INT_POLARITY, HEAD_UF_INT_POLARITY, 1) |
-		NV_DRF_NUM(DC, CMD_INT_POLARITY, SD3_BUCKET_WALK_DONE_INT_POLARITY,
-				   1) |
-		NV_DRF_NUM(DC, CMD_INT_POLARITY, DSC_OBUF_UF_INT_POLARITY, 1) |
+		NV_DRF_NUM(DC, CMD_INT_POLARITY, SD3_BUCKET_WALK_DONE_INT_POLARITY, 1);
+
+#if defined(IS_T186)
+	val |= NV_DRF_NUM(DC, CMD_INT_POLARITY, DSC_OBUF_UF_INT_POLARITY, 1) |
 		NV_DRF_NUM(DC, CMD_INT_POLARITY, DSC_RBUF_UF_INT_POLARITY, 1) |
 		NV_DRF_NUM(DC, CMD_INT_POLARITY, DSC_BBUF_UF_INT_POLARITY, 1) |
 		NV_DRF_NUM(DC, CMD_INT_POLARITY, DSC_TO_UF_INT_POLARITY, 1);
-
+#endif
 	nvdisp_writel(nvdisp, CMD_INT_POLARITY, val);
 
 	/* enable interrupts for vblank, frame_end and underflows */
@@ -410,7 +453,8 @@ static tegrabl_error_t nvdisp_hw_init(struct tegrabl_nvdisp *nvdisp)
 	cmu = tegrabl_memalign(CMU_ALLIGNMENT_SIZE, sizeof(struct nvdisp_cmu));
 	if (!cmu) {
 		pr_debug("%s, failed to allocate memory\n", __func__);
-		return TEGRABL_ERR_NO_MEMORY;
+		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
+		goto fail;
 	}
 
 	nvdisp_cmu_init_defaults(cmu);
@@ -418,26 +462,45 @@ static tegrabl_error_t nvdisp_hw_init(struct tegrabl_nvdisp *nvdisp)
 	nvdisp_cmu_set(nvdisp, cmu);
 
 	nvdisp_program_mode(nvdisp, nvdisp->mode);
+
+	err = nvdisp_set_control(nvdisp);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+
 	pr_debug("%s: exit\n", __func__);
 
-	return TEGRABL_NO_ERROR;
+fail:
+	return err;
+}
+
+static void nvdisp_set_head_clk(uint32_t module, uint32_t instance, uint32_t clk_src, uint32_t rate)
+{
+	uint32_t rate_khz;
+
+	tegrabl_car_rst_set(module, instance);
+	tegrabl_car_set_clk_src(module, instance, clk_src);
+	if (rate != 0) {
+		tegrabl_car_set_clk_rate(module, instance, rate, &rate_khz);
+	}
+	tegrabl_udelay(5);
+
+	tegrabl_car_clk_enable(module, instance, NULL);
+	tegrabl_car_rst_clear(module, instance);
+	tegrabl_udelay(5);
 }
 
 void nvdisp_clk_setup(struct tegrabl_nvdisp *nvdisp)
 {
+	int32_t i;
 	uint32_t rate_khz;
 	uint32_t pclk = (nvdisp->mode->pclk / KHZ);
 	uint32_t clk_src_rate = pclk;
-	uint32_t i;
-	uint32_t nvdisp_p0_clk_src = TEGRABL_CLK_SRC_PLLD_OUT1;
-	uint32_t nvdisp_p1_p2_clk_src = TEGRABL_CLK_SRC_DUMMY;
-	uint32_t p0_clk = 193333; /*clk for 1080 DSI mode*/
+	static uint32_t max_disp_clk;
 	static bool is_initialized;
+	static bool is_head_initialized[4];
 
 	pr_debug("%s: entry\n", __func__);
-
-	pr_debug("%s: configuring type %d on SOR%d\n", __func__, nvdisp->type,
-			 nvdisp->sor_instance);
 
 	/*
 	 * PLLDx has minimum VCO frequency 800Mhz and the maximum P divider
@@ -447,40 +510,29 @@ void nvdisp_clk_setup(struct tegrabl_nvdisp *nvdisp)
 	 * divider to divide it down.
 	 */
 	if (clk_src_rate < 27000) {
-		pr_debug("%s: clk_src_rate %d KHz < 27000 KHz, set to %d KHz\n",
-				 __func__, clk_src_rate, clk_src_rate * 2);
+		pr_debug("%s: clk_src_rate %d KHz < 27000 KHz, set to %d KHz\n", __func__, clk_src_rate,
+				 clk_src_rate * 2);
 		clk_src_rate *= 2;
 	}
 
-	if (nvdisp->sor_instance == 0) {
-		tegrabl_car_init_pll_with_rate(TEGRABL_CLK_PLL_ID_PLLD3, clk_src_rate,
-									   NULL);
-		nvdisp_p1_p2_clk_src = TEGRABL_CLK_SRC_PLLD3_OUT0;
-	} else if (nvdisp->sor_instance == 1) {
-		tegrabl_car_init_pll_with_rate(TEGRABL_CLK_PLL_ID_PLLD2, clk_src_rate,
-									   NULL);
-		nvdisp_p1_p2_clk_src = TEGRABL_CLK_SRC_PLLD2_OUT0;
+	if (nvdisp->parent_clk == TEGRABL_CLK_SRC_PLLD3_OUT0) {
+		tegrabl_car_init_pll_with_rate(TEGRABL_CLK_PLL_ID_PLLD3, clk_src_rate, NULL);
+	} else if (nvdisp->parent_clk == TEGRABL_CLK_SRC_PLLD2_OUT0) {
+		tegrabl_car_init_pll_with_rate(TEGRABL_CLK_PLL_ID_PLLD2, clk_src_rate, NULL);
+	} else if (nvdisp->parent_clk == TEGRABL_CLK_SRC_PLLD_OUT1) {
+		tegrabl_car_init_pll_with_rate(TEGRABL_CLK_PLL_ID_PLLD, clk_src_rate, NULL);
+	} else {
+		pr_critical("%s: invalid clock source for nvdisp\n", __func__);
 	}
 
 	if (nvdisp->type == DISPLAY_OUT_DP) {
-		tegrabl_car_init_pll_with_rate(TEGRABL_CLK_PLL_ID_PLLDP, TEGRABL_DP_CLK,
-									   NULL);
-	}
-
-	/* Update p0_clk_src and p0_clk if nvdisp is hooked to HEAD0 */
-	if (nvdisp->instance == 0) {
-		nvdisp_p0_clk_src = nvdisp_p1_p2_clk_src;
-		p0_clk = pclk;
+		tegrabl_car_init_pll_with_rate(TEGRABL_CLK_PLL_ID_PLLDP, TEGRABL_DP_CLK, NULL);
 	}
 
 	if (!is_initialized) {
-		tegrabl_car_init_pll_with_rate(TEGRABL_CLK_PLL_ID_PLLDISPHUB,
-									   TEGRABL_DISPHUB_CLK, NULL);
-
 		/* Set HOST1X clock */
 		tegrabl_car_rst_set(nvdisp->module_host1x, 0);
-		tegrabl_car_set_clk_src(nvdisp->module_host1x, 0,
-								TEGRABL_CLK_SRC_PLLP_OUT0);
+		tegrabl_car_set_clk_src(nvdisp->module_host1x, 0, TEGRABL_CLK_SRC_PLLP_OUT0);
 		tegrabl_udelay(5);
 		tegrabl_car_clk_enable(nvdisp->module_host1x, 0, NULL);
 		tegrabl_car_rst_clear(nvdisp->module_host1x, 0);
@@ -498,67 +550,48 @@ void nvdisp_clk_setup(struct tegrabl_nvdisp *nvdisp)
 		tegrabl_car_rst_set(TEGRABL_MODULE_NVDISPLAY0_MISC, 0);
 	}
 
-	/* Set NVDISP_P0 clock */
-	tegrabl_car_rst_set(nvdisp->module_nvdisp_p0, 0);
-	tegrabl_car_set_clk_src(nvdisp->module_nvdisp_p0, 0, nvdisp_p0_clk_src);
-	tegrabl_car_set_clk_rate(nvdisp->module_nvdisp_p0, 0, p0_clk, &rate_khz);
-	tegrabl_udelay(5);
-	tegrabl_car_clk_enable(nvdisp->module_nvdisp_p0, 0, NULL);
-	tegrabl_car_rst_clear(nvdisp->module_nvdisp_p0, 0);
-	tegrabl_udelay(5);
-
-	if (nvdisp->instance == 1) {
-		/* Set NVDISP_P1 clock */
-		tegrabl_car_rst_set(nvdisp->module_nvdisp_p0, 1);
-		tegrabl_car_set_clk_src(nvdisp->module_nvdisp_p0, 1,
-								nvdisp_p1_p2_clk_src);
-		tegrabl_car_set_clk_rate(nvdisp->module_nvdisp_p0, 1, pclk, &rate_khz);
-		tegrabl_udelay(5);
-		tegrabl_car_clk_enable(nvdisp->module_nvdisp_p0, 1, NULL);
-		tegrabl_car_rst_clear(nvdisp->module_nvdisp_p0, 1);
-		tegrabl_udelay(5);
-	} else if (nvdisp->instance == 2) {
-		/* Set NVDISP_P2 clock */
-		tegrabl_car_rst_set(nvdisp->module_nvdisp_p0, 2);
-		tegrabl_car_set_clk_src(nvdisp->module_nvdisp_p0, 2,
-								nvdisp_p1_p2_clk_src);
-		tegrabl_car_set_clk_rate(nvdisp->module_nvdisp_p0, 2, pclk, &rate_khz);
-		tegrabl_udelay(5);
-		tegrabl_car_clk_enable(nvdisp->module_nvdisp_p0, 2, NULL);
-		tegrabl_car_rst_clear(nvdisp->module_nvdisp_p0, 2);
-		tegrabl_udelay(5);
+	for (i = 0; i < NVDISP_MAX_HEADS; i++) {
+		if (nvdisp->instance == i) {
+			nvdisp_set_head_clk(nvdisp->module_nvdisp_p0, i, nvdisp->parent_clk, pclk);
+			is_head_initialized[i] = true;
+		} else if (is_head_initialized[i] != true) {
+			nvdisp_set_head_clk(nvdisp->module_nvdisp_p0, i, TEGRABL_CLK_SRC_CLK_M, 0);
+		}
 	}
 
 	if (!is_initialized) {
 		/* Set NVDISP_HUB clock */
 		tegrabl_car_rst_set(nvdisp->module_nvdisp_hub, 0);
-		tegrabl_car_set_clk_src(nvdisp->module_nvdisp_hub, 0,
-								TEGRABL_CLK_SRC_PLLDISPHUB);
+		tegrabl_car_set_clk_src(nvdisp->module_nvdisp_hub, 0, TEGRABL_CLK_SRC_PLLDISPHUB);
 		tegrabl_udelay(5);
 		tegrabl_car_clk_enable(nvdisp->module_nvdisp_hub, 0, NULL);
 		tegrabl_car_rst_clear(nvdisp->module_nvdisp_hub, 0);
 		tegrabl_udelay(5);
 	}
 
+	if (pclk > max_disp_clk) {
+		max_disp_clk = pclk;  /*disp clk should always be max of all the head clks*/
+	}
+
 	/* Set NVDISP_DISP clock */
 	tegrabl_car_rst_set(nvdisp->module_nvdisp, 0);
-	tegrabl_car_set_clk_src(nvdisp->module_nvdisp, 0,
-		TEGRABL_CLK_SRC_NVDISPLAY_P0_CLK + nvdisp->instance);
-	tegrabl_car_set_clk_rate(nvdisp->module_nvdisp, 0, pclk, &rate_khz);
+	tegrabl_car_set_clk_src(nvdisp->module_nvdisp, 0, TEGRABL_CLK_SRC_NVDISPLAY_P0_CLK + nvdisp->instance);
+	tegrabl_car_set_clk_rate(nvdisp->module_nvdisp, 0, max_disp_clk, &rate_khz);
 	tegrabl_udelay(5);
 	tegrabl_car_clk_enable(nvdisp->module_nvdisp, 0, NULL);
 	tegrabl_car_rst_clear(nvdisp->module_nvdisp, 0);
 	tegrabl_udelay(5);
 
 	if (!is_initialized) {
+	#if defined(IS_T186) /*DSC is deprecated in T194*/
 		/* Set NVDISP_DSC clock */
 		tegrabl_car_rst_set(nvdisp->module_nvdisp_dsc, 0);
-		tegrabl_car_set_clk_src(nvdisp->module_nvdisp_dsc, 0,
-								TEGRABL_CLK_SRC_NVDISPLAY_P0_CLK);
+		tegrabl_car_set_clk_src(nvdisp->module_nvdisp_dsc, 0, TEGRABL_CLK_SRC_NVDISPLAY_P0_CLK);
 		tegrabl_udelay(5);
 		tegrabl_car_clk_enable(nvdisp->module_nvdisp_dsc, 0, NULL);
 		tegrabl_car_rst_clear(nvdisp->module_nvdisp_dsc, 0);
 		tegrabl_udelay(5);
+	#endif
 
 		for (i = 0; i < N_WINDOWS; i++) {
 			tegrabl_car_rst_clear(TEGRABL_MODULE_NVDISPLAY0_WGRP, i);
@@ -622,10 +655,6 @@ tegrabl_error_t nvdisp_disable(struct tegrabl_nvdisp *nvdisp)
 {
 	uint32_t i;
 
-	if (nvdisp->out_ops && nvdisp->out_ops->disable) {
-		nvdisp->out_ops->disable(nvdisp);
-	}
-
 	nvdisp_writel(nvdisp, CMD_INT_MASK, 0);
 
 	for (i = 0; i < N_WINDOWS; i++) {
@@ -639,11 +668,9 @@ tegrabl_error_t nvdisp_disable(struct tegrabl_nvdisp *nvdisp)
 	return TEGRABL_NO_ERROR;
 }
 
-struct tegrabl_nvdisp *tegrabl_nvdisp_init(int32_t out_type,
-										   struct tegrabl_display_pdata *pdata)
+struct tegrabl_nvdisp *tegrabl_nvdisp_init(int32_t out_type, struct tegrabl_display_pdata *pdata)
 {
 	struct tegrabl_nvdisp *nvdisp = NULL;
-	struct nvdisp_mode *mode = NULL;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	pr_debug("%s: entry\n", __func__);
@@ -656,7 +683,8 @@ struct tegrabl_nvdisp *tegrabl_nvdisp_init(int32_t out_type,
 
 	nvdisp->base_addr = (uintptr_t) nvdisp_base_addr[pdata->nvdisp_instance];
 	nvdisp->instance = pdata->nvdisp_instance;
-	nvdisp->sor_instance = pdata->sor_instance;
+	nvdisp->parent_clk = pdata->disp_clk_src;
+	sor_instance = pdata->sor_dtb.sor_instance;
 
 	nvdisp->module_host1x = TEGRABL_MODULE_HOST1X;
 	nvdisp->module_nvdisp = TEGRABL_MODULE_NVDISPLAY_DISP;
@@ -664,52 +692,7 @@ struct tegrabl_nvdisp *tegrabl_nvdisp_init(int32_t out_type,
 	nvdisp->module_nvdisp_hub = TEGRABL_MODULE_NVDISPLAYHUB;
 	nvdisp->module_nvdisp_p0 = TEGRABL_MODULE_NVDISPLAY_P;
 	nvdisp->type = out_type;
-
-	mode = tegrabl_malloc(sizeof(struct nvdisp_mode));
-	if (!mode) {
-		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
-		pr_debug("%s, memory alloc failed for mode\n", __func__);
-		goto fail;
-	}
-
-	if (nvdisp->type == DISPLAY_OUT_DP) {
-		/* DP is supported on SOR/SOR1 */
-		if (nvdisp->sor_instance == 0 || nvdisp->sor_instance == 1) {
-			err = tegrabl_edid_get_mode(mode, TEGRABL_MODULE_DPAUX,
-										nvdisp->sor_instance);
-		} else {
-			pr_error("%s: DP: invalid SOR instance %d\n", __func__,
-					 nvdisp->sor_instance);
-			goto fail;
-		}
-	} else if (nvdisp->type == DISPLAY_OUT_HDMI) {
-		/* HDMI is supported on SOR/SOR1 */
-		if (nvdisp->sor_instance == 0) { /* SOR */
-			err = tegrabl_edid_get_mode(mode, TEGRABL_MODULE_I2C,
-										TEGRABL_INSTANCE_I2C6);
-		} else if (nvdisp->sor_instance == 1) { /* SOR1 */
-			err = tegrabl_edid_get_mode(mode, TEGRABL_MODULE_I2C,
-										TEGRABL_INSTANCE_I2C4);
-		} else {
-			pr_error("%s: HDMI: invalid SOR instance %d\n", __func__,
-					 nvdisp->sor_instance);
-			goto fail;
-		}
-	} else {
-		pr_error("%s: display type %d is not supported\n", __func__,
-				 nvdisp->type);
-		goto fail;
-	}
-
-	if (err != TEGRABL_NO_ERROR) {
-		pr_error("%s, get edid failed", __func__);
-		goto fail;
-	}
-
-	nvdisp->mode = mode;
-	nvdisp->height = mode->v_active;
-	nvdisp->width = mode->h_active;
-
+	nvdisp->mode = pdata->mode;
 	nvdisp->depth = 8;
 	nvdisp->dither = 0;
 	nvdisp->flags = pdata->flags;
@@ -722,23 +705,20 @@ struct tegrabl_nvdisp *tegrabl_nvdisp_init(int32_t out_type,
 		goto fail;
 	}
 
-	if (nvdisp->flags & NVDISP_FLAG_ENABLED) {
-		err = nvdisp_enable(nvdisp);
-		if (err != TEGRABL_NO_ERROR)
-			goto fail;
-		else
-			nvdisp->enabled = 1;
+	err = nvdisp_enable(nvdisp);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
+	} else {
+		nvdisp->enabled = 1;
 	}
 
 	pr_debug("%s: exit\n", __func__);
 	return nvdisp;
 
 fail:
-	if (mode)
-		tegrabl_free(mode);
-
-	if (nvdisp)
+	if (nvdisp) {
 		tegrabl_free(nvdisp);
+	}
 
 	return NULL;
 }
@@ -762,13 +742,13 @@ tegrabl_error_t tegrabl_nvdisp_configure_window(struct tegrabl_nvdisp *nvdisp,
 	csc = tegrabl_malloc(sizeof(struct nvdisp_csc));
 	if (!csc) {
 		pr_debug("memory allocation failed\n");
-		return TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 1);
+		return TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 2);
 	}
 	cp = tegrabl_memalign(CP_ALLIGNMENT_SIZE, sizeof(struct nvdisp_cp));
 	if (!cp) {
 		pr_debug("memory allocation failed\n");
 		tegrabl_free(csc);
-		return TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 2);
+		return TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 3);
 	}
 
 	win->surf = surf;

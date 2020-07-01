@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -37,10 +37,10 @@
 /* Max timeout for any USB transfer is set to 5 sec */
 #define FB_TFR_TIMEOUT  5000
 
-enum fastboot_lockcmd {
-	FASTBOOT_LOCK,
-	FASTBOOT_UNLOCK,
-};
+/* macro fastboot lockcmd */
+typedef uint32_t fastboot_lockcmd_t;
+#define FASTBOOT_LOCK 0
+#define FASTBOOT_UNLOCK 1
 
 /**
  * @brief register fastboot commands

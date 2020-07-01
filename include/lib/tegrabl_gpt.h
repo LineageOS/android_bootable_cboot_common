@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -20,8 +20,8 @@ struct tegrabl_gpt_guid {
 	uint8_t guid[16];
 };
 
-#define TEGRABL_GPT_MAX_PARTITION_NAME		36
-#define TEGRABL_GPT_MAX_PARTITION_ENTRIES	128
+#define TEGRABL_GPT_MAX_PARTITION_NAME		36UL
+#define TEGRABL_GPT_MAX_PARTITION_ENTRIES	128UL
 
 /**
  * @brief Defines the header structure of GPT.

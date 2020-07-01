@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -18,10 +18,6 @@
 #include <libfdt.h>
 #include <tegrabl_regulator.h>
 #include "tegrabl_regulator_priv.h"
-
-/* FIXME - Temp fix to share regulator name with fixed-regulator
- * to obtain gpio chip_id */
-extern volatile char temp_name[20];
 
 /* list of regulators */
 static struct list_node regulators;
@@ -130,11 +126,6 @@ tegrabl_error_t tegrabl_regulator_enable(int32_t phandle)
 		goto fail;
 	}
 
-	/* FIXME - Temp fix to share regulator name with fixed-regulator
-	 * to obtain gpio chip_id */
-	memset((void *)temp_name, '\0', sizeof(temp_name));
-	strncpy((char *)temp_name, entry->name, strlen(entry->name));
-
 	/* check if its already enabled */
 	if (entry->is_enabled) {
 		pr_info("regulator '%s' already enabled\n", entry->name);
@@ -178,6 +169,12 @@ tegrabl_error_t tegrabl_regulator_disable(int32_t phandle)
 	/* find the regulator in the list */
 	if (regulator_lookup(phandle, &entry) != TEGRABL_NO_ERROR) {
 		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 0);
+		goto fail;
+	}
+
+	if (!entry->is_gpio_available) {
+		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_SUPPORTED, 1);
+		pr_error("GPIO missing. Cannot disable regulator %s\n", entry->name);
 		goto fail;
 	}
 
@@ -244,7 +241,7 @@ tegrabl_error_t tegrabl_regulator_set_voltage(int32_t phandle, uint32_t volts,
 			volts = entry->set_volts;
 		} else {
 			pr_error("set volts not configured for '%s'\n", entry->name);
-			err = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 0);
+			err = TEGRABL_ERROR(TEGRABL_ERR_NOT_SUPPORTED, 2);
 			goto fail;
 		}
 	}

@@ -97,18 +97,18 @@ static uint8_t s_other_speed_config_desc[32] = {
 static uint8_t s_usb_manufacturer_id[USB_MANF_STRING_LENGTH] = {
 	USB_MANF_STRING_LENGTH,  /* Length of descriptor */
 	0x03,                    /* STRING descriptor type. */
-	'N', 0,
-	'V', 0,
-	'I', 0,
-	'D', 0,
-	'I', 0,
-	'A', 0,
-	' ', 0,
-	'C', 0,
-	'o', 0,
-	'r', 0,
-	'p', 0,
-	'.', 0
+	(uint8_t)'N', 0,
+	(uint8_t)'V', 0,
+	(uint8_t)'I', 0,
+	(uint8_t)'D', 0,
+	(uint8_t)'I', 0,
+	(uint8_t)'A', 0,
+	(uint8_t)' ', 0,
+	(uint8_t)'C', 0,
+	(uint8_t)'o', 0,
+	(uint8_t)'r', 0,
+	(uint8_t)'p', 0,
+	(uint8_t)'.', 0
 
 };
 

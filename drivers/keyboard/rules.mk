@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016, NVIDIA CORPORATION.  All Rights Reserved.
+# Copyright (c) 2016-2018, NVIDIA CORPORATION.  All Rights Reserved.
 #
 # NVIDIA CORPORATION and its licensors retain all intellectual property
 # and proprietary rights in and to this software, related documentation
@@ -13,12 +13,11 @@ LOCAL_DIR := $(GET_LOCAL_DIR)
 MODULE := $(LOCAL_DIR)
 
 GLOBAL_INCLUDES += \
-	$(LOCAL_DIR) \
 	$(LOCAL_DIR)/../../include \
 	$(LOCAL_DIR)/../../include/lib \
 	$(LOCAL_DIR)/../../include/drivers \
-	$(LOCAL_DIR)/platform/$(TARGET_PRODUCT) \
-	$(LOCAL_DIR)/platform
+	$(LOCAL_DIR)/../../../$(TARGET_FAMILY)/common/include/soc/$(TARGET) \
+	$(LOCAL_DIR)
 
 MODULE_SRCS += \
 	$(LOCAL_DIR)/tegrabl_keyboard.c \

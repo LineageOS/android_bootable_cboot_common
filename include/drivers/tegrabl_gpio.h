@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -22,26 +22,24 @@
 #define TEGRA_GPIO_AON_CHIPID      1
 #define TEGRA_GPIO_TCA9539_CHIPID_BASE  2
 
-enum gpio_pin_state {
-	GPIO_PIN_STATE_LOW, /* GPIO pin in LOW state. */
-	GPIO_PIN_STATE_HIGH, /* GPIO pin in HIGH state. */
-};
+typedef uint32_t gpio_pin_state_t;
+#define GPIO_PIN_STATE_LOW 0 /* GPIO pin in LOW state. */
+#define GPIO_PIN_STATE_HIGH 1 /* GPIO pin in HIGH state. */
 
-enum gpio_pin_mode {
-	GPIO_PINMODE_INPUT, /* GPIO pin in INPUT mode */
-	GPIO_PINMODE_OUTPUT, /* GPIO pin in OUTPUT mode */
-	GPIO_PINMODE_SPIO  /* Configure pin to SPIO mode */
-};
+typedef uint32_t gpio_pin_mode_t;
+#define GPIO_PINMODE_INPUT 0 /* GPIO pin in INPUT mode */
+#define GPIO_PINMODE_OUTPUT 1 /* GPIO pin in OUTPUT mode */
+#define GPIO_PINMODE_SPIO 2/* Configure pin to SPIO mode */
 
 /* It is mandatory for any GPIO driver to register these APIs.
  * Else the driver will not be registered to the GPIO core
  */
 struct gpio_driver_ops {
-	tegrabl_error_t (*read)(uint32_t gpio_num, enum gpio_pin_state *state,
+	tegrabl_error_t (*read)(uint32_t gpio_num, gpio_pin_state_t *state,
 							void *drv_data);
-	tegrabl_error_t (*write)(uint32_t gpio_num, enum gpio_pin_state state,
+	tegrabl_error_t (*write)(uint32_t gpio_num, gpio_pin_state_t state,
 							 void *drv_data);
-	tegrabl_error_t (*config)(uint32_t gpio_num, enum gpio_pin_mode mode,
+	tegrabl_error_t (*config)(uint32_t gpio_num, gpio_pin_mode_t mode,
 							  void *drv_data);
 };
 
@@ -49,9 +47,9 @@ struct gpio_driver_ops {
  * gpio_driver_register()
  */
 struct gpio_driver {
-	uint32_t phandle; /* phandle of the GPIO controller. */
+	int32_t phandle; /* phandle of the GPIO controller. */
 	uint32_t chip_id; /* chip id of GPIO controller */
-	const char *name; /* GPIO driver name. like 'tegra_gpio_driver' etc. */
+	char *name; /* GPIO driver name. like 'tegra_gpio_driver' etc. */
 	void *driver_data; /* private driver data for each device */
 	struct list_node node; /* will be part of GPIO drivers list. */
 	struct gpio_driver_ops *ops; /* Handle the consumers are interested in */
@@ -78,6 +76,17 @@ tegrabl_error_t tegrabl_gpio_driver_register(struct gpio_driver *drv);
 tegrabl_error_t tegrabl_gpio_driver_get(uint32_t chip_id,
 										struct gpio_driver **out);
 
+#if defined(CONFIG_ENABLE_GPIO_DT_BASED)
+/**
+ * @brief Retrieve chip_id/phandle map
+ *
+ * @param phandle gpio driver phandle
+ * @param chip_id gpio chip id (output param)
+ *
+ * @return TEGRABL_NO_ERROR on success
+ */
+tegrabl_error_t tegrabl_gpio_get_chipid_with_phandle(int phandle, uint32_t *chip_id);
+#endif
 
 /**
  * @brief The GPIO API for reading a GPIO pin state
@@ -91,7 +100,7 @@ tegrabl_error_t tegrabl_gpio_driver_get(uint32_t chip_id,
  */
 static inline tegrabl_error_t gpio_read(struct gpio_driver *drv,
 										uint32_t gpio_num,
-										enum gpio_pin_state *state)
+										gpio_pin_state_t *state)
 {
 	return drv->ops->read(gpio_num, state, drv->driver_data);
 }
@@ -107,7 +116,7 @@ static inline tegrabl_error_t gpio_read(struct gpio_driver *drv,
  */
 static inline tegrabl_error_t gpio_write(struct gpio_driver *drv,
 										 uint32_t gpio_num,
-										 enum gpio_pin_state state)
+										 gpio_pin_state_t state)
 {
 	return drv->ops->write(gpio_num, state, drv->driver_data);
 }
@@ -123,7 +132,7 @@ static inline tegrabl_error_t gpio_write(struct gpio_driver *drv,
  */
 static inline tegrabl_error_t gpio_config(struct gpio_driver *drv,
 										  uint32_t gpio_num,
-										  enum gpio_pin_mode mode)
+										  gpio_pin_mode_t mode)
 {
 	return drv->ops->config(gpio_num, mode, drv->driver_data);
 }

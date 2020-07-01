@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -12,7 +12,6 @@
 #define __PARSE_BMP_H
 
 #include <tegrabl_nvblob.h>
-#include <tegrabl_display.h>
 
 /**
  * @brief bmp image descriptor
@@ -25,7 +24,7 @@
  * @rotation_angle rotation angle (0, 90, 180, 270)
  */
 struct tegrabl_bmp_image {
-	enum tegrabl_image_type img_type;
+	tegrabl_image_type_t img_type;
 	uint8_t *bmp;
 	size_t image_size;
 	uint32_t panel_resolution;

@@ -8,8 +8,6 @@
  * license agreement from NVIDIA Corporation is strictly prohibited.
  */
 
-#define MODULE TEGRABL_ERR_HDMI
-
 #include <tegrabl_error.h>
 #include <tegrabl_edid.h>
 #include <tegrabl_hdmi.h>
@@ -35,8 +33,8 @@ static bool mode_is_equal(struct hdmi_mode *mode1, struct hdmi_mode *mode2)
 	}
 }
 
-tegrabl_error_t get_best_mode(struct monitor_data *monitor_info,
-							  struct hdmi_mode *best_mode)
+void get_best_mode(struct monitor_data *monitor_info,
+				   struct hdmi_mode *best_mode)
 {
 	uint32_t i;
 	uint32_t j;
@@ -45,7 +43,6 @@ tegrabl_error_t get_best_mode(struct monitor_data *monitor_info,
 	bool mode_found = false;
 	struct hdmi_mode m;
 	struct hdmi_mode q;
-	tegrabl_error_t status = TEGRABL_NO_ERROR;
 
 	for (i = 0; i < monitor_info->n_modes; i++) {
 		if (monitor_info->modes[i].refresh == 0) {
@@ -106,7 +103,4 @@ tegrabl_error_t get_best_mode(struct monitor_data *monitor_info,
 	}
 
 	memcpy(best_mode, &q, sizeof(struct hdmi_mode));
-
-	return status;
 }
-

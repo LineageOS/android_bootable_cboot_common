@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -22,32 +22,26 @@
 #include <tegrabl_qspi.h>
 #include <tegrabl_qspi_flash.h>
 #include <tegrabl_qspi_flash_private.h>
-#include <tegrabl_mb1_bct.h>
+#include <tegrabl_qspi_flash_spansion.h>
+#include <tegrabl_qspi_flash_macronix.h>
+#include <tegrabl_qspi_flash_micron.h>
 
-enum {
-	AUX_INFO_INVALID_PARAMS,
-	AUX_INFO_INVALID_PARAMS1,
-	AUX_INFO_INVALID_PARAMS2,
-	AUX_INFO_INVALID_PARAMS3,
-	AUX_INFO_INVALID_PARAMS4,
-	AUX_INFO_INVALID_PARAMS5,
-	AUX_INFO_INVALID_PARAMS6,
-	AUX_INFO_INVALID_PARAMS7,
-	AUX_INFO_INVALID_PARAMS8,
-	AUX_INFO_IOCTL_NOT_SUPPORTED,
-	AUX_INFO_NOT_INITIALIZED,
-	AUX_INFO_NO_MEMORY, /* 0xA */
-	AUX_INFO_WIP_TIMEOUT,
-	AUX_INFO_WEN_TIMEOUT,
-	AUX_INFO_FLAG_TIMEOUT, /* 0xD */
-	AUX_INFO_NOT_ALIGNED,
+static struct device_info device_info_list[] = {
+	{"Spansion 16MB", 0x01, 0x20, 0x18, 0x10/* 64KB  */, 0x0c/* 4KB */, 8,
+				FLAG_DDR | FLAG_QPI | FLAG_BULK | FLAG_PAGE512},
+	{"Spansion 32MB", 0x01, 0x02, 0x19, 0x12/* 256KB  */, 0x0e/* 4KB */, 8,
+				FLAG_DDR | FLAG_QPI | FLAG_BULK | FLAG_PAGE512_FIXED},
+	{"Spansion 64MB", 0x01, 0x02, 0x20, 0x12/* 256KB */, 0x0c/* 4KB */, 8,
+				FLAG_DDR | FLAG_QPI | FLAG_BULK | FLAG_PAGE512},
+	{"Micron 16MB", 0x20, 0xBB, 0x18, 0x10/* 64KB */,  0x0c/* 4KB */, 0,
+				FLAG_QPI | FLAG_BULK},
+	{"Macronix 64MB", 0xC2, 0x95, 0x3A, 0x10/* 64KB */,  0x0c/* 4KB */, 0,
+				FLAG_QPI | FLAG_BULK},
+	{"Default 4GB", 0xFF, 0xFF, 0x26, 0x10/* 64KB */,  0x0c/* 4KB */, 0,
+				FLAG_QPI | FLAG_BULK}
 };
 
-static struct tegrabl_mb1bct_qspi_params *qspi_params;
-
-
-struct tegrabl_qspi_flash qspi_flash;
-struct tegrabl_qspi_flash *hqspi_flash;
+static struct tegrabl_qspi_flash_driver_info *qspi_flash_driver_info[QSPI_MAX_INSTANCE];
 
 static tegrabl_error_t qspi_bdev_read_block(tegrabl_bdev_t *dev, void *buf,
 	bnum_t block, bnum_t count);
@@ -58,78 +52,131 @@ static tegrabl_error_t qspi_bdev_erase(tegrabl_bdev_t *dev, bnum_t block,
 	bnum_t count, bool is_secure);
 static tegrabl_error_t qspi_bdev_write_block(tegrabl_bdev_t *dev,
 		const void *buf, bnum_t block, bnum_t count);
+static tegrabl_error_t tegrabl_qspi_flash_read(struct tegrabl_qspi_flash_driver_info *hqfdi,
+		uint32_t start_page_num, uint32_t num_of_pages, uint8_t *p_dest, bool async);
+static tegrabl_error_t tegrabl_qspi_blockdev_xfer(struct tegrabl_blockdev_xfer_info *xfer);
+static tegrabl_error_t tegrabl_qspi_blockdev_xfer_wait(struct tegrabl_blockdev_xfer_info *xfer,
+						time_t timeout, uint8_t *status_flag);
+static tegrabl_error_t qspi_qpi_flag_set(struct tegrabl_qspi_flash_driver_info *hqfdi, bool bset);
+
 #endif
-static tegrabl_error_t qspi_read_reg(uint32_t code, uint8_t *p_reg_val);
-static tegrabl_error_t qspi_write_reg(uint32_t code, uint8_t *p_reg_val);
-static tegrabl_error_t qspi_write_en(uint8_t benable);
-static tegrabl_error_t qspi_writein_progress(
-		uint8_t benable, uint8_t is_mdelay);
-static tegrabl_error_t qspi_quad_flag_set(uint8_t bset);
-static tegrabl_error_t read_device_id_info(void);
+
+static tegrabl_error_t qspi_quad_flag_set(
+		struct tegrabl_qspi_flash_driver_info *hqfdi, uint8_t bset);
+static tegrabl_error_t read_device_id_info(
+		struct tegrabl_qspi_flash_driver_info *hqfdi);
+
 static tegrabl_error_t qspi_bdev_ioctl(
 		struct tegrabl_bdev *dev, uint32_t ioctl, void *argp)
 {
-	tegrabl_error_t err = TEGRABL_NO_ERROR;
-
 	TEGRABL_UNUSED(dev);
 	TEGRABL_UNUSED(argp);
 
-	switch (ioctl) {
 #if !defined(CONFIG_ENABLE_BLOCKDEV_BASIC)
-	case TEGRABL_IOCTL_DEVICE_CACHE_FLUSH:
-		break;
-#endif
-	default:
-		pr_debug("Unknown ioctl %"PRIu32"\n", ioctl);
-		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_SUPPORTED,
-							AUX_INFO_IOCTL_NOT_SUPPORTED);
+	if (ioctl == TEGRABL_IOCTL_DEVICE_CACHE_FLUSH) {
+		return TEGRABL_NO_ERROR;
 	}
-
-	return err;
+#endif
+	pr_debug("Unknown ioctl %"PRIu32"\n", ioctl);
+	return TEGRABL_ERROR(TEGRABL_ERR_NOT_SUPPORTED, AUX_INFO_IOCTL_NOT_SUPPORTED);
 }
 
-tegrabl_error_t tegrabl_qspi_flash_open(
-				struct tegrabl_mb1bct_qspi_params *params)
+static void qspi_init_platform_params(
+				struct tegrabl_qspi_flash_platform_params *params,
+				struct tegrabl_qspi_platform_params *qparam)
 {
-	static bool is_init_done;
+	qparam->clk_src = params->clk_src;
+	qparam->clk_src_freq = params->clk_src_freq;
+	qparam->interface_freq = params->interface_freq;
+	qparam->clk_div = params->clk_div;
+	qparam->max_bus_width = params->max_bus_width;
+	qparam->dma_type = params->dma_type;
+	qparam->fifo_access_mode = params->fifo_access_mode;
+	qparam->trimmer1_val = params->trimmer1_val;
+	qparam->trimmer2_val = params->trimmer2_val;
+}
+
+static void qspi_init_device(struct tegrabl_qspi_flash_platform_params *params,
+							 struct tegrabl_qspi_device_property *qdevice)
+{
+	qdevice->spi_mode = QSPI_SIGNAL_MODE_0;
+	qdevice->cs_active_low = true;
+	qdevice->chip_select = 0;
+	qdevice->speed_hz = params->interface_freq;
+}
+
+tegrabl_error_t tegrabl_qspi_flash_open(uint32_t instance,
+				struct tegrabl_qspi_flash_platform_params *params)
+{
+	static bool is_init_done[QSPI_MAX_INSTANCE];
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	tegrabl_bdev_t *qspi_dev = NULL;
+	struct tegrabl_qspi_platform_params qparams;
+	struct tegrabl_qspi_device_property qdevice;
+	struct tegrabl_qspi_handle *hqspi = NULL;
+	struct tegrabl_qspi_flash_driver_info *hqfdi;
 
-	if (!params) {
+	if (params == NULL) {
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_INVALID_PARAMS);
 	}
 
+	pr_trace("clk_src = %d\n", params->clk_src);
+	pr_trace("clk_div = %d\n", params->clk_div);
+	pr_trace("clk_src_freq = %d\n", params->clk_src_freq);
+	pr_trace("interface_freq= %d\n", params->interface_freq);
+	pr_trace("max_bus_width = %d\n", params->max_bus_width);
+	pr_trace("enable_ddr_read = %d\n", params->enable_ddr_read);
+	pr_trace("dma_type = %d\n", params->dma_type);
+	pr_trace("fifo_access_mode= %d\n", params->fifo_access_mode);
+	pr_trace("read_dummy_cycles = %d\n", params->read_dummy_cycles);
+	pr_trace("trimmer1_val = %d\n", params->trimmer1_val);
+	pr_trace("trimmer2_val = %d\n", params->trimmer2_val);
+
 	/* check if it's already initialized */
-	if (is_init_done)
+	if (is_init_done[instance]) {
 		return TEGRABL_NO_ERROR;
-
-	/* initialize qspi hardware */
-	qspi_params = params;
-	err = tegrabl_qspi_open(qspi_params);
-	if (err != TEGRABL_NO_ERROR) {
-		return TEGRABL_ERROR(TEGRABL_ERR_NOT_INITIALIZED,
-							 AUX_INFO_NOT_INITIALIZED);
 	}
-
-	/* allocate memory for qspi handle. */
-	qspi_dev = tegrabl_calloc(1, sizeof(tegrabl_bdev_t));
-	if (!qspi_dev) {
-		pr_debug("Qspi malloc failed\n");
+	hqfdi = tegrabl_calloc(1, sizeof(*hqfdi));
+	if (hqfdi == NULL) {
+		pr_error("Failed to allocate memory for qspi_flash_driver_info\n");
 		return TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, AUX_INFO_NO_MEMORY);
 	}
 
-	hqspi_flash = &qspi_flash;
+	/* initialize qspi hardware */
+	memcpy(&hqfdi->plat_params, params, sizeof(*params));
+	qspi_init_platform_params(&hqfdi->plat_params, &qparams);
+	qspi_init_device(&hqfdi->plat_params, &qdevice);
+
+	err = tegrabl_qspi_open(instance, &qdevice, &qparams, &hqspi);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("Failed to open QSPI Instance%d: 0x%08x\n", instance, err);
+		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_INITIALIZED,
+							AUX_INFO_NOT_INITIALIZED);
+		goto qflash_free;
+	}
+
+	hqfdi->hqspi = hqspi;
+
+	/* allocate memory for qspi handle. */
+	qspi_dev = tegrabl_calloc(1, sizeof(tegrabl_bdev_t));
+	if (qspi_dev == NULL) {
+		pr_error("Qspi calloc failed\n");
+		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, AUX_INFO_NO_MEMORY);
+		goto qflash_free;
+	}
 
 	/* read device identification info */
-	err = read_device_id_info();
+	err = read_device_id_info(hqfdi);
 	if (err != TEGRABL_NO_ERROR) {
-		return err;
+		goto init_cleanup;
 	}
 
 	tegrabl_blockdev_initialize_bdev(qspi_dev,
-					(TEGRABL_STORAGE_QSPI_FLASH << 16 | 0),
-					hqspi_flash->block_size_log2,
-					hqspi_flash->block_count);
+					(((uint32_t)TEGRABL_STORAGE_QSPI_FLASH << 16) | instance),
+					hqfdi->chip_info.block_size_log2,
+					hqfdi->chip_info.block_count);
+
+	qspi_dev->buf_align_size = TEGRABL_QSPI_BUF_ALIGN_SIZE;
 
 	/* Fill bdev function pointers. */
 	qspi_dev->read_block = qspi_bdev_read_block;
@@ -137,41 +184,52 @@ tegrabl_error_t tegrabl_qspi_flash_open(
 #if !defined(CONFIG_ENABLE_BLOCKDEV_BASIC)
 	qspi_dev->write_block = qspi_bdev_write_block;
 	qspi_dev->erase = qspi_bdev_erase;
+	qspi_dev->xfer = tegrabl_qspi_blockdev_xfer;
+	qspi_dev->xfer_wait = tegrabl_qspi_blockdev_xfer_wait;
 #endif
+	qspi_dev->priv_data = hqfdi;
 
 	/*  Make sure flash is in X4 mode by default*/
-	err = qspi_quad_flag_set(1);
+	err = qspi_quad_flag_set(hqfdi, 1);
 	if (err != TEGRABL_NO_ERROR) {
-		return err;
+		goto init_cleanup;
 	}
 
 	/* Register qspi boot device. */
 	err = tegrabl_blockdev_register_device(qspi_dev);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_debug("Qspi block dev registration fail (err:0x%x)\n", err);
+		pr_error("Qspi block dev registration failed (err:0x%x)\n", err);
 		goto init_cleanup;
-	} else {
-		pr_info("Qspi initialized successfully\n");
-		is_init_done = true;
-		return TEGRABL_NO_ERROR;
 	}
+
+	pr_info("Qspi initialized successfully\n");
+	is_init_done[instance] = true;
+	qspi_flash_driver_info[instance] = hqfdi;
+	return TEGRABL_NO_ERROR;
 
 init_cleanup:
 	tegrabl_free(qspi_dev);
+
+qflash_free:
+	tegrabl_free(hqfdi);
+
 	return err;
 }
 
-static tegrabl_error_t read_device_id_info(void)
+static tegrabl_error_t read_device_id_info(
+					struct tegrabl_qspi_flash_driver_info *hqfdi)
 {
+	struct tegrabl_qspi_flash_chip_info *chip_info = &hqfdi->chip_info;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
-	uint8_t reg_val;
 	uint8_t device_flag;
-
-#if defined(CONFIG_ENABLE_QSPI_FLASH_READ_ID)
-	struct tegrabl_qspi_transfer transfers[2];
-	uint8_t command;
 	uint8_t buf_id[DEVICE_ID_LEN];
 	uint32_t i, device_cnt;
+
+#if !defined(CONFIG_ENABLE_QSPI_FLASH_DEFAULT_VENDOR)
+	struct tegrabl_qspi_transfer transfers[2];
+	uint8_t command;
+
+	memset(transfers, 0, sizeof(transfers));
 
 	command = QSPI_FLASH_CMD_RDID;
 	transfers[0].tx_buf = &command;
@@ -192,152 +250,117 @@ static tegrabl_error_t read_device_id_info(void)
 	transfers[1].dummy_cycles = ZERO_CYCLES;
 	transfers[1].op_mode = SDR_MODE;
 
-	err = tegrabl_qspi_transaction(transfers, 2);
+	err = tegrabl_qspi_transaction(hqfdi->hqspi, transfers, 2,
+								   QSPI_XFER_TIMEOUT);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_debug("%s: register (0x%x) read fail (err:0x%x)\n",
-				 __func__, command, err);
+		pr_error("Read-device-ID: register (0x%x) read fail (err:0x%x)\n", command, err);
 		return err;
 	}
+#else
+	buf_id[0] = MANUFACTURE_ID_DEFAULT;
+	buf_id[1] = 0xFFU;
+	buf_id[2] = 0x26U;
+#endif
 
 	device_cnt = sizeof(device_info_list)/sizeof(struct device_info);
 	for (i = 0; i < device_cnt; i++) {
 		if (buf_id[0] == device_info_list[i].manufacture_id &&
 		buf_id[1] == device_info_list[i].memory_type &&
 		buf_id[2] == device_info_list[i].density) {
-			pr_info("QSPI Flash: %s\n", device_info_list[i].name);
+			pr_trace("QSPI Flash: %s\n", device_info_list[i].name);
 			break;
 		}
 	}
 
 	if (i >= device_cnt) {
 		i = 0;
-		pr_info("QSPI Flash: Defaulting to %s\n",
-					device_info_list[i].name);
+		pr_debug("QSPI Flash: Defaulting to %s\n", device_info_list[i].name);
 	}
 
-	hqspi_flash->device_list_index = i;
-	hqspi_flash->flash_size_log2 = buf_id[2];
+	chip_info->device_list_index = i;
+	chip_info->flash_size_log2 = buf_id[2];
+
+	if (MANUFACTURE_ID_MACRONIX == buf_id[0]) {
+		err = qspi_flash_get_size_macronix(hqfdi);
+
+		if (err != TEGRABL_NO_ERROR) {
+			return err;
+		}
+	}
 
 	/* Treat < 16MBytes density as an error */
-	if (hqspi_flash->flash_size_log2 < FLASH_SIZE_16MB_LOG2) {
-		pr_error("QSPI Flash: Insufficient flash size (%d MB)\n",
-			1 << (hqspi_flash->flash_size_log2 -
-					FLASH_SIZE_1MB_LOG2));
+	if (chip_info->flash_size_log2 < FLASH_SIZE_16MB_LOG2) {
+		pr_error("QSPI Flash: Insufficient flash size (%lu MB)\n",
+				 1UL << (chip_info->flash_size_log2 - FLASH_SIZE_1MB_LOG2));
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID,
 					AUX_INFO_INVALID_PARAMS7);
-	} else if (hqspi_flash->flash_size_log2 >= 0x20) {
+	} else if (chip_info->flash_size_log2 >= 0x20UL) {
 		/* Adjust for devices with bloated flash densities */
-		hqspi_flash->flash_size_log2 -= 6;
+		chip_info->flash_size_log2 -= 6UL;
 	}
 
-	pr_debug("Memory Interface Type = %x\n", buf_id[1]);
-	pr_info("QSPI Flash Size = %d MB\n",
-		1 << (hqspi_flash->flash_size_log2 - FLASH_SIZE_1MB_LOG2));
+	pr_trace("Memory Interface Type = %x\n", buf_id[1]);
+	pr_info("QSPI Flash Size = %lu MB\n", 1UL << (chip_info->flash_size_log2 - FLASH_SIZE_1MB_LOG2));
+
+	device_flag = device_info_list[chip_info->device_list_index].flag;
 
 	/* Sector Size */
-	hqspi_flash->sector_size_log2 = device_info_list[i].sector_size;
-	hqspi_flash->sector_count = 1 << (hqspi_flash->flash_size_log2 -
-						hqspi_flash->sector_size_log2);
+	chip_info->sector_size_log2 = device_info_list[i].sector_size;
+	chip_info->sector_count = 1UL << (chip_info->flash_size_log2 -
+						chip_info->sector_size_log2);
 	/* Subsector (parameter sector) size         */
 	/* On some Spansion devices, there're        */
 	/* 8x4K parameter sectors on top or bottom   */
 	/* It's different with "subsector" on Micron */
 	/* We ignore "subsector" now                 */
-	hqspi_flash->parameter_sector_size_log2 =
+	chip_info->parameter_sector_size_log2 =
 				device_info_list[i].parameter_sector_size;
-	hqspi_flash->parameter_sector_count =
+	chip_info->parameter_sector_count =
 				device_info_list[i].parameter_sector_cnt;
 
 	/* if size is > 16 MB (2 ^ 24), we need to address with 4 bytes */
-	if (hqspi_flash->flash_size_log2 > 24) {
-		hqspi_flash->address_length = 4;
+	if (chip_info->flash_size_log2 > 24UL) {
+		chip_info->address_length = 4;
 	} else {
-		hqspi_flash->address_length = 3;
+		chip_info->address_length = 3;
 	}
 
-#else
-	/* Default to Spansion 64MBytes */
-	hqspi_flash->device_list_index = 1;
-	/* 2 ^ 26 = 64 MB */
-	hqspi_flash->flash_size_log2 = 26;
-
-	/* 2 ^ 18 = 256 KB */
-	hqspi_flash->sector_size_log2 = 18;
-	hqspi_flash->sector_count = 1 << (hqspi_flash->flash_size_log2 -
-								hqspi_flash->sector_size_log2);
-
-	/* 2 ^ 14 = 16 KB */
-	hqspi_flash->parameter_sector_size_log2 = 14;
-	hqspi_flash->parameter_sector_count = 8;
-
-	hqspi_flash->address_length = 4;
-#endif /* CONFIG_ENABLE_QSPI_FLASH_READ_ID */
-
-	device_flag = device_info_list[hqspi_flash->device_list_index].flag;
-
-	hqspi_flash->qddr_read = 0;
-#if defined(CONFIG_ENABLE_QSPI_QDDR_READ)
-	if (device_flag & FLAG_DDR)
-		hqspi_flash->qddr_read = 1;
-#endif
+	if ((device_flag & (uint8_t) FLAG_DDR) != 0U) {
+		chip_info->qddr_read = hqfdi->plat_params.enable_ddr_read;
+	} else {
+		chip_info->qddr_read = false;
+	}
 
 	/* 2 ^ 9 = 512 Bytes */
-	hqspi_flash->block_size_log2 = 9;
+	chip_info->block_size_log2 = 9;
 
-	hqspi_flash->block_count = 1 << (hqspi_flash->flash_size_log2 -
-					hqspi_flash->block_size_log2);
+	chip_info->block_count = 1UL << (chip_info->flash_size_log2 -
+					chip_info->block_size_log2);
 
-	hqspi_flash->page_write_size = 256;
-	hqspi_flash->qpi_bus_width = QSPI_BUS_WIDTH_X1;
 
-	if (device_flag & FLAG_PAGE512) {
-		/* Do not error out if we fail to enable 512B page */
-		/* programming buffer. Rest of the functionality still works. */
-		pr_debug("%s : Request to set page size to 512B.\n", __func__);
+	chip_info->page_write_size = 256;
+	chip_info->qpi_bus_width = QSPI_BUS_WIDTH_X1;
 
-		err = qspi_read_reg(QSPI_FLASH_REG_CR3V, &reg_val);
-		if (err != TEGRABL_NO_ERROR) {
-			pr_debug("%s: read CR3V cmd fail (err:0x%x)\n",
-					__func__, err);
-			return TEGRABL_NO_ERROR;
-		}
-
-		reg_val |= QSPI_FLASH_PAGE512_ENABLE;
-		err = qspi_write_reg(QSPI_FLASH_REG_CR3V, &reg_val);
-		if (err != TEGRABL_NO_ERROR) {
-			pr_debug("%s: write CR3V cmd fail (err:0x%x)\n",
-					__func__, err);
-			return TEGRABL_NO_ERROR;
-		}
-
-		err = qspi_writein_progress(QSPI_FLASH_WIP_WAIT_FOR_READY,
-						QSPI_FLASH_WIP_WAIT_IN_US);
-
-		if (err == TEGRABL_NO_ERROR) {
-			err = qspi_read_reg(QSPI_FLASH_REG_CR3V, &reg_val);
-			if (err != TEGRABL_NO_ERROR) {
-				pr_debug("%s: read CR3V cmd fail (err:0x%x)\n",
-						__func__, err);
-				return TEGRABL_NO_ERROR;
-			}
-
-			if (reg_val & QSPI_FLASH_PAGE512_ENABLE) {
-				hqspi_flash->page_write_size = 512;
-				pr_info("QSPI Flash: Set 512B page size\n");
-			}
-		}
+	if (((device_flag & (uint8_t) FLAG_PAGE512) != 0U) && (MANUFACTURE_ID_SPANSION == buf_id[0])) {
+		/* 512 bytes page is only supported by spansion */
+		err = qspi_flash_page_512bytes_enable_spansion(hqfdi);
 	}
 
 	return err;
 }
 
-tegrabl_error_t tegrabl_qspi_flash_reinit(
-					struct tegrabl_mb1bct_qspi_params *params)
+tegrabl_error_t tegrabl_qspi_flash_reinit(uint32_t instance,
+					struct tegrabl_qspi_flash_platform_params *params)
 {
 	static bool is_reinit_done;
+	uint8_t device_flag;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	struct tegrabl_qspi_platform_params qparams;
+	struct tegrabl_qspi_device_property qdevice;
+	struct tegrabl_qspi_handle *hqspi = NULL;
+	struct tegrabl_qspi_flash_chip_info *chip_info;
 
-	if (!params) {
+	if (params == NULL) {
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_INVALID_PARAMS1);
 	}
 
@@ -345,197 +368,237 @@ tegrabl_error_t tegrabl_qspi_flash_reinit(
 		return TEGRABL_NO_ERROR;
 	}
 
-	/* initialize new params */
-	qspi_params = params;
+	hqspi = qspi_flash_driver_info[instance]->hqspi;
+	qspi_flash_driver_info[instance]->hqspi =  NULL;
 
-	err = tegrabl_qspi_reinit(params);
+	err = tegrabl_qspi_close(hqspi);
+	if (err != TEGRABL_NO_ERROR) {
+		return err;
+	}
+
+	/* initialize new params */
+	memcpy(&qspi_flash_driver_info[instance]->plat_params, params, sizeof(*params));
+	qspi_init_platform_params(&qspi_flash_driver_info[instance]->plat_params, &qparams);
+	qspi_init_device(&qspi_flash_driver_info[instance]->plat_params, &qdevice);
+
+	err = tegrabl_qspi_open(instance, &qdevice, &qparams, &hqspi);
 	if (err != TEGRABL_NO_ERROR) {
 		return err;
 	}
 
 	is_reinit_done = true;
+	qspi_flash_driver_info[instance]->hqspi = hqspi;
+	chip_info = &qspi_flash_driver_info[instance]->chip_info;
+	device_flag = device_info_list[chip_info->device_list_index].flag;
+
+	if ((device_flag & (uint8_t) FLAG_DDR) != 0U) {
+		chip_info->qddr_read = params->enable_ddr_read;
+	} else {
+		chip_info->qddr_read = false;
+	}
 
 	/* re-init with mb1bct dev-params */
 	pr_info("Qspi reinitialized\n");
 	return err;
 }
 
-static tegrabl_error_t qspi_read_reg(
+tegrabl_error_t qspi_read_reg(
+		struct tegrabl_qspi_flash_driver_info *hqfdi,
 		uint32_t reg_access_cmd,
 		uint8_t *p_reg_val)
 {
+	struct tegrabl_qspi_flash_chip_info *chip_info = &hqfdi->chip_info;
 	struct tegrabl_qspi_transfer transfers[3];
 	uint8_t cmd_addr_buf[8];
 	uint8_t command;
-	bool is_ext_reg_access_cmd = (reg_access_cmd & 0xFFFF00) ? 1 : 0;
+	bool is_ext_reg_access_cmd;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
+	is_ext_reg_access_cmd = ((reg_access_cmd & (uint32_t) 0xFFFF00) == 0U) ?
+					false : true;
+
 	memset(transfers, 0, sizeof(transfers));
-	cmd_addr_buf[0] = (reg_access_cmd >> 16) & 0xFF;
-	cmd_addr_buf[1] = (reg_access_cmd >> 8) & 0xFF;
-	cmd_addr_buf[2] = reg_access_cmd & 0xFF;
+	cmd_addr_buf[0] = (uint8_t) ((reg_access_cmd >> 16) & (uint32_t) 0xFF);
+	cmd_addr_buf[1] = (uint8_t) ((reg_access_cmd >> 8) & (uint32_t) 0xFF);
+	cmd_addr_buf[2] = (uint8_t) reg_access_cmd;
 	command = QSPI_FLASH_CMD_RDAR;
 
-	if (is_ext_reg_access_cmd == true) {
+	if (is_ext_reg_access_cmd) {
 		transfers[0].mode = QSPI_FLASH_CMD_MODE_VAL;
-		transfers[0].bus_width = hqspi_flash->qpi_bus_width;
+		transfers[0].bus_width = chip_info->qpi_bus_width;
 		transfers[0].dummy_cycles = ZERO_CYCLES;
 		transfers[0].op_mode = SDR_MODE;
 		transfers[0].tx_buf = &command;
 		transfers[0].write_len = QSPI_FLASH_COMMAND_WIDTH;
+	} else {
+		command = (uint8_t) reg_access_cmd;
 	}
 
-	if (is_ext_reg_access_cmd == true) {
+	if (is_ext_reg_access_cmd) {
 		transfers[1].tx_buf = cmd_addr_buf;
 		transfers[1].dummy_cycles = 0;
 		/* Extra dummy cycles needed in QPI mode */
-		if (hqspi_flash->qpi_bus_width == QSPI_BUS_WIDTH_X4)
+		if (chip_info->qpi_bus_width == QSPI_BUS_WIDTH_X4) {
 			transfers[1].write_len = 3 + 4;
-		else
+		} else {
 			transfers[1].write_len = 3 + 1;
+		}
 	} else {
-		transfers[1].tx_buf = &cmd_addr_buf[2];
+		transfers[1].tx_buf = &command;
 		transfers[1].write_len = QSPI_FLASH_COMMAND_WIDTH;
 		transfers[1].dummy_cycles = ZERO_CYCLES;
 	}
 	transfers[1].mode = QSPI_FLASH_CMD_MODE_VAL;
-	transfers[1].bus_width = hqspi_flash->qpi_bus_width;
+	transfers[1].bus_width = chip_info->qpi_bus_width;
 	transfers[1].op_mode = SDR_MODE;
 
 	transfers[2].rx_buf = p_reg_val;
 	transfers[2].read_len = QSPI_FLASH_COMMAND_WIDTH;
 	transfers[2].mode = QSPI_FLASH_CMD_MODE_VAL;
-	transfers[2].bus_width = hqspi_flash->qpi_bus_width;
-	transfers[2].op_mode = SDR_MODE;
-
-	if (is_ext_reg_access_cmd == true) {
-		/* Extended command */
-		err = tegrabl_qspi_transaction(transfers, 3);
-	} else {
-		/* 1-byte command */
-		err = tegrabl_qspi_transaction(&transfers[1], 2);
-	}
-
-	if (err != TEGRABL_NO_ERROR) {
-		pr_debug("%s: register (0x%x) read fail (err:0x%x)\n",
-				 __func__, reg_access_cmd, err);
-	}
-	return err;
-}
-
-static tegrabl_error_t qspi_write_reg(
-		uint32_t reg_access_cmd,
-		uint8_t *p_reg_val)
-{
-	struct tegrabl_qspi_transfer transfers[3];
-	uint8_t cmd_addr_buf[3];
-	uint8_t command;
-	bool is_ext_reg_access_cmd = (reg_access_cmd & 0xFFFF00) ? 1 : 0;
-	tegrabl_error_t err = TEGRABL_NO_ERROR;
-
-	err = qspi_write_en(1);
-	if (err != TEGRABL_NO_ERROR) {
-		pr_debug("%s: fail to enable write (err:0x%x)\n",
-				 __func__, err);
-		return err;
-	}
-
-	memset(transfers, 0, sizeof(transfers));
-	cmd_addr_buf[0] = (reg_access_cmd >> 16) & 0xFF;
-	cmd_addr_buf[1] = (reg_access_cmd >> 8) & 0xFF;
-	cmd_addr_buf[2] = reg_access_cmd & 0xFF;
-	command = QSPI_FLASH_CMD_WRAR;
-
-	if (is_ext_reg_access_cmd == true) {
-		transfers[0].mode = QSPI_FLASH_CMD_MODE_VAL;
-		transfers[0].bus_width = hqspi_flash->qpi_bus_width;
-		transfers[0].dummy_cycles = ZERO_CYCLES;
-		transfers[0].op_mode = SDR_MODE;
-		transfers[0].tx_buf = &command;
-		transfers[0].write_len = QSPI_FLASH_COMMAND_WIDTH;
-	}
-
-	if (is_ext_reg_access_cmd == true) {
-		transfers[1].tx_buf = cmd_addr_buf;
-		transfers[1].write_len = 3;
-	} else {
-		transfers[1].tx_buf = &cmd_addr_buf[2];
-		transfers[1].write_len = QSPI_FLASH_COMMAND_WIDTH;
-	}
-	transfers[1].mode = QSPI_FLASH_CMD_MODE_VAL;
-	transfers[1].bus_width = hqspi_flash->qpi_bus_width;
-	transfers[1].dummy_cycles = ZERO_CYCLES;
-	transfers[1].op_mode = SDR_MODE;
-
-	transfers[2].tx_buf = p_reg_val;
-	transfers[2].write_len = QSPI_FLASH_COMMAND_WIDTH;
-	transfers[2].mode = QSPI_FLASH_CMD_MODE_VAL;
-	transfers[2].bus_width = hqspi_flash->qpi_bus_width;
+	transfers[2].bus_width = chip_info->qpi_bus_width;
 	transfers[2].dummy_cycles = ZERO_CYCLES;
 	transfers[2].op_mode = SDR_MODE;
 
-	if (is_ext_reg_access_cmd == true) {
+	if (is_ext_reg_access_cmd) {
 		/* Extended command */
-		err = tegrabl_qspi_transaction(transfers, 3);
+		err = tegrabl_qspi_transaction(hqfdi->hqspi, transfers, 3,
+									   QSPI_XFER_TIMEOUT);
 	} else {
 		/* 1-byte command */
-		err = tegrabl_qspi_transaction(&transfers[1], 2);
+		err = tegrabl_qspi_transaction(hqfdi->hqspi, &transfers[1], 2,
+									   QSPI_XFER_TIMEOUT);
 	}
 
 	if (err != TEGRABL_NO_ERROR) {
-		pr_debug("%s: register (0x%x) read fail (err:0x%x)\n",
-				 __func__, reg_access_cmd, err);
+		pr_error("Qspi read: register (0x%x) read fail (err:0x%x)\n",
+				 reg_access_cmd, err);
 	}
 	return err;
 }
 
-static tegrabl_error_t qspi_writein_progress(uint8_t benable, uint8_t is_mdelay)
+tegrabl_error_t qspi_write_reg(
+		struct tegrabl_qspi_flash_driver_info *hqfdi,
+		uint32_t reg_access_cmd,
+		uint8_t *p_reg_val)
+{
+	struct tegrabl_qspi_flash_chip_info *chip_info = &hqfdi->chip_info;
+	struct tegrabl_qspi_transfer transfers[3];
+	uint8_t cmd_addr_buf[3];
+	uint8_t command;
+	bool is_ext_reg_access_cmd;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+
+	is_ext_reg_access_cmd = ((reg_access_cmd & (uint32_t) 0xFFFF00) == 0U) ?
+					false : true;
+
+	memset(transfers, 0, sizeof(transfers));
+
+	err = qspi_write_en(hqfdi, true);
+	if (err == TEGRABL_NO_ERROR) {
+		memset(transfers, 0, sizeof(transfers));
+		cmd_addr_buf[0] = (uint8_t) ((reg_access_cmd >> 16) & (uint32_t) 0xFF);
+		cmd_addr_buf[1] = (uint8_t) ((reg_access_cmd >> 8) & (uint32_t) 0xFF);
+		cmd_addr_buf[2] = (uint8_t) reg_access_cmd;
+		command = QSPI_FLASH_CMD_WRAR;
+
+		if (is_ext_reg_access_cmd) {
+			transfers[0].mode = QSPI_FLASH_CMD_MODE_VAL;
+			transfers[0].bus_width = chip_info->qpi_bus_width;
+			transfers[0].dummy_cycles = ZERO_CYCLES;
+			transfers[0].op_mode = SDR_MODE;
+			transfers[0].tx_buf = &command;
+			transfers[0].write_len = QSPI_FLASH_COMMAND_WIDTH;
+		} else {
+			command = (uint8_t) reg_access_cmd;
+		}
+
+		if (is_ext_reg_access_cmd) {
+			transfers[1].tx_buf = cmd_addr_buf;
+			transfers[1].write_len = 3;
+		} else {
+			transfers[1].tx_buf = &command;
+			transfers[1].write_len = QSPI_FLASH_COMMAND_WIDTH;
+		}
+		transfers[1].mode = QSPI_FLASH_CMD_MODE_VAL;
+		transfers[1].bus_width = chip_info->qpi_bus_width;
+		transfers[1].dummy_cycles = ZERO_CYCLES;
+		transfers[1].op_mode = SDR_MODE;
+
+		transfers[2].tx_buf = p_reg_val;
+		transfers[2].write_len = QSPI_FLASH_COMMAND_WIDTH;
+		transfers[2].mode = QSPI_FLASH_CMD_MODE_VAL;
+		transfers[2].bus_width = chip_info->qpi_bus_width;
+		transfers[2].dummy_cycles = ZERO_CYCLES;
+		transfers[2].op_mode = SDR_MODE;
+
+		if (is_ext_reg_access_cmd) {
+			/* Extended command */
+			err = tegrabl_qspi_transaction(hqfdi->hqspi, transfers, 3,
+										   QSPI_XFER_TIMEOUT);
+		} else {
+			/* 1-byte command */
+			err = tegrabl_qspi_transaction(hqfdi->hqspi, &transfers[1], 2,
+										   QSPI_XFER_TIMEOUT);
+		}
+	} else {
+		pr_error("Qspi write: register (0x%x) write fail (err:0x%x)\n",
+				 reg_access_cmd, err);
+	}
+
+	return err;
+}
+
+tegrabl_error_t qspi_writein_progress(struct tegrabl_qspi_flash_driver_info *hqfdi, bool benable,
+										bool is_mdelay)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
-	uint32_t tried = 0;
+	uint16_t tried = 0;
 	uint8_t reg_val;
-	uint32_t comp;
+	uint8_t comp;
 
-	pr_debug("%s: waiting for WIP %s ...\n",
-			 __func__, benable ? "Enable" : "Disable");
+	pr_trace("Waiting for WIP %s ...\n", benable ? "Enable" : "Disable");
 
 	do {
-		if (tried++ == QSPI_FLASH_WIP_RETRY_COUNT) {
-			pr_debug("%s :timeout for WIP %s\n",
-					 __func__, benable ? "Enable" : "Disable");
-			return TEGRABL_ERROR(TEGRABL_ERR_TIMEOUT, AUX_INFO_WIP_TIMEOUT);
+		if (tried == (uint16_t) QSPI_FLASH_WIP_RETRY_COUNT) {
+			pr_trace("Timeout for WIP %s\n", benable ? "Enable" : "Disable");
+			err = TEGRABL_ERROR(TEGRABL_ERR_TIMEOUT, AUX_INFO_WIP_TIMEOUT);
+			break;
 		}
 
-		if (benable)
-			comp = QSPI_FLASH_WIP_ENABLE;
-		else
-			comp = QSPI_FLASH_WIP_DISABLE;
+		if (benable) {
+			comp = (uint8_t) QSPI_FLASH_WIP_ENABLE;
+		} else {
+			comp = (uint8_t) QSPI_FLASH_WIP_DISABLE;
+		}
 
-		err = qspi_read_reg(QSPI_FLASH_CMD_RDSR1, &reg_val);
+		err = qspi_read_reg(hqfdi, QSPI_FLASH_CMD_RDSR1, &reg_val);
 		if (err != TEGRABL_NO_ERROR) {
-			pr_debug("%s: read RDSR1 cmd fail (err:0x%x)\n",
-					 __func__, err);
-			return err;
+			pr_error("Read RDSR1 cmd fail (err:0x%x)\n", err);
+			break;
 		}
 
-		if (is_mdelay == QSPI_FLASH_WIP_WAIT_IN_MS) {
+		if (is_mdelay) {
 			tegrabl_mdelay(QSPI_FLASH_WIP_DISABLE_WAIT_TIME);
 		} else {
 			tegrabl_udelay(QSPI_FLASH_WIP_DISABLE_WAIT_TIME);
 		}
 
-		pr_debug("%s: try::%u regval:(0x%x)\n",
-				 __func__, tried, reg_val);
+		pr_trace("Try::%u regval:(0x%x)\n", tried, reg_val);
 
-	} while ((reg_val & QSPI_FLASH_WIP_FIELD) != comp);
+		tried++;
+	} while ((reg_val & (uint8_t) QSPI_FLASH_WIP_FIELD) != comp);
 
-	pr_debug("%s: WIP %s is done\n", __func__, benable ? "enable" : "disable");
+	if (err == TEGRABL_NO_ERROR) {
+		pr_trace("WIP %s is done\n", benable ? "enable" : "disable");
+	}
 
 	return err;
 }
 
-static tegrabl_error_t qspi_write_en(uint8_t benable)
+tegrabl_error_t qspi_write_en(
+					struct tegrabl_qspi_flash_driver_info *hqfdi, bool benable)
 {
+	struct tegrabl_qspi_flash_chip_info *chip_info = &hqfdi->chip_info;
 	struct tegrabl_qspi_transfer transfers;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	uint32_t tried = 0;
@@ -543,16 +606,17 @@ static tegrabl_error_t qspi_write_en(uint8_t benable)
 	uint8_t reg_val;
 	uint32_t comp;
 
-	pr_debug("%s: doing WEN %s\n", __func__, benable ? "enable" : "disable");
+	pr_trace("Doing WEN %s\n", benable ? "enable" : "disable");
 
+	memset(&transfers, 0, sizeof(transfers));
 	do {
-		if (tried++ == QSPI_FLASH_WE_RETRY_COUNT) {
-			pr_debug("%s: timeout for WEN %s\n",
-					 __func__, benable ? "enable" : "disable");
+		if (tried == QSPI_FLASH_WE_RETRY_COUNT) {
+			pr_error("QSPI-WriteEN: timeout for WEN %s\n",
+					 benable ? "enable" : "disable");
 			return TEGRABL_ERROR(TEGRABL_ERR_TIMEOUT, AUX_INFO_WEN_TIMEOUT);
 		}
 
-		if (benable != 0U) {
+		if (benable) {
 			command = QSPI_FLASH_CMD_WREN;
 			comp = QSPI_FLASH_WEL_ENABLE;
 		} else {
@@ -565,259 +629,116 @@ static tegrabl_error_t qspi_write_en(uint8_t benable)
 		transfers.write_len = QSPI_FLASH_COMMAND_WIDTH;
 		transfers.read_len = 0;
 		transfers.mode = QSPI_FLASH_CMD_MODE_VAL;
-		transfers.bus_width = hqspi_flash->qpi_bus_width;
+		transfers.bus_width = chip_info->qpi_bus_width;
 		transfers.dummy_cycles = ZERO_CYCLES;
 		transfers.op_mode = SDR_MODE;
 
-		err = tegrabl_qspi_transaction(&transfers, 1);
+		err = tegrabl_qspi_transaction(hqfdi->hqspi, &transfers, 1,
+									   QSPI_XFER_TIMEOUT);
 		if (err != TEGRABL_NO_ERROR) {
-			pr_debug("%s: WEN %s fail (err:0x%x)\n",
-					 __func__, benable ? "enable" : "disable", err);
+			pr_error("QSPI-WriteEN: WEN %s fail (err:0x%x)\n",
+					 benable ? "enable" : "disable", err);
 			return err;
 		}
 
 		tegrabl_udelay(QSPI_FLASH_WRITE_ENABLE_WAIT_TIME);
-		err = qspi_read_reg(QSPI_FLASH_CMD_RDSR1, &reg_val);
+		err = qspi_read_reg(hqfdi, QSPI_FLASH_CMD_RDSR1, &reg_val);
 		if (err != TEGRABL_NO_ERROR) {
-			pr_debug("%s: read RDSR1 cmd fail (err:0x%x)\n",
-					 __func__, err);
+			pr_error("QSPI-WriteEN: read RDSR1 cmd fail (err:0x%x)\n", err);
 			return err;
 		}
 
+		tried++;
 	} while ((reg_val & QSPI_FLASH_WEL_ENABLE) != comp);
 
-	pr_debug("%s: WEN %s is done\n", __func__, benable ? "enable" : "disable");
+	pr_trace("WEN %s is done\n", benable ? "enable" : "disable");
 
 	return TEGRABL_NO_ERROR;
 }
 
-static tegrabl_error_t qspi_quad_flag_set(uint8_t bset)
+static tegrabl_error_t qspi_quad_flag_set(
+				struct tegrabl_qspi_flash_driver_info *hqfdi, uint8_t bset)
 {
-	struct tegrabl_qspi_transfer transfers[3];
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
-	uint32_t tried = 0;
-	static uint32_t bquadset;
-	uint8_t command;
-	uint8_t reg_val;
-	uint8_t cmd_addr_buf[3];
-	uint8_t input_cfg;
-	uint8_t device_list_index = hqspi_flash->device_list_index;
 
-	if ((qspi_params->width != QSPI_BUS_WIDTH_X4) ||
-		(device_info_list[device_list_index].manufacture_id ==
-						MANUFACTURE_ID_MICRON)) {
+	if (hqfdi->plat_params.max_bus_width != QSPI_BUS_WIDTH_X4) {
 		return TEGRABL_NO_ERROR;
 	}
 
-	if ((bquadset && bset) || (!bquadset && !bset)) {
-		pr_debug("%s: QUAD flag is already %s\n",
-				 __func__, bset ? "set" : "clear");
-		return TEGRABL_NO_ERROR;
+	struct tegrabl_qspi_flash_chip_info *chip_info = &hqfdi->chip_info;
+	uint32_t device_list_index = chip_info->device_list_index;
+	switch (device_info_list[device_list_index].manufacture_id) {
+	case MANUFACTURE_ID_MICRON:
+	case MANUFACTURE_ID_MACRONIX:
+		break;
+	case MANUFACTURE_ID_SPANSION:
+	case MANUFACTURE_ID_DEFAULT:
+	default:
+		pr_trace("%s: %s QUAD flag\n", __func__, bset ? "setting" : "clearing");
+
+		err = qspi_flash_x4_enable_spansion(hqfdi, bset,
+							(MANUFACTURE_ID_SPANSION == device_info_list[device_list_index].manufacture_id));
 	}
 
-	pr_debug("%s: %s QUAD flag\n",
-			 __func__, bset ? "setting" : "clearing");
-
-	/* Check if QUAD bit is programmed in the H/w already.
-	   This will happen when we are calling this function first time
-	   and BR has already programmed the bit.
-	   From next call, since bquadset is updated, we won't reach here */
-	err = qspi_read_reg(QSPI_FLASH_CMD_RDCR, &reg_val);
-	if (err != TEGRABL_NO_ERROR) {
-		pr_debug("%s: read RDCR cmd fail (err:0x%x)\n", __func__, err);
-		return err;
-	}
-	if (bset != 0U)
-		input_cfg = QSPI_FLASH_QUAD_ENABLE;
-	else
-		input_cfg = QSPI_FLASH_QUAD_DISABLE;
-
-	if ((reg_val & QSPI_FLASH_QUAD_ENABLE) == input_cfg) {
-		bquadset = bset;
-		return TEGRABL_NO_ERROR;
-	}
-
-	do {
-		if (tried++ == QSPI_FLASH_WRITE_ENABLE_WAIT_TIME) {
-			pr_debug("%s: timeout for changing QUAD bit\n",
-					 __func__);
-			return TEGRABL_ERROR(TEGRABL_ERR_TIMEOUT, AUX_INFO_FLAG_TIMEOUT);
-		}
-
-		memset(transfers, 0, sizeof(transfers));
-
-		err = qspi_read_reg(QSPI_FLASH_CMD_RDSR1, &reg_val);
-		if (err != TEGRABL_NO_ERROR) {
-			pr_debug("%s: read RDSR1 cmd fail (err:0x%x)\n",
-					 __func__, err);
-			return err;
-		}
-
-		err = qspi_write_en(1);
-		if (err != TEGRABL_NO_ERROR) {
-			return err;
-		}
-
-		command = QSPI_FLASH_CMD_WRAR;
-		transfers[0].tx_buf = &command;
-		transfers[0].rx_buf = NULL;
-		transfers[0].write_len = QSPI_FLASH_COMMAND_WIDTH;
-		transfers[0].read_len = 0;
-		transfers[0].mode = QSPI_FLASH_CMD_MODE_VAL;
-		transfers[0].bus_width = QSPI_BUS_WIDTH_X1;
-		transfers[0].dummy_cycles = ZERO_CYCLES;
-		transfers[0].op_mode = SDR_MODE;
-
-
-		cmd_addr_buf[0] = (QSPI_FLASH_REG_CR1V >> 16) & 0xFF;
-		cmd_addr_buf[1] = (QSPI_FLASH_REG_CR1V >> 8) & 0xFF;
-		cmd_addr_buf[2] = QSPI_FLASH_REG_CR1V & 0xFF;
-
-		transfers[1].tx_buf = &cmd_addr_buf[0];
-		transfers[1].rx_buf = NULL;
-		transfers[1].write_len = 3;
-		transfers[1].read_len = 0;
-		transfers[1].mode = QSPI_FLASH_CMD_MODE_VAL;
-		transfers[1].bus_width = QSPI_BUS_WIDTH_X1;
-		transfers[1].dummy_cycles = ZERO_CYCLES;
-		transfers[1].op_mode = SDR_MODE;
-
-		transfers[2].tx_buf = &input_cfg;
-		transfers[2].rx_buf = NULL;
-		transfers[2].write_len = QSPI_FLASH_COMMAND_WIDTH;
-		transfers[2].read_len = 0;
-		transfers[2].mode = QSPI_FLASH_CMD_MODE_VAL;
-		transfers[2].bus_width = QSPI_BUS_WIDTH_X1;
-		transfers[2].dummy_cycles = ZERO_CYCLES;
-		transfers[2].op_mode = SDR_MODE;
-
-		err = tegrabl_qspi_transaction(transfers, 3);
-		if (err != TEGRABL_NO_ERROR) {
-			pr_debug("%s: opcode WRAR fail (err:0x%x)\n",
-					 __func__, err);
-			return err;
-		}
-
-		pr_debug("%s: waiting for WIP to clear\n",
-				 __func__);
-		do {
-			err = qspi_read_reg(QSPI_FLASH_CMD_RDSR1, &reg_val);
-			if (err != TEGRABL_NO_ERROR) {
-				pr_debug("%s: read RDSR1 cmd fail (err:0x%x)\n",
-						 __func__, err);
-				return err;
-			}
-		} while ((reg_val & QSPI_FLASH_WIP_ENABLE) == QSPI_FLASH_WIP_ENABLE);
-		pr_debug("%s: WIP is cleared now\n", __func__);
-
-		err = qspi_read_reg(QSPI_FLASH_CMD_RDCR, &reg_val);
-		if (err != TEGRABL_NO_ERROR) {
-			pr_debug("%s: read RDCR cmd fail (err:0x%x)\n", __func__, err);
-			return err;
-		}
-	} while ((reg_val & QSPI_FLASH_QUAD_ENABLE) != input_cfg);
-
-	bquadset = bset;
-
-	err = qspi_write_en(0);
-	if (err != TEGRABL_NO_ERROR) {
-		return err;
-	}
-
-	return TEGRABL_NO_ERROR;
+	return err;
 }
 
 #if !defined(CONFIG_ENABLE_BLOCKDEV_BASIC)
-static tegrabl_error_t qspi_qpi_flag_set(uint8_t bset)
+
+static tegrabl_error_t qspi_qpi_flag_set(struct tegrabl_qspi_flash_driver_info *hqfdi, bool bset)
 {
+	struct tegrabl_qspi_flash_chip_info *chip_info = &hqfdi->chip_info;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
-	static uint32_t bqpiset;
-	uint32_t read_cfg_cmd;
-	uint32_t write_cfg_cmd;
-	uint8_t reg_val;
-	uint8_t input_cfg = 0;
-	uint8_t qpi_bit_log2 = 0;
-	uint8_t device_list_index = hqspi_flash->device_list_index;
+	static bool bqpiset;
+	uint32_t device_list_index = chip_info->device_list_index;
+
 	uint8_t device_flag = device_info_list[device_list_index].flag;
 
-	if ((qspi_params->width != QSPI_BUS_WIDTH_X4) ||
-					((device_flag & FLAG_QPI) == 0U)) {
-		hqspi_flash->qpi_bus_width = QSPI_BUS_WIDTH_X1;
+	if ((hqfdi->plat_params.max_bus_width != QSPI_BUS_WIDTH_X4) ||
+				((device_flag & (uint8_t) FLAG_QPI) == 0U)) {
+		chip_info->qpi_bus_width = (uint32_t) QSPI_BUS_WIDTH_X1;
 		return TEGRABL_NO_ERROR;
 	}
 
-	if (((bqpiset != 0U) && (bset != 0U)) ||
-		((bqpiset == 0U) && (bset == 0U))) {
-		pr_debug("%s: QPI flag is already %s\n",
-				__func__, bset ? "set" : "clear");
+	if (bqpiset == bset) {
+		pr_trace("QPI flag is already %s\n", bset ? "set" : "clear");
 		goto exit;
 	}
 
-	pr_debug("%s: %s QPI flag\n",
-				__func__, bset ? "setting" : "clearing");
+	pr_trace("%s QPI flag\n", bset ? "setting" : "clearing");
 
 	/* QPI enable register and bit polarity are different */
 	/* for different vendors and their devices */
 	switch (device_info_list[device_list_index].manufacture_id) {
 	case MANUFACTURE_ID_MICRON:
-		read_cfg_cmd = QSPI_FLASH_CMD_RD_EVCR;
-		write_cfg_cmd = QSPI_FLASH_CMD_WR_EVCR;
-		qpi_bit_log2 = QSPI_FLASH_MICRON_QPI_BIT_LOG2;
-		if (bset == false)
-			input_cfg = QSPI_FLASH_EVCR_QPI_DISABLE;
-		else
-			input_cfg = QSPI_FLASH_EVCR_QPI_ENABLE;
+		err = qspi_flash_qpi_mode_enable_micron(hqfdi, bset);
+		break;
+
+	case MANUFACTURE_ID_MACRONIX:
+		err = qspi_flash_qpi_mode_enable_macronix(hqfdi, bset);
 		break;
 
 	case MANUFACTURE_ID_SPANSION:
 	default:
-		read_cfg_cmd = QSPI_FLASH_REG_CR2V;
-		write_cfg_cmd = QSPI_FLASH_REG_CR2V;
-		qpi_bit_log2 = QSPI_FLASH_SPANSION_QPI_BIT_LOG2;
-		if (bset == false)
-			input_cfg = QSPI_FLASH_CR2V_QPI_DISABLE;
-		else
-			input_cfg = QSPI_FLASH_CR2V_QPI_ENABLE;
+		err = qspi_flash_qpi_mode_enable_spansion(hqfdi, bset);
 		break;
 	}
 
-	/* Check if QPI bit is programmed in the H/w already. */
-	err = qspi_read_reg(read_cfg_cmd, &reg_val);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_debug("%s: read QPI cfg reg read cmd fail (err:0x%x)\n",
-				__func__, err);
 		return err;
 	}
 
-	if ((reg_val & (1 << qpi_bit_log2)) == input_cfg) {
-		bqpiset = bset;
-		pr_debug("%s: QPI flag read is already %s\n",
-				__func__, bset ? "set" : "clear");
-		goto exit;
-	}
-
-	reg_val &= ~(1 << qpi_bit_log2);
-	reg_val |= input_cfg;
-
-	err = qspi_write_reg(write_cfg_cmd, &reg_val);
-	if (err != TEGRABL_NO_ERROR) {
-		pr_debug("%s: write QPI cfg write cmd fail (err:0x%x)\n",
-				__func__, err);
-		return err;
-	}
-
-	pr_debug("%s: QPI flag is %s\n",
-				__func__, bset ? "set" : "cleared");
+	pr_trace("QPI flag is %s\n", bset ? "set" : "cleared");
 
 exit:
-	if (bset != 0U)
-		hqspi_flash->qpi_bus_width = QSPI_BUS_WIDTH_X4;
-	else
-		hqspi_flash->qpi_bus_width = QSPI_BUS_WIDTH_X1;
-
+	if (bset) {
+		chip_info->qpi_bus_width = QSPI_BUS_WIDTH_X4;
+	} else {
+		chip_info->qpi_bus_width = QSPI_BUS_WIDTH_X1;
+	}
 	if (bqpiset != bset) {
 		bqpiset = bset;
-		qspi_writein_progress(QSPI_FLASH_WIP_WAIT_FOR_READY,
+		qspi_writein_progress(hqfdi, QSPI_FLASH_WIP_WAIT_FOR_READY,
 					QSPI_FLASH_WIP_WAIT_IN_US);
 	}
 
@@ -825,12 +746,12 @@ exit:
 }
 
 #define block_num_to_sector_num(blk)		\
-		DIV_FLOOR_LOG2((blk << hqspi_flash->block_size_log2), \
-					   hqspi_flash->sector_size_log2)
+		DIV_FLOOR_LOG2(((blk) << chip_info->block_size_log2), \
+					   chip_info->sector_size_log2)
 
 #define block_cnt_to_sector_cnt(cnt)		\
-		DIV_CEIL_LOG2((cnt << hqspi_flash->block_size_log2), \
-					  hqspi_flash->sector_size_log2)
+		DIV_FLOOR_LOG2(((cnt) << chip_info->block_size_log2), \
+					  chip_info->sector_size_log2)
 
 /**
  * @brief Initiate the paramter sector erase command.
@@ -846,10 +767,12 @@ exit:
  */
 static tegrabl_error_t
 tegrabl_qspi_flash_parameter_sector_erase(
+		struct tegrabl_qspi_flash_driver_info *hqfdi,
 		uint32_t start_parameter_sector_num,
 		uint32_t num_of_parameter_sectors,
 		uint8_t is_top)
 {
+	struct tegrabl_qspi_flash_chip_info *chip_info = &hqfdi->chip_info;
 	struct tegrabl_qspi_transfer transfers[3];
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	uint8_t address_data[4];
@@ -857,64 +780,63 @@ tegrabl_qspi_flash_parameter_sector_erase(
 	uint32_t address;
 	uint8_t cmd;
 
-	if (hqspi_flash->address_length == 4)
+	memset(transfers, 0, sizeof(transfers));
+	if (chip_info->address_length == 4UL) {
 		cmd = QSPI_FLASH_CMD_4PARA_SECTOR_ERASE;
-	else
+	} else {
 		cmd = QSPI_FLASH_CMD_PARA_SECTOR_ERASE;
+	}
 
-	if (start_parameter_sector_num > hqspi_flash->parameter_sector_count) {
-		pr_debug("%s: incorrect parameter sector number: %u\n",
-				 __func__, start_parameter_sector_num);
+	if (start_parameter_sector_num > chip_info->parameter_sector_count) {
+		pr_error("Qspi param sector erase: Incorrect sector number: %u\n", start_parameter_sector_num);
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_INVALID_PARAMS2);
 	}
 
-	if ((num_of_parameter_sectors == 0) ||
-		(num_of_parameter_sectors > hqspi_flash->parameter_sector_count)) {
-		pr_debug("%s: incorrect number of sectors: %u\n",
-				 __func__, num_of_parameter_sectors);
+	if ((num_of_parameter_sectors == 0UL) ||
+		(num_of_parameter_sectors > chip_info->parameter_sector_count)) {
+		pr_error("Qspi param sector erase: Incorrect number of sectors: %u\n", num_of_parameter_sectors);
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_INVALID_PARAMS3);
 	}
 
 	if ((start_parameter_sector_num + num_of_parameter_sectors) >
-			hqspi_flash->parameter_sector_count) {
-		pr_debug("%s: exceed total param sector count\n", __func__);
+			chip_info->parameter_sector_count) {
+		pr_error("Qspi param sector erase: Exceed total sector count\n");
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_INVALID_PARAMS4);
 	}
 
 	/*  Make sure flash is in X1 mode */
-	err = qspi_quad_flag_set(0);
+	err = qspi_quad_flag_set(hqfdi, 0);
 	if (err != TEGRABL_NO_ERROR) {
 		return err;
 	}
 
-	if (is_top) {
-		address = ((1 << hqspi_flash->flash_size_log2) -
-			(hqspi_flash->parameter_sector_count <<
-			hqspi_flash->parameter_sector_size_log2));
+	if (is_top != 0U) {
+		address = ((1UL << chip_info->flash_size_log2) -
+			(chip_info->parameter_sector_count <<
+			chip_info->parameter_sector_size_log2));
 	} else {
 		address = start_parameter_sector_num <<
-			 hqspi_flash->parameter_sector_size_log2;
+			 chip_info->parameter_sector_size_log2;
 	}
 
-	while (num_of_sectors_to_erase) {
-		pr_debug("%s: erasing sub sector of addr: 0x%x\n",
-				 __func__, address);
+	while (num_of_sectors_to_erase != 0UL) {
+		pr_trace("Erasing sub sector of addr: 0x%x\n", address);
 		/*  Enable Write */
-		err = qspi_write_en(1);
+		err = qspi_write_en(hqfdi, true);
 		if (err != TEGRABL_NO_ERROR) {
 			return err;
 		}
 
 		/*  address are sent to device with MSB first */
-		if (hqspi_flash->address_length == 4) {
-			address_data[0] = (address >> 24) & 0xFF;
-			address_data[1] = (address >> 16) & 0xFF;
-			address_data[2] = (address >> 8) & 0xFF;
-			address_data[3] = (address) & 0xFF;
+		if (chip_info->address_length == 4U) {
+			address_data[0] = (address >> 24) & 0xFFU;
+			address_data[1] = (address >> 16) & 0xFFU;
+			address_data[2] = (address >> 8) & 0xFFU;
+			address_data[3] = (address) & 0xFFU;
 		} else {
-			address_data[0] = (address >> 16) & 0xFF;
-			address_data[1] = (address >> 8) & 0xFF;
-			address_data[2] = (address) & 0xFF;
+			address_data[0] = (address >> 16) & 0xFFU;
+			address_data[1] = (address >> 8) & 0xFFU;
+			address_data[2] = (address) & 0xFFU;
 		}
 
 		/*  Set command Parameters in First Transfer */
@@ -936,38 +858,40 @@ tegrabl_qspi_flash_parameter_sector_erase(
 
 		transfers[1].tx_buf = address_data;
 		transfers[1].rx_buf = NULL;
-		transfers[1].write_len = hqspi_flash->address_length;
+		transfers[1].write_len = chip_info->address_length;
 		transfers[1].read_len = 0;
 		transfers[1].mode = QSPI_FLASH_ADDR_DATA_MODE_VAL;
 		transfers[1].bus_width = QSPI_BUS_WIDTH_X1;
 		transfers[1].dummy_cycles = ZERO_CYCLES;
 		transfers[1].op_mode = SDR_MODE;
 
-		err = tegrabl_qspi_transaction(&transfers[0], 2);
+		err = tegrabl_qspi_transaction(hqfdi->hqspi, &transfers[0], 2,
+									   QSPI_XFER_TIMEOUT);
 		if (err != TEGRABL_NO_ERROR) {
-			pr_debug("%s:sub sector erase addr 0x%x fail(err:0x%x)\n",
-					 __func__, address, err);
+			pr_error("Qspi param sector erase: Sub sector erase failed(err:0x%x)\n", err);
+			pr_trace("addr = 0x%x\n", address);
 			/*  Disable Write En bit */
-			err = qspi_write_en(0);
+			err = qspi_write_en(hqfdi, false);
 			if (err != TEGRABL_NO_ERROR) {
 				return err;
 			}
 			break;
 		}
-		qspi_writein_progress(QSPI_FLASH_WIP_WAIT_FOR_READY,
+
+		qspi_writein_progress(hqfdi, QSPI_FLASH_WIP_WAIT_FOR_READY,
 					QSPI_FLASH_WIP_WAIT_IN_US);
 
 		/*  Disable Write En bit */
-		err = qspi_write_en(0);
+		err = qspi_write_en(hqfdi, false);
 		if (err != TEGRABL_NO_ERROR) {
 			return err;
 		}
 
-		address += (1 << hqspi_flash->parameter_sector_size_log2);
+		address += (1UL << chip_info->parameter_sector_size_log2);
 		num_of_sectors_to_erase--;
 	}
 	/* Put back in X4 mode */
-	err = qspi_quad_flag_set(1);
+	err = qspi_quad_flag_set(hqfdi, 1);
 	if (err != TEGRABL_NO_ERROR) {
 		return err;
 	}
@@ -986,9 +910,11 @@ tegrabl_qspi_flash_parameter_sector_erase(
  */
 static tegrabl_error_t
 tegrabl_qspi_flash_sector_erase(
+		struct tegrabl_qspi_flash_driver_info *hqfdi,
 		uint32_t start_sector_num,
 		uint32_t num_of_sectors)
 {
+	struct tegrabl_qspi_flash_chip_info *chip_info = &hqfdi->chip_info;
 	struct tegrabl_qspi_transfer transfers[3];
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	uint8_t address_data[4];
@@ -996,44 +922,45 @@ tegrabl_qspi_flash_sector_erase(
 	uint32_t address;
 	uint8_t cmd;
 
-	if (hqspi_flash->address_length == 4)
+	memset(transfers, 0, sizeof(transfers));
+	if (chip_info->address_length == 4U) {
 		cmd = QSPI_FLASH_CMD_4SECTOR_ERASE;
-	else
+	} else {
 		cmd = QSPI_FLASH_CMD_SECTOR_ERASE;
-
-	if (!num_of_sectors) {
+	}
+	if (num_of_sectors == 0UL) {
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_INVALID_PARAMS5);
 	}
 
 	TEGRABL_ASSERT((start_sector_num + num_of_sectors_to_erase) <=
-		hqspi_flash->sector_count);
+		chip_info->sector_count);
 
 	/* Make sure flash is in X1 mode */
-	err = qspi_quad_flag_set(0);
+	err = qspi_quad_flag_set(hqfdi, 0);
 	if (err != TEGRABL_NO_ERROR) {
 		return err;
 	}
 
-	address = start_sector_num << hqspi_flash->sector_size_log2;
-	while (num_of_sectors_to_erase) {
-		pr_debug("erase sector num: %u\n",
+	address = start_sector_num << chip_info->sector_size_log2;
+	while (num_of_sectors_to_erase != 0UL) {
+		pr_trace("Erase sector num: %u\n",
 				 num_of_sectors - num_of_sectors_to_erase + start_sector_num);
 		/* Enable Write */
-		err = qspi_write_en(1);
+		err = qspi_write_en(hqfdi, true);
 		if (err != TEGRABL_NO_ERROR) {
 			return err;
 		}
 
 		/* address are sent to device with MSB first */
-		if (hqspi_flash->address_length == 4) {
-			address_data[0] = (address >> 24) & 0xFF;
-			address_data[1] = (address >> 16) & 0xFF;
-			address_data[2] = (address >> 8) & 0xFF;
-			address_data[3] = (address) & 0xFF;
+		if (chip_info->address_length == 4UL) {
+			address_data[0] = (address >> 24) & 0xFFU;
+			address_data[1] = (address >> 16) & 0xFFU;
+			address_data[2] = (address >> 8) & 0xFFU;
+			address_data[3] = (address) & 0xFFU;
 		} else {
-			address_data[0] = (address >> 16) & 0xFF;
-			address_data[1] = (address >> 8) & 0xFF;
-			address_data[2] = (address) & 0xFF;
+			address_data[0] = (address >> 16) & 0xFFU;
+			address_data[1] = (address >> 8) & 0xFFU;
+			address_data[2] = (address) & 0xFFU;
 		}
 
 		/* Set command Parameters in First Transfer */
@@ -1055,7 +982,7 @@ tegrabl_qspi_flash_sector_erase(
 
 		transfers[1].tx_buf = address_data;
 		transfers[1].rx_buf = NULL;
-		transfers[1].write_len = hqspi_flash->address_length;
+		transfers[1].write_len = chip_info->address_length;
 		transfers[1].read_len = 0;
 		transfers[1].mode = QSPI_FLASH_ADDR_DATA_MODE_VAL;
 		transfers[1].bus_width = QSPI_BUS_WIDTH_X1;
@@ -1063,33 +990,35 @@ tegrabl_qspi_flash_sector_erase(
 		transfers[1].op_mode = SDR_MODE;
 
 
-		err = tegrabl_qspi_transaction(&transfers[0], 2);
+		err = tegrabl_qspi_transaction(hqfdi->hqspi, &transfers[0], 2,
+									   QSPI_XFER_TIMEOUT);
 		if (err != TEGRABL_NO_ERROR) {
-			pr_debug("%s: sector erase fail addr:0x%x (err:0x%x)\n",
-					 __func__, address, err);
+			pr_error("Qspi sector erase: Sector erase failed (err:0x%x)\n", err);
+			pr_trace("addr:0x%x\n", address);
 			/* Disable Write En bit */
-			err = qspi_write_en(0);
+			err = qspi_write_en(hqfdi, false);
 			if (err != TEGRABL_NO_ERROR) {
 				return err;
 			}
 
 			break;
 		}
-		qspi_writein_progress(QSPI_FLASH_WIP_WAIT_FOR_READY,
+
+		qspi_writein_progress(hqfdi, QSPI_FLASH_WIP_WAIT_FOR_READY,
 					QSPI_FLASH_WIP_WAIT_IN_US);
 
 		/* Disable Write En bit */
-		err = qspi_write_en(0);
+		err = qspi_write_en(hqfdi, false);
 		if (err != TEGRABL_NO_ERROR) {
 			return err;
 		}
 
-		address += (1 << hqspi_flash->sector_size_log2);
+		address += (1UL << chip_info->sector_size_log2);
 		num_of_sectors_to_erase--;
 	}
 
 	/* Put back in X4 mode */
-	err = qspi_quad_flag_set(1);
+	err = qspi_quad_flag_set(hqfdi, 1);
 	if (err != TEGRABL_NO_ERROR) {
 		return err;
 	}
@@ -1103,39 +1032,40 @@ tegrabl_qspi_flash_sector_erase(
  * @return TEGRABL_NO_ERROR if successful else appropriate error
  */
 static tegrabl_error_t
-tegrabl_qspi_flash_bulk_erase(void)
+tegrabl_qspi_flash_bulk_erase(struct tegrabl_qspi_flash_driver_info *hqfdi)
 {
 	struct tegrabl_qspi_transfer transfers;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	uint8_t cmd;
 
 	/* Enable Write */
-	err = qspi_write_en(1);
-	if (err != TEGRABL_NO_ERROR)
-		return err;
+	err = qspi_write_en(hqfdi, true);
 
-	memset(&transfers, 0, sizeof(struct tegrabl_qspi_transfer));
+	if (err == TEGRABL_NO_ERROR) {
+		memset(&transfers, 0, sizeof(struct tegrabl_qspi_transfer));
 
-	cmd = QSPI_FLASH_CMD_BULK_ERASE;
-	transfers.tx_buf = &cmd;
-	transfers.write_len = QSPI_FLASH_COMMAND_WIDTH;
-	transfers.mode = QSPI_FLASH_CMD_MODE_VAL;
-	transfers.bus_width = QSPI_BUS_WIDTH_X1;
-	transfers.dummy_cycles = ZERO_CYCLES;
-	transfers.op_mode = SDR_MODE;
+		cmd = QSPI_FLASH_CMD_BULK_ERASE;
+		transfers.tx_buf = &cmd;
+		transfers.write_len = QSPI_FLASH_COMMAND_WIDTH;
+		transfers.mode = QSPI_FLASH_CMD_MODE_VAL;
+		transfers.bus_width = QSPI_BUS_WIDTH_X1;
+		transfers.dummy_cycles = ZERO_CYCLES;
+		transfers.op_mode = SDR_MODE;
 
-	err = tegrabl_qspi_transaction(&transfers, 1);
-	if (err != TEGRABL_NO_ERROR) {
-		pr_debug("%s: bulk erase fail (err:0x%x)\n", __func__, err);
-		return err;
-	}
-
-	/* Wait in mdelays */
-	err = qspi_writein_progress(QSPI_FLASH_WIP_WAIT_FOR_READY,
+		err = tegrabl_qspi_transaction(hqfdi->hqspi, &transfers, 1,
+									   QSPI_XFER_TIMEOUT);
+		if (err == TEGRABL_NO_ERROR) {
+			/* Wait in mdelays */
+			err = qspi_writein_progress(hqfdi,
+					QSPI_FLASH_WIP_WAIT_FOR_READY,
 					QSPI_FLASH_WIP_WAIT_IN_MS);
-	if (err != TEGRABL_NO_ERROR) {
-		pr_info("%s: WIP fail (err:0x%x)\n", __func__, err);
+		}
 	}
+
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("Qspi bulk erase: Bulk erase fail (err:0x%x)\n", err);
+	}
+
 	return err;
 }
 
@@ -1143,56 +1073,60 @@ static tegrabl_error_t qspi_bdev_erase(tegrabl_bdev_t *dev, bnum_t block,
 	bnum_t count, bool is_secure)
 {
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
-	TEGRABL_UNUSED(is_secure);
+	struct tegrabl_qspi_flash_driver_info *hqfdi;
+	struct tegrabl_qspi_flash_chip_info *chip_info;
 	uint32_t sector_num = 0;
 	uint32_t sector_cnt = 0;
 	uint8_t *head_backup = NULL;
 	uint8_t *tail_backup = NULL;
 	bnum_t head_start, head_count;
 	bnum_t tail_start, tail_count;
-	uint8_t device_info_flag =
-			 device_info_list[hqspi_flash->device_list_index].flag;
+	uint8_t device_info_flag;
 
-	if (!dev || !count) {
+	TEGRABL_UNUSED(is_secure);
+
+	if ((dev == NULL) || (count == 0U) || (dev->priv_data == NULL)) {
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_INVALID_PARAMS6);
 	}
 
-	if (block == 0 && count == hqspi_flash->block_count &&
-						device_info_flag & FLAG_BULK) {
+	hqfdi = dev->priv_data;
+	chip_info = &hqfdi->chip_info;
+	device_info_flag = device_info_list[chip_info->device_list_index].flag;
+
+	if ((block == 0UL) && (count == chip_info->block_count) &&
+					((device_info_flag & FLAG_BULK) != 0U)) {
 		/* Erase whole device and return */
 		pr_info("QSPI: Erasing entire device\n");
-		error = tegrabl_qspi_flash_bulk_erase();
+		error = tegrabl_qspi_flash_bulk_erase(hqfdi);
 		return error;
 	}
 
 	head_count = tail_count = 0;
+	head_start = tail_start = 0;
 	sector_num = block_num_to_sector_num(block);
 	sector_cnt = block_cnt_to_sector_cnt(count);
 
-	if (count != hqspi_flash->block_count) {
+	pr_trace("QSPI: erasing sectors from %u - %u\n", sector_num, (sector_cnt - 1) + sector_num);
+
+	if (count != chip_info->block_count) {
 		/* Need to preserve the partitions that are overlapping */
 		/* on the sector which needs to be erased.              */
 		/* head : former overlapping partition                  */
 		/* tail : latter overlapping partition                  */
 #define PAGES_IN_SECTOR_LOG2 \
-	(hqspi_flash->sector_size_log2 - hqspi_flash->block_size_log2)
+	(chip_info->sector_size_log2 - chip_info->block_size_log2)
 		head_start = sector_num << PAGES_IN_SECTOR_LOG2;
-		head_count = block & ((1 << PAGES_IN_SECTOR_LOG2) - 1);
+		head_count = block & ((1UL << PAGES_IN_SECTOR_LOG2) - 1UL);
 		tail_start = block + count;
-		sector_cnt = tail_start + ((1 << PAGES_IN_SECTOR_LOG2) - 1);
+		sector_cnt = tail_start + ((1UL << PAGES_IN_SECTOR_LOG2) - 1UL);
 		sector_cnt = block_num_to_sector_num(sector_cnt);
 		tail_count = (sector_cnt << PAGES_IN_SECTOR_LOG2) - tail_start;
 		sector_cnt -= sector_num;
 #undef PAGES_IN_SECTOR_LOG2
 
-		pr_info("QSPI: erasing sectors from %u - %u\n",
-				sector_num, sector_cnt - 1 + sector_num);
-
-		if (head_count != 0) {
-			pr_info("QSPI: recoverying head blocks from %u - %u\n",
-					head_start, head_start + head_count);
+		if (head_count != 0UL) {
 			head_backup = tegrabl_calloc(1,
-					head_count << hqspi_flash->block_size_log2);
+					head_count << chip_info->block_size_log2);
 			if (head_backup == NULL) {
 				error = TEGRABL_ERROR(
 					TEGRABL_ERR_NO_MEMORY, AUX_INFO_NO_MEMORY);
@@ -1200,14 +1134,13 @@ static tegrabl_error_t qspi_bdev_erase(tegrabl_bdev_t *dev, bnum_t block,
 			}
 			error = qspi_bdev_read_block(dev,
 					(void *)head_backup, head_start, head_count);
-			if (error != TEGRABL_NO_ERROR)
+			if (error != TEGRABL_NO_ERROR) {
 				goto fail;
+			}
 		}
-		if (tail_count != 0) {
-			pr_info("QSPI: recoverying tail blocks from %u - %u\n",
-					tail_start, tail_start + tail_count);
+		if (tail_count != 0UL) {
 			tail_backup = tegrabl_calloc(1,
-					tail_count << hqspi_flash->block_size_log2);
+					tail_count << chip_info->block_size_log2);
 			if (tail_backup == NULL) {
 				error = TEGRABL_ERROR(
 					TEGRABL_ERR_NO_MEMORY, AUX_INFO_NO_MEMORY);
@@ -1215,33 +1148,39 @@ static tegrabl_error_t qspi_bdev_erase(tegrabl_bdev_t *dev, bnum_t block,
 			}
 			error = qspi_bdev_read_block(dev,
 					(void *)tail_backup, tail_start, tail_count);
-			if (error != TEGRABL_NO_ERROR)
+			if (error != TEGRABL_NO_ERROR) {
 				goto fail;
+			}
 		}
 	}
 
 	/* handling sector-0 erase differently */
-	if (sector_num == 0)
-		tegrabl_qspi_flash_parameter_sector_erase(0, 8, 0);
-	error = tegrabl_qspi_flash_sector_erase(sector_num, sector_cnt);
-	if (error != TEGRABL_NO_ERROR)
+	if (sector_num == 0UL) {
+		tegrabl_qspi_flash_parameter_sector_erase(hqfdi, 0, 8, 0);
+	}
+	error = tegrabl_qspi_flash_sector_erase(hqfdi, sector_num,
+											sector_cnt);
+	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
-
-	if (head_count != 0) {
+	}
+	if (head_count != 0UL) {
 		error = qspi_bdev_write_block(dev,
 			(void *)head_backup, head_start, head_count);
-		if (error != TEGRABL_NO_ERROR)
+		if (error != TEGRABL_NO_ERROR) {
 			goto fail;
+		}
 	}
-	if (tail_count != 0) {
+	if (tail_count != 0UL) {
 		error = qspi_bdev_write_block(dev,
 			(void *)tail_backup, tail_start, tail_count);
 	}
 fail:
-	if (head_backup != NULL)
+	if (head_backup != NULL) {
 		tegrabl_free(head_backup);
-	if (tail_backup != NULL)
+	}
+	if (tail_backup != NULL) {
 		tegrabl_free(tail_backup);
+	}
 
 	return error;
 }
@@ -1257,10 +1196,12 @@ fail:
  */
 static tegrabl_error_t
 tegrabl_qspi_flash_write(
+		struct tegrabl_qspi_flash_driver_info *hqfdi,
 		uint32_t start_page_num,
 		uint32_t num_of_pages,
 		uint8_t *p_source_buffer)
 {
+	struct tegrabl_qspi_flash_chip_info *chip_info = &hqfdi->chip_info;
 	struct tegrabl_qspi_transfer transfers[2];
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	uint8_t cmd_address_info[5];
@@ -1268,54 +1209,56 @@ tegrabl_qspi_flash_write(
 	uint32_t address;
 	uint8_t *p_source = (uint8_t *)p_source_buffer;
 
-	/* Use combined command address buffer */
-	if (hqspi_flash->address_length == 4)
-		cmd_address_info[0] = QSPI_FLASH_CMD_4PAGE_PROGRAM;
-	else
-		cmd_address_info[0] = QSPI_FLASH_CMD_PAGE_PROGRAM;
+	memset(transfers, 0, sizeof(transfers));
 
-	if (!num_of_pages) {
+	/* Use combined command address buffer */
+	if (chip_info->address_length == 4UL) {
+		cmd_address_info[0] = QSPI_FLASH_CMD_4PAGE_PROGRAM;
+	} else {
+		cmd_address_info[0] = QSPI_FLASH_CMD_PAGE_PROGRAM;
+	}
+	if (num_of_pages == 0UL) {
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_INVALID_PARAMS7);
 	}
 
 	/* Setup QPI mode based on device info list */
 	/* Switch to X1 if QPI setup fails */
-	err = qspi_qpi_flag_set(1);
+	err = qspi_qpi_flag_set(hqfdi, true);
 	if (err != TEGRABL_NO_ERROR) {
-		hqspi_flash->qpi_bus_width = QSPI_BUS_WIDTH_X1;
-		pr_debug("QPI setup failed err(:0x%x)\n", err);
+		chip_info->qpi_bus_width = QSPI_BUS_WIDTH_X1;
+		pr_error("QPI setup failed err(:0x%x)\n", err);
 		return err;
 	}
 
-	address = start_page_num << hqspi_flash->block_size_log2;
-	bytes_to_write = num_of_pages << hqspi_flash->block_size_log2;
+	address = start_page_num << chip_info->block_size_log2;
+	bytes_to_write = num_of_pages << chip_info->block_size_log2;
 
-	pr_debug("%s: strt_pg_num(%u) num_of_pgs(%u) write_buf(%p)\n",
-			 __func__, start_page_num, num_of_pages, p_source_buffer);
+	pr_trace("Qspi flash write: strt_pg_num(%u) num_of_pgs(%u) write_buf(%p)\n",
+			 start_page_num, num_of_pages, p_source_buffer);
 
-	while (bytes_to_write) {
-		pr_debug("%s: sector write addr 0x%x\n", __func__, address);
+	while (bytes_to_write != 0UL) {
+		pr_trace("Sector write addr 0x%x\n", address);
 		/* Enable Write */
-		err = qspi_write_en(1);
+		err = qspi_write_en(hqfdi, true);
 		if (err != TEGRABL_NO_ERROR) {
 			return err;
 		}
 
 		/* address are sent to device with MSB first */
 		/* Command and address are combined to save transaction time */
-		if (hqspi_flash->address_length == 4) {
-			cmd_address_info[1] = (address >> 24) & 0xFF;
-			cmd_address_info[2] = (address >> 16) & 0xFF;
-			cmd_address_info[3] = (address >> 8) & 0xFF;
-			cmd_address_info[4] = (address) & 0xFF;
+		if (chip_info->address_length == 4U) {
+			cmd_address_info[1] = (address >> 24) & 0xFFU;
+			cmd_address_info[2] = (address >> 16) & 0xFFU;
+			cmd_address_info[3] = (address >> 8) & 0xFFU;
+			cmd_address_info[4] = (address) & 0xFFU;
 		} else {
-			cmd_address_info[1] = (address >> 16) & 0xFF;
-			cmd_address_info[2] = (address >> 8) & 0xFF;
-			cmd_address_info[3] = (address) & 0xFF;
+			cmd_address_info[1] = (address >> 16) & 0xFFU;
+			cmd_address_info[2] = (address >> 8) & 0xFFU;
+			cmd_address_info[3] = (address) & 0xFFU;
 		}
 
 		/* Make sure the Dest is 4-byte aligned */
-		if (((uintptr_t)p_source & 0x3)) {
+		if (((uintptr_t)p_source & 0x3U) != 0U) {
 			return TEGRABL_ERROR(TEGRABL_ERR_BAD_ADDRESS, AUX_INFO_NOT_ALIGNED);
 		}
 
@@ -1325,10 +1268,10 @@ tegrabl_qspi_flash_write(
 
 		transfers[0].tx_buf = cmd_address_info;
 		transfers[0].rx_buf = NULL;
-		transfers[0].write_len = hqspi_flash->address_length + 1;
+		transfers[0].write_len = chip_info->address_length + 1UL;
 		transfers[0].read_len = 0;
 		transfers[0].mode = QSPI_FLASH_CMD_MODE_VAL;
-		transfers[0].bus_width = hqspi_flash->qpi_bus_width;
+		transfers[0].bus_width = chip_info->qpi_bus_width;
 		transfers[0].dummy_cycles = ZERO_CYCLES;
 		transfers[0].op_mode = SDR_MODE;
 
@@ -1337,20 +1280,21 @@ tegrabl_qspi_flash_write(
 		transfers[1].tx_buf = p_source;
 		transfers[1].rx_buf = NULL;
 		transfers[1].write_len =
-			MIN(bytes_to_write, hqspi_flash->page_write_size);
+			MIN(bytes_to_write, chip_info->page_write_size);
 		transfers[1].read_len = 0;
 		transfers[1].mode = QSPI_FLASH_ADDR_DATA_MODE_VAL;
-		transfers[1].bus_width = hqspi_flash->qpi_bus_width;
+		transfers[1].bus_width = chip_info->qpi_bus_width;
 		transfers[1].dummy_cycles = ZERO_CYCLES;
 		transfers[1].op_mode = SDR_MODE;
 
-		err = tegrabl_qspi_transaction(&transfers[0], 2);
+		err = tegrabl_qspi_transaction(hqfdi->hqspi, &transfers[0], 2,
+									   QSPI_XFER_TIMEOUT);
 
 		if (err != TEGRABL_NO_ERROR) {
-			pr_debug("QSPI Flash Write at address:0x%x failed: x%x\n",
-					 address, err);
+			pr_error("QSPI Flash Write failed: x%x\n", err);
+			pr_trace("address = 0x%x\n", address);
 			/* Disable Write En bit */
-			err = qspi_write_en(0);
+			err = qspi_write_en(hqfdi, false);
 			if (err != TEGRABL_NO_ERROR) {
 				return err;
 			}
@@ -1358,22 +1302,22 @@ tegrabl_qspi_flash_write(
 			break;
 		}
 
-		if (bytes_to_write > hqspi_flash->page_write_size) {
-			bytes_to_write -= hqspi_flash->page_write_size;
-			address += hqspi_flash->page_write_size;
-			p_source += hqspi_flash->page_write_size;
+		if (bytes_to_write > chip_info->page_write_size) {
+			bytes_to_write -= chip_info->page_write_size;
+			address += chip_info->page_write_size;
+			p_source += chip_info->page_write_size;
 		} else {
 			bytes_to_write = 0;
 		}
 
-		qspi_writein_progress(QSPI_FLASH_WIP_WAIT_FOR_READY,
+		qspi_writein_progress(hqfdi, QSPI_FLASH_WIP_WAIT_FOR_READY,
 					QSPI_FLASH_WIP_WAIT_IN_US);
 	}
 
 	/* Switch to X1 mode */
-	err = qspi_qpi_flag_set(0);
+	err = qspi_qpi_flag_set(hqfdi, false);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_debug("QPI disable failed err(:0x%x)\n", err);
+		pr_error("QPI disable failed err(:0x%x)\n", err);
 		return err;
 	}
 
@@ -1383,10 +1327,69 @@ tegrabl_qspi_flash_write(
 static tegrabl_error_t qspi_bdev_write_block(tegrabl_bdev_t *dev,
 		const void *buf, bnum_t block, bnum_t count)
 {
-	if (!dev || !buf)
+	struct tegrabl_qspi_flash_driver_info *hqfdi;
+
+	if ((dev == NULL) || (dev->priv_data == NULL) || (buf == NULL)) {
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 3);
-	else
-		return tegrabl_qspi_flash_write(block, count, (uint8_t *)buf);
+	}
+
+	hqfdi = dev->priv_data;
+	return tegrabl_qspi_flash_write(hqfdi, block, count, (uint8_t *)buf);
+}
+#endif
+
+#if !defined(CONFIG_ENABLE_BLOCKDEV_BASIC)
+static tegrabl_error_t tegrabl_qspi_blockdev_xfer(struct tegrabl_blockdev_xfer_info *xfer)
+{
+	struct tegrabl_bdev *dev;
+	uint32_t block;
+	uint32_t count;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	uint8_t *buf;
+	struct tegrabl_qspi_flash_driver_info *hqfdi;
+
+	if ((xfer == NULL) || (xfer->dev == NULL) || (xfer->buf == NULL)) {
+		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 4);
+		goto fail;
+	}
+
+	dev = xfer->dev;
+	buf = xfer->buf;
+	block = xfer->start_block;
+	count = xfer->block_count;
+	hqfdi = dev->priv_data;
+
+	if (count != 0U) {
+		err = tegrabl_qspi_flash_read(hqfdi, block, count, (uint8_t *)buf, true);
+	}
+
+fail:
+	return err;
+}
+
+static tegrabl_error_t tegrabl_qspi_blockdev_xfer_wait(struct tegrabl_blockdev_xfer_info *xfer,
+						time_t timeout, uint8_t *status_flag)
+{
+	tegrabl_error_t err;
+	tegrabl_err_reason_t err_reason;
+	struct tegrabl_qspi_flash_driver_info *hqfdi;
+	struct tegrabl_qspi_handle *qspi_handle;
+
+	hqfdi = xfer->dev->priv_data;
+	qspi_handle = hqfdi->hqspi;
+
+	err = tegrabl_qspi_check_transfer_status(qspi_handle, (uint32_t)timeout, false);
+	err_reason = (unsigned int)TEGRABL_ERROR_REASON(err);
+
+	if (err_reason == TEGRABL_ERR_XFER_IN_PROGRESS) {
+		*status_flag = TEGRABL_BLOCKDEV_XFER_IN_PROGRESS;
+	} else if (err == TEGRABL_NO_ERROR) {
+		*status_flag = TEGRABL_BLOCKDEV_XFER_COMPLETE;
+	} else {
+		*status_flag = TEGRABL_BLOCKDEV_XFER_FAILURE;
+	}
+
+	return err;
 }
 #endif
 
@@ -1396,15 +1399,19 @@ static tegrabl_error_t qspi_bdev_write_block(tegrabl_bdev_t *dev,
  * @param start_page_num Start Page Number from which to read
  * @param num_of_pages Number of pages to read
  * @param p_dest Storage for the data read from the device.
+ * @param async which represents sync and async transactions
  *
  * @return TEGRABL_NO_ERROR if successful else appropriate error
  */
 static tegrabl_error_t
 tegrabl_qspi_flash_read(
+		struct tegrabl_qspi_flash_driver_info *hqfdi,
 		uint32_t start_page_num,
 		uint32_t num_of_pages,
-		uint8_t *p_dest)
+		uint8_t *p_dest,
+		bool async)
 {
+	struct tegrabl_qspi_flash_chip_info *chip_info = &hqfdi->chip_info;
 	struct tegrabl_qspi_transfer transfers[3];
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	uint8_t address_data[5];
@@ -1413,49 +1420,55 @@ tegrabl_qspi_flash_read(
 	uint8_t *p_destination = (uint8_t *)p_dest;
 	uint8_t cmd;
 
-	if (!num_of_pages) {
+	if (num_of_pages == 0U) {
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 	}
 
-	if (hqspi_flash->address_length == 4) {
-		if (qspi_params->width == QSPI_BUS_WIDTH_X4)
-			if (hqspi_flash->qddr_read == 1)
+	memset(transfers, 0, sizeof(transfers));
+
+	if (chip_info->address_length == 4UL) {
+		if (hqfdi->plat_params.max_bus_width == QSPI_BUS_WIDTH_X4) {
+			if (chip_info->qddr_read == true) {
 				cmd = QSPI_FLASH_CMD_4DDR_QUAD_IO_READ;
-			else
+			} else {
 				cmd = QSPI_FLASH_CMD_4QUAD_IO_READ;
-		else
+			}
+		} else {
 			cmd = QSPI_FLASH_CMD_4READ;
+		}
 	} else {
-		if (qspi_params->width == QSPI_BUS_WIDTH_X4)
-			if (hqspi_flash->qddr_read == 1)
+		if (hqfdi->plat_params.max_bus_width == QSPI_BUS_WIDTH_X4) {
+			if (chip_info->qddr_read == true) {
 				cmd = QSPI_FLASH_CMD_DDR_QUAD_IO_READ;
-			else
+			} else {
 				cmd = QSPI_FLASH_CMD_QUAD_IO_READ;
-		else
+			}
+		} else {
 			cmd = QSPI_FLASH_CMD_READ;
+		}
 	}
 
-	address = start_page_num << hqspi_flash->block_size_log2;
-	bytes_to_read = num_of_pages << hqspi_flash->block_size_log2;
-	pr_debug("%s: strt_pg_num(%u) num_of_pgs(%u) read_buf(%p)\n",
-			__func__, start_page_num, num_of_pages, p_dest);
+	address = start_page_num << chip_info->block_size_log2;
+	bytes_to_read = num_of_pages << chip_info->block_size_log2;
+	pr_trace("strt_pg_num(%u) num_of_pgs(%u) read_buf(%p)\n",
+			 start_page_num, num_of_pages, p_dest);
 
 	/* address are sent to device with MSB first */
-	if (hqspi_flash->address_length == 4) {
-		address_data[0] = (address >> 24) & 0xFF;
-		address_data[1] = (address >> 16) & 0xFF;
-		address_data[2] = (address >> 8) & 0xFF;
-		address_data[3] = (address) & 0xFF;
+	if (chip_info->address_length == 4UL) {
+		address_data[0] = (uint8_t)(address >> 24) & 0xFFU;
+		address_data[1] = (uint8_t)(address >> 16) & 0xFFU;
+		address_data[2] = (uint8_t)(address >> 8) & 0xFFU;
+		address_data[3] = (uint8_t)(address) & 0xFFU;
 		address_data[4] = 0; /* mode bits */
 	} else {
-		address_data[0] = (address >> 16) & 0xFF;
-		address_data[1] = (address >> 8) & 0xFF;
-		address_data[2] = (address) & 0xFF;
+		address_data[0] = (uint8_t)(address >> 16) & 0xFFU;
+		address_data[1] = (uint8_t)(address >> 8) & 0xFFU;
+		address_data[2] = (uint8_t)(address) & 0xFFU;
 		address_data[3] = 0; /* mode bits */
 	}
 
 	/* Make sure the Dest is 4-byte aligned */
-	if (((uintptr_t)p_dest & 0x3) != 0U) {
+	if (((uintptr_t)p_dest & 0x3UL) != 0UL) {
 		return TEGRABL_ERROR(TEGRABL_ERR_BAD_ADDRESS, 0);
 	}
 
@@ -1480,20 +1493,20 @@ tegrabl_qspi_flash_read(
 	transfers[1].rx_buf = NULL;
 	transfers[1].read_len = 0;
 	transfers[1].mode = QSPI_FLASH_ADDR_DATA_MODE_VAL;
-	transfers[1].bus_width = qspi_params->width;
+	transfers[1].bus_width = hqfdi->plat_params.max_bus_width;
 
-	if (qspi_params->width == QSPI_BUS_WIDTH_X4) {
+	if (hqfdi->plat_params.max_bus_width == QSPI_BUS_WIDTH_X4) {
 		/* 1 byte for mode bits in write_len */
-		transfers[1].write_len = hqspi_flash->address_length + 1;
-		transfers[1].dummy_cycles = qspi_params->read_dummy_cycles;
-		if (hqspi_flash->qddr_read == 1) {
+		transfers[1].write_len = chip_info->address_length + 1UL;
+		transfers[1].dummy_cycles = hqfdi->plat_params.read_dummy_cycles;
+		if (chip_info->qddr_read == true) {
 			transfers[1].op_mode = DDR_MODE;
 		} else {
 			transfers[1].op_mode = SDR_MODE;
 		}
 
 	} else {
-		transfers[1].write_len = hqspi_flash->address_length;
+		transfers[1].write_len = chip_info->address_length;
 		transfers[1].dummy_cycles = ZERO_CYCLES;
 		transfers[1].op_mode = SDR_MODE;
 	};
@@ -1505,19 +1518,24 @@ tegrabl_qspi_flash_read(
 	transfers[2].write_len = 0;
 	transfers[2].read_len = bytes_to_read;
 
-	transfers[2].bus_width = qspi_params->width;
+	transfers[2].bus_width = hqfdi->plat_params.max_bus_width;
 	transfers[2].mode = QSPI_FLASH_ADDR_DATA_MODE_VAL;
 
-	if (qspi_params->width == QSPI_BUS_WIDTH_X4)
-		if (hqspi_flash->qddr_read == 1)
+	if (hqfdi->plat_params.max_bus_width == QSPI_BUS_WIDTH_X4) {
+		if (chip_info->qddr_read == true) {
 			transfers[2].op_mode = DDR_MODE;
-		else
+		} else {
 			transfers[2].op_mode = SDR_MODE;
-	else
+		}
+	} else {
 		transfers[2].op_mode = SDR_MODE;
-
-	err = tegrabl_qspi_transaction(&transfers[0],
-			QSPI_FLASH_NUM_OF_TRANSFERS);
+    }
+	if (async) {
+		err = tegrabl_qspi_transaction(hqfdi->hqspi, &transfers[0], QSPI_FLASH_NUM_OF_TRANSFERS, 0);
+	} else {
+		err = tegrabl_qspi_transaction(hqfdi->hqspi, &transfers[0], QSPI_FLASH_NUM_OF_TRANSFERS,
+											QSPI_XFER_TIMEOUT);
+	}
 
 	return err;
 }
@@ -1525,8 +1543,11 @@ tegrabl_qspi_flash_read(
 static tegrabl_error_t qspi_bdev_read_block(tegrabl_bdev_t *dev, void *buf,
 	bnum_t block, bnum_t count)
 {
-	if (!dev || !buf)
+	struct tegrabl_qspi_flash_driver_info *hqfdi;
+
+	if ((dev == NULL) || (dev->priv_data == NULL) || (buf == NULL)) {
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 1);
-	else
-		return tegrabl_qspi_flash_read(block, count, (uint8_t *)buf);
+	}
+	hqfdi = dev->priv_data;
+	return tegrabl_qspi_flash_read(hqfdi, block, count, (uint8_t *)buf, false);
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -17,10 +17,10 @@
 /**
 * @brief Enumerates the sdcard
 *
-* @param context context of the sdmmc controller
+* @param hsdmmc context of the sdmmc controller
 *
 * @return If success returns TEGRABL_NO_ERROR, otherwise error code
 */
-tegrabl_error_t sd_identify_card(sdmmc_context_t *context);
+tegrabl_error_t sd_identify_card(struct tegrabl_sdmmc *hsdmmc);
 
 #endif

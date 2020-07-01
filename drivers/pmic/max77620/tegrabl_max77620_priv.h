@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -12,8 +12,24 @@
 
 #include <tegrabl_pmic_max77620.h>
 
-#define MAX77620_COMPATIBLE "maxim,max77620"
-#define MAX77620_GPIO_DRIVER "max77620-gpio"
+#if defined(CONFIG_ENABLE_PMIC_MAX77620)
+
+#define MAXPMIC_COMPATIBLE "maxim,max77620"
+#define MAXPMIC_GPIO_DRIVER "max77620-gpio"
+
+#elif defined(CONFIG_ENABLE_PMIC_MAX20024)
+
+#define MAXPMIC_COMPATIBLE "maxim,max20024"
+#define MAXPMIC_GPIO_DRIVER "max20024-gpio"
+
+#else
+
+/* for the cases where we have both the above flags disabled and to avoid
+   running into null string operations */
+#define MAXPMIC_COMPATIBLE "maxim,max-pmic"
+#define MAXPMIC_GPIO_DRIVER "max-gpio"
+
+#endif
 
 #define GPIO_ST                 1
 
@@ -87,20 +103,72 @@
 #define MAX77620_REG_LDO_ADE_MASK   (1 << 1)
 #define MAX77620_REG_CNFGGLBL1_MBLPD_MASK   (1 << 6)
 
-#define REG_DATA(_name, _reg, _rtype, _step_uv, _min_uv,        \
-				 _max_uv, _ops)                                 \
-{                                                               \
-	.phandle = 0,                                               \
-	.name = _name,                                              \
-	.reg = MAX77620_REG_##_reg,                                 \
-	.cfg_reg = MAX77620_REG_CNFG_##_reg,                        \
-	.regulator_type = MAX77620_REGULATOR_TYPE_##_rtype,         \
-	.act_dischrg_en = false,                                    \
-	.act_dischrg_dis = false,                                   \
-	.step_volts = _step_uv,                                     \
-	.min_volts = _min_uv,                                       \
-	.max_volts = _max_uv,                                       \
-	.ops = _ops,                                                \
+#define REG_DATA(_name, _reg, _rtype, _step_uv, _min_uv,		\
+				 _max_uv, _ops)									\
+{																\
+	.phandle = 0,												\
+	.name = _name,												\
+	.reg = MAX77620_REG_##_reg,									\
+	.cfg_reg = MAX77620_REG_CNFG_##_reg,						\
+	.regulator_type = MAX77620_REGULATOR_TYPE_##_rtype,			\
+	.act_dischrg_en = false,									\
+	.act_dischrg_dis = false,									\
+	.step_volts = _step_uv,										\
+	.min_volts = _min_uv,										\
+	.max_volts = _max_uv,										\
+	.ops = _ops,												\
 }
+
+#if defined(CONFIG_ENABLE_PMIC_MAX20024)
+
+#define MAX20024_REG_SD4    0x1A
+#define MAX20024_REG_SD0    0x16
+#define MAX20024_REG_SD1    0x17
+#define MAX20024_REG_SD2    0x18
+#define MAX20024_REG_SD3    0x19
+
+#define MAX20024_REG_LDO0   0x23
+#define MAX20024_REG_LDO1   0x25
+#define MAX20024_REG_LDO2   0x27
+#define MAX20024_REG_LDO3   0x29
+#define MAX20024_REG_LDO4   0x2B
+#define MAX20024_REG_LDO5   0x2D
+#define MAX20024_REG_LDO6   0x2F
+#define MAX20024_REG_LDO7   0x31
+#define MAX20024_REG_LDO8   0x33
+
+#define MAX20024_REG_CNFG_SD0   0x1D
+#define MAX20024_REG_CNFG_SD1   0x1E
+#define MAX20024_REG_CNFG_SD2   0x1F
+#define MAX20024_REG_CNFG_SD3   0x20
+#define MAX20024_REG_CNFG_SD4   0x21
+
+#define MAX20024_REG_CNFG_LDO0  0x24
+#define MAX20024_REG_CNFG_LDO1  0x26
+#define MAX20024_REG_CNFG_LDO2  0x28
+#define MAX20024_REG_CNFG_LDO3  0x2A
+#define MAX20024_REG_CNFG_LDO4  0x2C
+#define MAX20024_REG_CNFG_LDO5  0x2E
+#define MAX20024_REG_CNFG_LDO6  0x30
+#define MAX20024_REG_CNFG_LDO7  0x32
+#define MAX20024_REG_CNFG_LDO8  0x34
+
+#define REG_DATA_MAX20024(_name, _reg, _rtype, _step_uv, _min_uv,			\
+				 _max_uv, _ops)												\
+{																			\
+	.phandle = 0,															\
+	.name = _name,															\
+	.reg = MAX20024_REG_##_reg,												\
+	.cfg_reg = MAX20024_REG_CNFG_##_reg,									\
+	.regulator_type = MAX77620_REGULATOR_TYPE_##_rtype,						\
+	.act_dischrg_en = false,												\
+	.act_dischrg_dis = false,												\
+	.step_volts = _step_uv,													\
+	.min_volts = _min_uv,													\
+	.max_volts = _max_uv,													\
+	.ops = _ops,															\
+}
+
+#endif
 
 #endif /*INCLUDED_TEGRABL_MAX77620_PRIV_H*/

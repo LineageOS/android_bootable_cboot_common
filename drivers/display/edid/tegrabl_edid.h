@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all uint32_tellectual property
  * and proprietary rights in and to this software, related documentation
@@ -63,6 +63,9 @@ struct hdmi_mode {
 struct monitor_data {
 	uint32_t checksum;
 	uint8_t manufacturer_code[4];
+	uint8_t monitor[14];
+	uint8_t serial_no[14];
+	uint8_t ascii[14];
 	uint32_t product_code;
 	uint32_t serial_number;
 	uint32_t production_week; /* -1 if not specified */
@@ -104,11 +107,5 @@ struct edid {
 
 tegrabl_error_t tegrabl_edid_get_mode(struct nvdisp_mode *modes,
 									  uint32_t module, uint32_t instance);
-/**
- * @brief Func to distinguish between hdmi and dvi panels.
- *
- * @return True if panel is HDMI, false if DVI.
- */
-bool tegrabl_edid_is_panel_hdmi(void);
 
 #endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -27,6 +27,7 @@
 #define DPCD_MAX_LANE_COUNT_LANE_2           (0x00000002)
 #define DPCD_MAX_LANE_COUNT_LANE_4           (0x00000004)
 #define DPCD_MAX_LANE_COUNT_TPS3_SUPPORTED_YES   (0x00000001 << 6)
+#define DPCD_MAX_DOWNSPREAD_TPS4_SUPPORTED_YES  (0x00000001 << 7)
 #define DPCD_MAX_LANE_COUNT_ENHANCED_FRAMING_NO  (0x00000000 << 7)
 #define DPCD_MAX_LANE_COUNT_ENHANCED_FRAMING_YES (0x00000001 << 7)
 #define DPCD_MAX_DOWNSPREAD              (0x00000003)
@@ -41,6 +42,7 @@
 #define DPCD_EDP_CONFIG_CAP_FRAMING_CHANGE_YES   (0x00000001 << 1)
 #define DPCD_EDP_CONFIG_CAP_DISPLAY_CONTROL_CAP_YES  (0x00000001 << 3)
 #define DPCD_TRAINING_AUX_RD_INTERVAL        (0x0000000E)
+#define DPCD_TRAINING_AUX_RD_INTERVAL_MASK   (0x3f)
 #define DPCD_LINK_BANDWIDTH_SET          (0x00000100)
 #define DPCD_LANE_COUNT_SET              (0x00000101)
 #define DPCD_LANE_COUNT_SET_MASK         (0x1f)

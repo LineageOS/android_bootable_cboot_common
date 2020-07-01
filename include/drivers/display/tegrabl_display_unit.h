@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2017, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -24,30 +24,30 @@
  *  @brief enum for different cursor position
  *
  */
-enum cursor_position {
-	CURSOR_START,
-	CURSOR_CENTER,
-	CURSOR_END,
-};
+/* macro cursor position */
+typedef uint32_t cursor_position_t;
+#define CURSOR_START 0
+#define CURSOR_CENTER 1
+#define CURSOR_END 2
 
 /**
 * @brief display unit ioctl list
 */
-enum tegrabl_display_unit_ioctl {
-	DISPLAY_UNIT_IOCTL_SET_TEXT_POSITION,
-	DISPLAY_UNIT_IOCTL_GET_DISPLAY_PARAMS,
-	DISPLAY_UNIT_IOCTL_SET_FONT,
-	DISPLAY_UNIT_IOCTL_CONTROL_BACKLIGHT,
-	DISPLAY_UNIT_IOCTL_SET_ROTATION,
-};
+/* macro display unit ioctl */
+typedef uint32_t tegrabl_display_unit_ioctl_t;
+#define DISPLAY_UNIT_IOCTL_SET_TEXT_POSITION 0
+#define DISPLAY_UNIT_IOCTL_GET_DISPLAY_PARAMS 1
+#define DISPLAY_UNIT_IOCTL_SET_FONT 2
+#define DISPLAY_UNIT_IOCTL_CONTROL_BACKLIGHT 3
+#define DISPLAY_UNIT_IOCTL_SET_ROTATION 4
 
 /**
  *  @brief structure for image info
  *
  */
 struct tegrabl_image_info {
-	enum tegrabl_image_type type;
-	enum tegrabl_image_format format;
+	tegrabl_image_type_t type;
+	tegrabl_image_format_t format;
 	uint8_t *image_buf;
 	size_t size;
 };
@@ -70,8 +70,8 @@ struct tegrabl_display_unit_params {
 * @brief display unit definition
 */
 struct tegrabl_display_unit {
-	enum tegrabl_display_unit_type type;
-	enum font font;
+	tegrabl_display_unit_type_t type;
+	font_t font;
 	uint32_t height;
 	uint32_t width;
 	uint32_t n_surf;
@@ -90,7 +90,7 @@ struct tegrabl_display_unit {
  *  @return returns handle to the display.
  */
 struct tegrabl_display_unit *tegrabl_display_unit_init(
-	enum tegrabl_display_unit_type hdu, struct tegrabl_display_pdata *pdata);
+	tegrabl_display_unit_type_t hdu, struct tegrabl_display_pdata *pdata);
 
 /**
  *  @brief Prints the given text in given color on display console

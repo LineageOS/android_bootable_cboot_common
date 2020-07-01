@@ -25,10 +25,11 @@
 #define EEPROM_VER_OFFSET	0
 #define EEPROM_MAJ_VER_OFFSET	EEPROM_VER_OFFSET
 #define EEPROM_MIN_VER_OFFSET	(EEPROM_VER_OFFSET + 1)
-#define EEPROM_MAJ_VER		1
-#define EEPROM_MIN_VER		0
+#define EEPROM_MAJ_VER		1U
+#define EEPROM_MIN_VER		0U
 
-static tegrabl_error_t verify_cvm_eeprom_version(struct tegrabl_eeprom *eeprom)
+static tegrabl_error_t verify_cvm_eeprom_version(
+			const struct tegrabl_eeprom *eeprom)
 {
 	/* First two bytes are version 0th byte is major and 1st byte is minor */
 	uint8_t major_ver = eeprom->data[EEPROM_MAJ_VER_OFFSET];
@@ -112,7 +113,7 @@ tegrabl_error_t tegrabl_eeprom_read(struct tegrabl_eeprom *eeprom)
 	 * Only applicable to CVM as it stores NVCB (nvidia configuration block)
 	 * and we are only concern about the version of that EEPROM and its layout
 	 */
-	if (eeprom->name && !strcmp(eeprom->name, "cvm")) {
+	if ((eeprom->name != NULL) && (strcmp(eeprom->name, "cvm") == 0)) {
 		error = verify_cvm_eeprom_version(eeprom);
 		if (error != TEGRABL_NO_ERROR) {
 			goto fail;

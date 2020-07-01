@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -12,7 +12,6 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include <i2c-t186.h>
 #include <bpmp_abi.h>
 #include <tegrabl_error.h>
 #include <tegrabl_i2c.h>
@@ -21,6 +20,7 @@
 #include <tegrabl_debug.h>
 #include <tegrabl_bpmp_fw_interface.h>
 #include <tegrabl_i2c_bpmpfw.h>
+#include <tegrabl_i2c_err_aux.h>
 
 /*
  * Note:
@@ -47,8 +47,14 @@ static tegrabl_error_t tegrabl_virtual_i2c_bpmp_xfer
 	struct mrq_i2c_response i2c_response;
 	struct serial_i2c_request *hdr_xfer = NULL;
 
+	TEGRABL_ASSERT(info != NULL);
+
 	if ((info->xfer_data_size != 0) && (info->xfer_data == NULL)) {
-		return TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, 0);
+		err = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER,
+				TEGRABL_VIRTUAL_I2C_BPMP_XFER);
+		TEGRABL_SET_ERROR_STRING(err, "xfer_data_size: %d, xfer_data: %p",
+				info->xfer_data_size, info->xfer_data);
+		goto fail;
 	}
 
 	memset(&i2c_request, 0, sizeof(i2c_request));
@@ -58,7 +64,10 @@ static tegrabl_error_t tegrabl_virtual_i2c_bpmp_xfer
 	i2c_request.xfer.bus_id = info->bus_id;
 
 	if ((info->xfer_data_size + HDR_LEN) > TEGRA_I2C_IPC_MAX_IN_BUF_SIZE) {
-		return TEGRABL_ERROR(TEGRABL_ERR_TOO_LARGE, 0);
+		err = TEGRABL_ERROR(TEGRABL_ERR_TOO_LARGE,
+				TEGRABL_VIRTUAL_I2C_BPMP_XFER);
+		TEGRABL_SET_ERROR_STRING(err, "xfer data: %d", "%d", info->xfer_data_size,
+				TEGRA_I2C_IPC_MAX_IN_BUF_SIZE - HDR_LEN);
 	}
 
 	hdr_xfer = (struct serial_i2c_request *)i2c_request.xfer.data_buf;
@@ -83,7 +92,7 @@ static tegrabl_error_t tegrabl_virtual_i2c_bpmp_xfer
 									MRQ_I2C);
 
 	if (err != TEGRABL_NO_ERROR) {
-		pr_debug("Error in tx-rx: %s,%d\n", __func__, __LINE__);
+		TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_XFER_FAILED, "bpmp xfer request");
 		return err;
 	}
 
@@ -92,6 +101,7 @@ static tegrabl_error_t tegrabl_virtual_i2c_bpmp_xfer
 			   info->xfer_data_size);
 	}
 
+fail:
 	return err; /*TEGRABL_NO_ERROR*/
 }
 
@@ -102,7 +112,7 @@ tegrabl_error_t tegrabl_virtual_i2c_xfer(struct tegrabl_i2c *hi2c,
 	tegrabl_error_t err;
 	struct tegrabl_i2c_send_recv_info xfer_info;
 
-	pr_debug("%s: entry\n", __func__);
+	pr_trace("%s: entry\n", __func__);
 	memset(&xfer_info, 0, sizeof(xfer_info));
 
 	xfer_info.bus_id = (hi2c->instance + 1);
@@ -117,6 +127,16 @@ tegrabl_error_t tegrabl_virtual_i2c_xfer(struct tegrabl_i2c *hi2c,
 	err = tegrabl_virtual_i2c_bpmp_xfer(&xfer_info, is_read);
 
 	if (err != TEGRABL_NO_ERROR) {
+		if (is_read) {
+			TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_READ_FAILED,
+					"%d bytes from slave 0x%02x via i2c %d wth repeat start %s",
+					len, slave_addr, hi2c->instance, repeat_start ? "true" : "false");
+		} else {
+			TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_WRITE_FAILED,
+					"%d bytes to slave 0x%02x via i2c %d wth repeat start %s",
+					len, slave_addr, hi2c->instance, repeat_start ? "true" : "false");
+		}
+
 		TEGRABL_SET_HIGHEST_MODULE(err);
 	}
 

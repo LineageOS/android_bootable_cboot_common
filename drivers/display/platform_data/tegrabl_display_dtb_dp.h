@@ -15,22 +15,33 @@
  *  @brief Parse dp dtb settings
  *
  *  @param fdt pointer to device tree
- *  @param offset offset of sor node containing dp-display node to be parsed
+ *  @param off offset of dp-display node to be parsed
  *  @param dp_dtb pointer to dp dtb data structure
  *
  *  @return TEGRABL_NO_ERROR if success, error code if fails.
  */
-tegrabl_error_t parse_dp_dtb_settings(const void *fdt, int32_t offset,
-									  struct tegrabl_display_dp_dtb *dp_dtb);
+tegrabl_error_t parse_dp_dtb_settings(const void *fdt, int32_t off, struct tegrabl_display_dp_dtb *dp_dtb);
 
 /**
 *  @brief Parse dp regulator settings
 *
 *  @param fdt pointer to device tree
-*  @param node_offset nvdisp node to be parsed
-*  @param pdata pointer to dtb data structure
+*  @param offset nvdisp node to be parsed
+*  @param pdata_dp pointer to dp dtb data structure
 *
 *  @return TEGRABL_NO_ERROR if success, error code if fails.
 */
-tegrabl_error_t parse_dp_regulator_settings(const void *fdt,
-	int32_t node_offset, struct tegrabl_display_pdata *pdata);
+tegrabl_error_t parse_dp_regulator_settings(const void *fdt, int32_t offset,
+	struct tegrabl_display_dp_dtb *pdata_dp);
+
+/**
+*  @brief Parse edp regulator settings
+*
+*  @param fdt pointer to device tree
+*  @param offset nvdisp node to be parsed
+*  @param pdata_dp pointer to edp dtb data structure
+*
+*  @return TEGRABL_NO_ERROR if success, error code if fails.
+*/
+tegrabl_error_t parse_edp_regulator_settings(const void *fdt, int32_t offset,
+	struct tegrabl_display_dp_dtb *pdata_dp);

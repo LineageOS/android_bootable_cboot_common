@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -22,7 +22,7 @@
 * @brief I2c slave information.
 */
 struct tegrabl_i2c_dev {
-	enum tegrabl_instance_i2c instance;
+	tegrabl_instance_i2c_t instance;
 	struct tegrabl_i2c *hi2c;
 	uint16_t slave_addr;
 	uint32_t reg_addr_size;
@@ -33,11 +33,11 @@ struct tegrabl_i2c_dev {
 /**
 * @brief i2c dev ioctls
 */
-enum tegrabl_i2c_dev_ioctl {
+/* macro tegrabl i2c dev ioctl */
+typedef uint32_t tegrabl_i2c_dev_ioctl_t;
 	/* to configure wait time after register write in slave */
-	TEGRABL_I2C_DEV_IOCTL_WAIT_TIME_WRITE,
-	TEGRABL_I2C_DEV_IOCTL_INVALID,
-};
+#define TEGRABL_I2C_DEV_IOCTL_WAIT_TIME_WRITE 0
+#define TEGRABL_I2C_DEV_IOCTL_INVALID 1
 
 /**
 * @brief Initializes the given i2c slave interface.
@@ -49,7 +49,7 @@ enum tegrabl_i2c_dev_ioctl {
 *
 * @return Returns handle of the i2c slave device if sucess, error code if fails.
 */
-struct tegrabl_i2c_dev *tegrabl_i2c_dev_open(enum tegrabl_instance_i2c instance,
+struct tegrabl_i2c_dev *tegrabl_i2c_dev_open(tegrabl_instance_i2c_t instance,
 	uint32_t slave_addr, uint32_t reg_addr_size, uint32_t bytes_per_reg);
 
 /**
@@ -88,7 +88,7 @@ tegrabl_error_t tegrabl_i2c_dev_write(struct tegrabl_i2c_dev *hi2cdev,
 * @return TEGRABL_NO_ERROR if success, error code if fails.
 */
 tegrabl_error_t tegrabl_i2c_dev_ioctl(struct tegrabl_i2c_dev *hi2cdev,
-	enum tegrabl_i2c_dev_ioctl ioctl, void *args);
+	tegrabl_i2c_dev_ioctl_t ioctl, void *args);
 /**
 * @brief  Disables the given i2c controller.
 *

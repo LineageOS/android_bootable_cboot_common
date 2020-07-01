@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -13,62 +13,63 @@
 #include <tegrabl_error.h>
 #include <tegrabl_debug.h>
 #include <tegrabl_gpio.h>
-#include <tegrabl_sdmmc_pdata.h>
+#include <tegrabl_sd_pdata.h>
 
-static tegrabl_error_t sd_read_pin_status(uint32_t cd_gpio_pin,
-	enum gpio_pin_state *pin_state)
+static tegrabl_error_t sd_read_pin_status(struct gpio_info *cd_gpio,
+	gpio_pin_state_t *pin_state)
 {
-	uint32_t chip_id = TEGRA_GPIO_MAIN_CHIPID;
 	struct gpio_driver *gpio_drv;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	uint32_t chip_id;
 
-	pr_debug("%s: entry, cd_gpio_pin = %d\n", __func__, cd_gpio_pin);
+	pr_trace("cd_gpio_pin = %d\n", cd_gpio_pin);
+
+#if defined(CONFIG_ENABLE_GPIO_DT_BASED)
+	err = tegrabl_gpio_get_chipid_with_phandle(cd_gpio->handle, &chip_id);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+#endif
 
 	err = tegrabl_gpio_driver_get(chip_id, &gpio_drv);
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
 
-	err = gpio_config(gpio_drv, cd_gpio_pin, GPIO_PINMODE_INPUT);
+	err = gpio_config(gpio_drv, cd_gpio->pin, GPIO_PINMODE_INPUT);
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
 
-	err = gpio_read(gpio_drv, cd_gpio_pin, pin_state);
+	err = gpio_read(gpio_drv, cd_gpio->pin, pin_state);
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
 
 fail:
 	if (err != TEGRABL_NO_ERROR) {
-		pr_debug("%s: sd gpio pin status read failed\n", __func__);
+		pr_error("sd gpio pin status read failed\n");
 		TEGRABL_SET_HIGHEST_MODULE(err);
 		goto fail;
 	}
 	return err;
 }
 
-tegrabl_error_t tegrabl_sd_is_card_present(uint32_t *instance, bool *is_present)
+tegrabl_error_t tegrabl_sd_is_card_present(struct gpio_info *cd_gpio, bool *is_present)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
-	struct gpio_info cd_gpio;
-	enum gpio_pin_state pin_state;
+	gpio_pin_state_t pin_state;
 	bool is_active_low;
 
-	err = tegrabl_sd_get_instance(instance, &cd_gpio);
+	err = sd_read_pin_status(cd_gpio, &pin_state);
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
 
-	err = sd_read_pin_status(cd_gpio.pin, &pin_state);
-	if (err != TEGRABL_NO_ERROR) {
-		goto fail;
-	}
-
-	is_active_low = !(cd_gpio.flags & 0x1);
+	pr_trace("pin_state = %d\n", pin_state);
+	is_active_low = !(cd_gpio->flags & 0x1);
 
 	*is_present = (pin_state == GPIO_PIN_STATE_HIGH) ^ is_active_low;
-
 	if (*is_present)
 		pr_info("Found sdcard\n");
 	else
@@ -76,7 +77,7 @@ tegrabl_error_t tegrabl_sd_is_card_present(uint32_t *instance, bool *is_present)
 
 fail:
 	if (err != TEGRABL_NO_ERROR) {
-		pr_debug("%s:sd card present check failed\n", __func__);
+		pr_error("sd card detection failed\n");
 		goto fail;
 	}
 	return err;

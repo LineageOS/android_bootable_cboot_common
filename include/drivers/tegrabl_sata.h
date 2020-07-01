@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -14,6 +14,7 @@
 #include <tegrabl_blockdev.h>
 #include <tegrabl_error.h>
 #include <tegrabl_uphy.h>
+#include <tegrabl_sata_param.h>
 
 /** @brief Initializes the host controller for sata and card with the given
  *         instance.
@@ -24,7 +25,8 @@
  *  @return TEGRABL_NO_ERROR if init is successful else appropriate error.
  */
 tegrabl_error_t tegrabl_sata_bdev_open(uint32_t instance,
-		struct tegrabl_uphy_handle *uphy);
+		struct tegrabl_uphy_handle *uphy,
+		struct tegrabl_sata_platform_params *device_params);
 
 /** @brief Deallocates the memory allocated to sata context.
  *

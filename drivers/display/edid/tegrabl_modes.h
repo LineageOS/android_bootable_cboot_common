@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -57,10 +57,8 @@ extern uint32_t size_s_hdmi_modes;
  *
  * @param monitor_info list of modes from edid
  * @param best_mode best mode returned by this algorithm
- *
- *@return TEGRABL_NO_ERROR if success, specific error if fails
  */
-tegrabl_error_t get_best_mode(struct monitor_data *monitor_info,
-							  struct hdmi_mode *best_mode);
+void get_best_mode(struct monitor_data *monitor_info,
+				   struct hdmi_mode *best_mode);
 
 #endif

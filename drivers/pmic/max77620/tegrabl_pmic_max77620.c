@@ -48,11 +48,11 @@ typedef struct {
 	tegrabl_error_t (*disable)(int32_t phandle);
 } max77620_ops;
 
-enum max77620_regulator_type {
-	MAX77620_REGULATOR_TYPE_SD,
-	MAX77620_REGULATOR_TYPE_LDO_N,
-	MAX77620_REGULATOR_TYPE_LDO_P,
-};
+/* macro max77620 regulator type */
+typedef uint32_t max77620_regulator_type_t;
+#define MAX77620_REGULATOR_TYPE_SD 0
+#define MAX77620_REGULATOR_TYPE_LDO_N 1
+#define MAX77620_REGULATOR_TYPE_LDO_P 2
 
 typedef struct {
 	/* regulator phandle */
@@ -60,7 +60,7 @@ typedef struct {
 	/* node name */
 	char *name;
 	/* rehulator type */
-	enum max77620_regulator_type regulator_type;
+	max77620_regulator_type_t regulator_type;
 	/* active-discharge prop */
 	bool act_dischrg_en;
 	bool act_dischrg_dis;
@@ -109,6 +109,22 @@ static max77620_ops ldo_ops = {
 };
 
 static max77620_regulator_props s_props[] = {
+#if defined(CONFIG_ENABLE_PMIC_MAX20024)
+	REG_DATA_MAX20024("sd0", SD0, SD, 12500, 800000, 1587500, &sd_ops),
+	REG_DATA_MAX20024("sd1", SD1, SD, 12500, 600000, 3787500, &sd_ops),
+	REG_DATA_MAX20024("sd2", SD2, SD, 12500, 600000, 3787500, &sd_ops),
+	REG_DATA_MAX20024("sd3", SD3, SD, 12500, 600000, 3787500, &sd_ops),
+	REG_DATA_MAX20024("sd4", SD4, SD, 12500, 600000, 3787500, &sd_ops),
+	REG_DATA_MAX20024("ldo0", LDO0, LDO_N, 25000, 800000, 2375000, &ldo_ops),
+	REG_DATA_MAX20024("ldo1", LDO1, LDO_N, 25000, 800000, 2375000, &ldo_ops),
+	REG_DATA_MAX20024("ldo2", LDO2, LDO_P, 50000, 800000, 3950000, &ldo_ops),
+	REG_DATA_MAX20024("ldo3", LDO3, LDO_P, 50000, 800000, 3950000, &ldo_ops),
+	REG_DATA_MAX20024("ldo4", LDO4, LDO_P, 12500, 800000, 1587500, &ldo_ops),
+	REG_DATA_MAX20024("ldo5", LDO5, LDO_P, 50000, 800000, 3950000, &ldo_ops),
+	REG_DATA_MAX20024("ldo6", LDO6, LDO_P, 50000, 800000, 3950000, &ldo_ops),
+	REG_DATA_MAX20024("ldo7", LDO7, LDO_N, 50000, 800000, 3950000, &ldo_ops),
+	REG_DATA_MAX20024("ldo8", LDO8, LDO_N, 50000, 800000, 3950000, &ldo_ops),
+#else
 	REG_DATA("sd0", SD0, SD, 12500, 600000, 1400000, &sd_ops),
 	REG_DATA("sd1", SD1, SD, 12500, 600000, 1600000, &sd_ops),
 	REG_DATA("sd2", SD2, SD, 12500, 600000, 3787500, &sd_ops),
@@ -122,6 +138,8 @@ static max77620_regulator_props s_props[] = {
 	REG_DATA("ldo6", LDO6, LDO_P, 50000, 800000, 3950000, &ldo_ops),
 	REG_DATA("ldo7", LDO7, LDO_N, 50000, 800000, 3950000, &ldo_ops),
 	REG_DATA("ldo8", LDO8, LDO_N, 50000, 800000, 3950000, &ldo_ops),
+#endif
+
 };
 
 static tegrabl_error_t enable_sd_regulator(int32_t phandle, bool is_enable)
@@ -208,7 +226,7 @@ static tegrabl_error_t set_ldo_voltage(int32_t phandle, uint32_t volts)
 }
 
 static tegrabl_error_t max77620_gpio_config(uint32_t gpio_num,
-				enum gpio_pin_mode mode, void *drv_data)
+				gpio_pin_mode_t mode, void *drv_data)
 {
 	/* Stub for now - Done in pinmux cfg
 	 * FIXME: Implement this ?
@@ -220,7 +238,7 @@ static tegrabl_error_t max77620_gpio_config(uint32_t gpio_num,
 }
 
 static tegrabl_error_t max77620_gpio_read(uint32_t gpio_num,
-				enum gpio_pin_state *state, void *drv_data)
+				gpio_pin_state_t *state, void *drv_data)
 {
 	/* Stub for now - no use case for read in any tegrabl_*
 	 * FIXME: Implement this ?
@@ -232,7 +250,7 @@ static tegrabl_error_t max77620_gpio_read(uint32_t gpio_num,
 }
 
 static tegrabl_error_t max77620_gpio_write(uint32_t gpio_num,
-				enum gpio_pin_state state, void *drv_data)
+				gpio_pin_state_t state, void *drv_data)
 {
 	uint8_t data = 0;
 	uint8_t reg;
@@ -308,14 +326,14 @@ static tegrabl_error_t get_gpio_info_from_dt(void)
 		goto fail;
 	}
 
-	ptr = (char *)tegrabl_calloc(1, strlen(MAX77620_GPIO_DRIVER) + 1);
+	ptr = (char *)tegrabl_calloc(1, strlen(MAXPMIC_GPIO_DRIVER) + 1);
 	if (!ptr) {
 		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 1);
 		goto fail;
 	}
 
 	drv->name = ptr;
-	strcpy(ptr, MAX77620_GPIO_DRIVER);
+	strcpy(ptr, MAXPMIC_GPIO_DRIVER);
 	/* use the max77620 phandle */
 	drv->phandle = fdt_get_phandle(fdt, internal_node_offset);
 	/* FIXME GPIO list is chip_id based.
@@ -664,7 +682,8 @@ tegrabl_error_t tegrabl_max77620_init(uint32_t i2c_instance)
 		pmic_p->phandle = phandle;
 		pmic_p->i2c_instance = i2c_instance;
 		ptr = &pmic_p->name[0];
-		strcpy(ptr, MAX77620_COMPATIBLE);
+
+		strcpy(ptr, MAXPMIC_COMPATIBLE);
 
 		/* register poweroff only if system-pmic-power-off
 		   property is present */
@@ -702,7 +721,7 @@ tegrabl_error_t tegrabl_max77620_init(uint32_t i2c_instance)
 
 		/* register driver */
 		if (tegrabl_pmic_register(pmic_p) != TEGRABL_NO_ERROR) {
-			pr_error("failed to register %s pmic\n", MAX77620_COMPATIBLE);
+			pr_error("failed to register %s pmic\n", MAXPMIC_COMPATIBLE);
 			err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 2);
 			goto fail;
 		}

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -18,13 +18,21 @@
 #include <tegrabl_dp.h>
 #include <tegrabl_dpaux.h>
 #include <tegrabl_drf.h>
-#include <arsor.h>
+#include <arsor1.h>
 #include <ardpaux.h>
 
 static tegrabl_error_t set_lt_state(struct tegrabl_dp_lt_data *lt_data,
 									int32_t target_state, int32_t delay_ms);
 static tegrabl_error_t set_lt_tpg(struct tegrabl_dp_lt_data *lt_data,
 								  uint32_t tp);
+
+/* Check if post-cursor2 programming is supported */
+static inline bool is_pc2_supported(struct tegrabl_dp_lt_data *lt_data)
+{
+	struct tegrabl_dp_link_config *cfg = &lt_data->dp->link_cfg;
+
+	return (!(lt_data->dp->pdata->pc2_disabled) && cfg->tps == TRAINING_PATTERN_3);
+}
 
 /*
  * Wait period before reading link status.
@@ -54,25 +62,28 @@ static int32_t get_next_lower_link_config(struct tegrabl_dp *dp,
 	for (priority_index = 0; priority_index < priority_arr_size;
 		priority_index++) {
 		if (tegrabl_dp_link_config_priority[priority_index][0] == cur_link_bw &&
-			tegrabl_dp_link_config_priority[priority_index][1] == cur_n_lanes)
+			tegrabl_dp_link_config_priority[priority_index][1] == cur_n_lanes) {
 			break;
+		}
 	}
 
 	/* already at lowest link config */
-	if (priority_index == priority_arr_size - 1)
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+	if (priority_index == priority_arr_size - 1) {
+		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 1);
+	}
 
 	for (priority_index++;
 		priority_index < priority_arr_size; priority_index++) {
 		if ((tegrabl_dp_link_config_priority[priority_index][0] <=
 			link_cfg->max_link_bw) &&
 			(tegrabl_dp_link_config_priority[priority_index][1] <=
-			link_cfg->max_lane_count))
-				return priority_index;
+			link_cfg->max_lane_count)) {
+			return priority_index;
+		}
 	}
 
 	/* we should never end up here */
-	return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 1);
+	return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 2);
 }
 
 static bool get_clock_recovery_status(struct tegrabl_dp_lt_data *lt_data)
@@ -161,7 +172,7 @@ static void get_lt_new_config(struct tegrabl_dp_lt_data *lt_data)
 	uint32_t *vs = lt_data->drive_current;
 	uint32_t *pe = lt_data->pre_emphasis;
 	uint32_t *pc = lt_data->post_cursor2;
-	bool pc_supported = lt_data->tps3_supported;
+	bool pc_supported = is_pc2_supported(lt_data);
 
 	/* support for 1 lane */
 	uint32_t loopcnt = (n_lanes == 1) ? 1 : n_lanes >> 1;
@@ -209,8 +220,8 @@ static void set_tx_pu(struct tegrabl_dp_lt_data *lt_data)
 	uint32_t val;
 
 	pr_debug("%s: entry\n", __func__);
-	/*TODO*/
-	if (!dp->pdata)/* || (dp->pdata && dp->dp_out->tx_pu_disable)) */{
+
+	if (!dp->pdata) {
 		val = sor_readl(dp->sor, SOR_NV_PDISP_SOR_DP_PADCTL0_0 + sor->portnum);
 		val = NV_FLD_SET_DRF_DEF(SOR_NV_PDISP, SOR_DP_PADCTL0, TX_PU, DISABLE,
 								 val);
@@ -243,7 +254,7 @@ static void set_lt_config(struct tegrabl_dp_lt_data *lt_data)
 	struct tegrabl_dp *dp = lt_data->dp;
 	struct sor_data *sor = dp->sor;
 	int32_t n_lanes = lt_data->n_lanes;
-	bool pc_supported = lt_data->tps3_supported;
+	bool pc_supported = is_pc2_supported(lt_data);
 	int32_t i, cnt;
 	uint32_t val;
 	uint32_t *vs = lt_data->drive_current;
@@ -273,9 +284,10 @@ static void set_lt_config(struct tegrabl_dp_lt_data *lt_data)
 					SOR_NV_PDISP_SOR_LANE_PREEMPHASIS0_0 + sor->portnum);
 		vs_val = sor_readl(sor,
 					SOR_NV_PDISP_SOR_LANE_DRIVE_CURRENT0_0 + sor->portnum);
-		if (pc_supported)
+		if (pc_supported) {
 			pc_val = sor_readl(sor,
 						SOR_NV_PDISP_SOR_POSTCURSOR0_0 + sor->portnum);
+		}
 
 		switch (cnt) {
 		case 0:
@@ -283,36 +295,40 @@ static void set_lt_config(struct tegrabl_dp_lt_data *lt_data)
 										LANE2_DP_LANE0, pe_reg, pe_val);
 			vs_val = NV_FLD_SET_DRF_NUM(SOR_NV_PDISP, SOR_LANE_DRIVE_CURRENT0,
 										LANE2_DP_LANE0, vs_reg, vs_val);
-			if (pc_supported)
+			if (pc_supported) {
 				pc_val = NV_FLD_SET_DRF_NUM(SOR_NV_PDISP, SOR_POSTCURSOR0,
 											LANE2_DP_LANE0, pc_reg, pc_val);
+			}
 			break;
 		case 1:
 			pe_val = NV_FLD_SET_DRF_NUM(SOR_NV_PDISP, SOR_LANE_PREEMPHASIS0,
 										LANE1_DP_LANE1, pe_reg, pe_val);
 			vs_val = NV_FLD_SET_DRF_NUM(SOR_NV_PDISP, SOR_LANE_DRIVE_CURRENT0,
 										LANE1_DP_LANE1, vs_reg, vs_val);
-			if (pc_supported)
+			if (pc_supported) {
 				pc_val = NV_FLD_SET_DRF_NUM(SOR_NV_PDISP, SOR_POSTCURSOR0,
 											LANE1_DP_LANE1, pc_reg, pc_val);
+			}
 			break;
 		case 2:
 			pe_val = NV_FLD_SET_DRF_NUM(SOR_NV_PDISP, SOR_LANE_PREEMPHASIS0,
 										LANE0_DP_LANE2, pe_reg, pe_val);
 			vs_val = NV_FLD_SET_DRF_NUM(SOR_NV_PDISP, SOR_LANE_DRIVE_CURRENT0,
 										LANE0_DP_LANE2, vs_reg, vs_val);
-			if (pc_supported)
+			if (pc_supported) {
 				pc_val = NV_FLD_SET_DRF_NUM(SOR_NV_PDISP, SOR_POSTCURSOR0,
 											LANE0_DP_LANE2, pc_reg, pc_val);
+			}
 			break;
 		case 3:
 			pe_val = NV_FLD_SET_DRF_NUM(SOR_NV_PDISP, SOR_LANE_PREEMPHASIS0,
 										LANE3_DP_LANE3, pe_reg, pe_val);
 			vs_val = NV_FLD_SET_DRF_NUM(SOR_NV_PDISP, SOR_LANE_DRIVE_CURRENT0,
 										LANE3_DP_LANE3, vs_reg, vs_val);
-			if (pc_supported)
+			if (pc_supported) {
 				pc_val = NV_FLD_SET_DRF_NUM(SOR_NV_PDISP, SOR_POSTCURSOR0,
 											LANE3_DP_LANE3, pc_reg, pc_val);
+			}
 			break;
 		default:
 			pr_error("dp: incorrect lane cnt\n");
@@ -323,9 +339,10 @@ static void set_lt_config(struct tegrabl_dp_lt_data *lt_data)
 				   pe_val);
 		sor_writel(sor, SOR_NV_PDISP_SOR_LANE_DRIVE_CURRENT0_0 + sor->portnum,
 				   vs_val);
-		if (pc_supported)
+		if (pc_supported) {
 			sor_writel(sor, SOR_NV_PDISP_SOR_LANE_PREEMPHASIS0_0 + sor->portnum,
 					   pc_val);
+		}
 
 		pr_debug("%s: lane %d: vs level: %d, pe level: %d, pc2 level: %d\n",
 				 __func__, i, vs[i], pe[i], pc_supported ? pc[i] : 0);
@@ -379,7 +396,6 @@ static void lt_data_sw_reset(struct tegrabl_dp_lt_data *lt_data)
 	lt_data->n_lanes = dp->link_cfg.lane_count;
 	lt_data->link_bw = dp->link_cfg.link_bw;
 	lt_data->no_aux_handshake = dp->link_cfg.support_fast_lt;
-	lt_data->tps3_supported = dp->link_cfg.tps3_supported;
 	lt_data->aux_rd_interval = dp->link_cfg.aux_rd_interval;
 
 	memset(lt_data->pre_emphasis, PRE_EMPHASIS_L0,
@@ -421,8 +437,9 @@ static tegrabl_error_t set_lt_tpg(struct tegrabl_dp_lt_data *lt_data,
 
 	CHECK_RET(tegrabl_dpaux_hpd_status(dp->hdpaux, &hpd_status));
 
-	if (lt_data->tps == tp)
+	if (lt_data->tps == tp) {
 		return ret;
+	}
 
 	if (hpd_status) {
 		tegrabl_dp_tpg(dp, tp, lt_data->n_lanes);
@@ -549,14 +566,16 @@ static tegrabl_error_t lt_reduce_bit_rate_state(
 	tmp_cfg = dp->link_cfg;
 
 	next_link_index = get_next_lower_link_config(dp, &tmp_cfg);
-	if (next_link_index < 0)
+	if (next_link_index < 0) {
 		goto fail;
+	}
 
 	tmp_cfg.link_bw = tegrabl_dp_link_config_priority[next_link_index][0];
 	tmp_cfg.lane_count = tegrabl_dp_link_config_priority[next_link_index][1];
 
-	if (!tegrabl_dp_calc_config(dp, dp->mode, &tmp_cfg))
+	if (!tegrabl_dp_calc_config(dp, dp->mode, &tmp_cfg)) {
 		goto fail;
+	}
 
 	tmp_cfg.is_valid = true;
 	dp->link_cfg = tmp_cfg;
@@ -582,7 +601,6 @@ static tegrabl_error_t lt_channel_equalization_state(
 {
 	int32_t tgt_state;
 	int32_t timeout;
-	uint32_t tp_src = TRAINING_PATTERN_2;
 	bool cr_done = true;
 	bool ce_done = true;
 	bool cur_hpd;
@@ -599,10 +617,8 @@ static tegrabl_error_t lt_channel_equalization_state(
 		goto done;
 	}
 
-	if (lt_data->tps3_supported)
-		tp_src = TRAINING_PATTERN_3;
+	CHECK_RET(set_lt_tpg(lt_data, lt_data->dp->link_cfg.tps));
 
-	CHECK_RET(set_lt_tpg(lt_data, tp_src));
 	wait_aux_training(lt_data, false);
 
 	cr_done = get_clock_recovery_status(lt_data);
@@ -663,8 +679,9 @@ static inline bool is_vs_already_max(struct tegrabl_dp_lt_data *lt_data,
 
 	for (cnt = 0; cnt < n_lanes; cnt++) {
 		if (old_vs[cnt] == DRIVE_CURRENT_L3 &&
-			new_vs[cnt] == DRIVE_CURRENT_L3)
+			new_vs[cnt] == DRIVE_CURRENT_L3) {
 			continue;
+		}
 
 		return false;
 	}
@@ -779,8 +796,9 @@ static tegrabl_error_t perform_lt(struct tegrabl_dp_lt_data *lt_data)
 			lt_data->state, tegra_dp_lt_state_names[lt_data->state],
 			cur_hpd, pending_lt_evt);
 
-	if (!cur_hpd)
+	if (!cur_hpd) {
 		return TEGRABL_ERR_INIT_FAILED;
+	}
 
 	if (pending_lt_evt) {
 		ret = set_lt_state(lt_data, STATE_RESET, 0);

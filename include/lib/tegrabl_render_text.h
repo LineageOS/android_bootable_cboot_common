@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2017, NVIDIA CORPORATION. All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -16,35 +16,35 @@
 #include <tegrabl_font.h>
 
 /* text colors */
-enum color {
-	RED,
-	WHITE,
-	GREEN,
-	BLUE,
-	YELLOW,
-	ORANGE,
-	BLACK,
-	CYAN,
-	MAGENTA,
-	BROWN,
-	LIGHTGRAY,
-	DARKGRAY,
-	LIGHTBLUE,
-	LIGHTGREEN,
-	LIGHTCYAN,
-	LIGHTRED,
-	LIGHTMAGENTA,
-	NUM_OF_COLORS,
-};
+/* macro color_t */
+typedef uint32_t color_t;
+#define RED 0
+#define WHITE 1
+#define GREEN 2
+#define BLUE 3
+#define YELLOW 4
+#define ORANGE 5
+#define BLACK 6
+#define CYAN 7
+#define MAGENTA 8
+#define BROWN 9
+#define LIGHTGRAY 10
+#define DARKGRAY 11
+#define LIGHTBLUE 12
+#define LIGHTGREEN 13
+#define LIGHTCYAN 14
+#define LIGHTRED 15
+#define LIGHTMAGENTA 16
+#define NUM_OF_COLORS 17
 
 struct text_position {
 	uint32_t x;
 	uint32_t y;
 };
 
-enum font {
-	FONT_DEFAULT,
-};
+/* macro font */
+typedef uint32_t font_t;
+#define FONT_DEFAULT 0
 
 struct text_font {
 	uint32_t type;
@@ -87,7 +87,7 @@ void tegrabl_render_text_set_position(uint32_t x, uint32_t y);
  *  @param type Font of the text
  *  @param size size of the text
  */
-void tegrabl_render_text_set_font(enum tegrabl_font_type type, uint32_t size);
+void tegrabl_render_text_set_font(tegrabl_font_type_t type, uint32_t size);
 
 /** @brief Sets the rotation angle for the text, at which it has be rendered.
  *

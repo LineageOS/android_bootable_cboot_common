@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -80,6 +80,23 @@ tegrabl_error_t tegrabl_gpio_driver_get(uint32_t chip_id,
 
 	return ret;
 }
+
+#if defined(CONFIG_ENABLE_GPIO_DT_BASED)
+tegrabl_error_t tegrabl_gpio_get_chipid_with_phandle(int32_t phandle, uint32_t *chip_id)
+{
+	struct gpio_driver *entry;
+
+	TEGRABL_ASSERT(chip_id);
+
+	list_for_every_entry(&gpio_drivers, entry, struct gpio_driver, node) {
+		if (entry->phandle == phandle) {
+			*chip_id = entry->chip_id;
+			return TEGRABL_NO_ERROR;
+		}
+	}
+	return TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 0);
+}
+#endif
 
 void gpio_framework_init()
 {

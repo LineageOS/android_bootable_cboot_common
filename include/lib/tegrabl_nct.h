@@ -30,7 +30,7 @@ tegrabl_error_t tegrabl_nct_init(void);
  *
  * @return TEGRABL_NO_ERROR if successful else appropriate error.
  */
-tegrabl_error_t tegrabl_nct_read_item(enum nct_id id, union nct_item *buf);
+tegrabl_error_t tegrabl_nct_read_item(nct_id_t id, union nct_item *buf);
 
 /**
  * @brief Get readable spec id/config from NCT

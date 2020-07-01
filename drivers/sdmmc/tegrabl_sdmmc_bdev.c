@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -13,6 +13,7 @@
 #include "build_config.h"
 #include <stdint.h>
 #include <string.h>
+#include <tegrabl_sdmmc_bdev.h>
 #include <tegrabl_sdmmc_defs.h>
 #include <tegrabl_sdmmc_bdev_local.h>
 #include <tegrabl_sdmmc_rpmb.h>
@@ -23,45 +24,45 @@
 #include <tegrabl_error.h>
 #include <tegrabl_debug.h>
 #include <inttypes.h>
-#include <tegrabl_mb1_bct.h>
+#include <tegrabl_blockdev.h>
 
 /*  The below variable is required to maintain the init status of each instance.
  */
-static sdmmc_context_t *contexts[4] = {0, 0, 0, 0};
+static struct tegrabl_sdmmc *contexts[MAX_SDMMC_INSTANCES];
 
 tegrabl_error_t sdmmc_bdev_ioctl(tegrabl_bdev_t *dev, uint32_t ioctl,
 	void *args)
 {
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
-
-#if !defined(CONFIG_ENABLE_SDMMC_RPMB)
-	TEGRABL_UNUSED(args);
-	TEGRABL_UNUSED(dev);
-#else
 	sdmmc_priv_data_t *priv_data = (sdmmc_priv_data_t *)dev->priv_data;
+
+#if defined(CONFIG_ENABLE_SDMMC_RPMB)
 	uint32_t counter = 0;
 	sdmmc_rpmb_context_t *rpmb_context = NULL;
+#else
+	TEGRABL_UNUSED(args);
+	TEGRABL_UNUSED(dev);
 #endif
+
 	switch (ioctl) {
+	case TEGRABL_IOCTL_SEND_STATUS:
+		error = sdmmc_send_status((struct tegrabl_sdmmc *)priv_data->context);
+		break;
+	case TEGRABL_IOCTL_DEVICE_CACHE_FLUSH:
+		break;
 #if defined(CONFIG_ENABLE_SDMMC_RPMB)
 	case TEGRABL_IOCTL_PROTECTED_BLOCK_KEY:
-		error = sdmmc_rpmb_program_key(dev, args,
-			 (sdmmc_context_t *)priv_data->context);
+		error = sdmmc_rpmb_program_key(dev, args, (struct tegrabl_sdmmc *)priv_data->context);
 		break;
 	case TEGRABL_IOCTL_GET_RPMB_WRITE_COUNTER:
-		error = sdmmc_rpmb_get_write_counter(dev, args,
-			&counter,
-			rpmb_context,
-			(sdmmc_context_t *)priv_data->context);
-		break;
-#endif
-#if !defined(CONFIG_ENABLE_BLOCKDEV_BASIC)
-	case TEGRABL_IOCTL_DEVICE_CACHE_FLUSH:
+		error = sdmmc_rpmb_get_write_counter(dev, args,	&counter, rpmb_context,
+					(struct tegrabl_sdmmc *)priv_data->context);
 		break;
 #endif
 	default:
 		pr_debug("Unknown ioctl %"PRIu32"\n", ioctl);
 		error = TEGRABL_ERROR(TEGRABL_ERR_NOT_SUPPORTED, 5);
+		break;
 	}
 
 	return error;
@@ -75,11 +76,11 @@ tegrabl_error_t sdmmc_bdev_read_block(tegrabl_bdev_t *dev, void *buf,
 
 	/* Please note it is the responsibility of the block device layer */
 	/* to validate block & count. */
-	pr_debug("StartBlock= %d NumofBlock = %d\n", block, count);
+	pr_trace("StartBlock= %d NumofBlock = %d\n", block, count);
 
 	/* Call sdmmc_read with the given arguments. */
 	error = sdmmc_io(dev, buf, block, count, 0,
-				(sdmmc_context_t *)priv_data->context, priv_data->device);
+				(struct tegrabl_sdmmc *)priv_data->context, priv_data->device, false);
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
@@ -101,7 +102,7 @@ tegrabl_error_t sdmmc_bdev_write_block(tegrabl_bdev_t *dev,
 
 	/* Call sdmmc_write with the given arguments. */
 	error = sdmmc_io(dev, (void *)buf, block, count, 1,
-		(sdmmc_context_t *)priv_data->context, priv_data->device);
+		(struct tegrabl_sdmmc *)priv_data->context, priv_data->device, false);
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
@@ -112,6 +113,22 @@ fail:
 #endif
 
 #if !defined(CONFIG_ENABLE_BLOCKDEV_BASIC)
+static tegrabl_error_t sdmmc_bdev_xfer_wait(struct tegrabl_blockdev_xfer_info *xfer, time_t timeout,
+		uint8_t *status)
+{
+	return sdmmc_xfer_wait(xfer, timeout, status);
+}
+
+static tegrabl_error_t sdmmc_bdev_xfer(struct tegrabl_blockdev_xfer_info *xfer)
+{
+	tegrabl_bdev_t *dev = xfer->dev;
+	sdmmc_priv_data_t *priv_data = (sdmmc_priv_data_t *)dev->priv_data;
+	struct tegrabl_sdmmc *hsdmmc = (struct tegrabl_sdmmc *)priv_data->context;
+
+	return sdmmc_io(dev, (void *)xfer->buf, xfer->start_block, xfer->block_count, 1, hsdmmc,
+			priv_data->device, true);
+}
+
 tegrabl_error_t sdmmc_bdev_erase(tegrabl_bdev_t *dev, bnum_t block,
 	bnum_t count, bool is_secure)
 {
@@ -125,7 +142,7 @@ tegrabl_error_t sdmmc_bdev_erase(tegrabl_bdev_t *dev, bnum_t block,
 
 	/* Call erase functionality implemented in protocol layer. */
 	error = sdmmc_erase(dev, block, count,
-				(sdmmc_context_t *)priv_data->context, priv_data->device);
+				(struct tegrabl_sdmmc *)priv_data->context, priv_data->device);
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
@@ -135,7 +152,7 @@ fail:
 }
 #endif
 
-static tegrabl_error_t sdmmc_register_region(sdmmc_context_t *context)
+static tegrabl_error_t sdmmc_register_region(struct tegrabl_sdmmc *hsdmmc)
 {
 	tegrabl_bdev_t *user_dev = NULL;
 	tegrabl_bdev_t *boot_dev = NULL;
@@ -147,40 +164,42 @@ static tegrabl_error_t sdmmc_register_region(sdmmc_context_t *context)
 	tegrabl_bdev_t *rpmb_dev = NULL;
 	sdmmc_priv_data_t *rpmb_priv_data = NULL;
 #endif
-	context->count_devices = 1;
+	hsdmmc->count_devices = 1;
 
 	boot_priv_data = tegrabl_calloc(1, sizeof(sdmmc_priv_data_t));
 
 	/* Check for memory allocation. */
-	if (!boot_priv_data) {
+	if (boot_priv_data == NULL) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
 		goto fail;
 	}
 
 	boot_priv_data->device = DEVICE_BOOT;
-	boot_priv_data->context = (void *)context;
+	boot_priv_data->context = (void *)hsdmmc;
 
 	/* Initialize block driver with boot_area region. */
-	pr_debug("init boot device\n");
+	pr_debug("Init boot device\n");
 
-	device_id = TEGRABL_STORAGE_SDMMC_BOOT << 16 | context->controller_id;
+	device_id = TEGRABL_STORAGE_SDMMC_BOOT << 16 | hsdmmc->controller_id;
 
 	/* Allocate memory for boot device handle. */
-	pr_debug("allocating memory for boot device\n");
+	pr_trace("Allocating memory for boot device\n");
 	boot_dev = tegrabl_calloc(1, sizeof(tegrabl_bdev_t));
 
 	/* Check for memory allocation. */
-	if (!boot_dev) {
+	if (boot_dev == NULL) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 1);
 		goto fail;
 	}
 
 	error = tegrabl_blockdev_initialize_bdev(boot_dev, device_id,
-									 context->block_size_log2,
-									 context->boot_blocks << 1);
-	if (error != TEGRABL_NO_ERROR)
+									 hsdmmc->block_size_log2,
+									 hsdmmc->boot_blocks << 1);
+	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
+	}
 
+	boot_dev->buf_align_size = TEGRABL_SDMMC_BUF_ALIGN_SIZE;
 	/* Fill bdev function pointers. */
 	boot_dev->read_block = sdmmc_bdev_read_block;
 #if !defined(CONFIG_DISABLE_EMMC_BLOCK_WRITE)
@@ -188,13 +207,15 @@ static tegrabl_error_t sdmmc_register_region(sdmmc_context_t *context)
 #endif
 #if !defined(CONFIG_ENABLE_BLOCKDEV_BASIC)
 	boot_dev->erase = sdmmc_bdev_erase;
+	boot_dev->xfer = sdmmc_bdev_xfer;
+	boot_dev->xfer_wait = sdmmc_bdev_xfer_wait;
 #endif
 	boot_dev->close = sdmmc_bdev_close;
 	boot_dev->ioctl = sdmmc_bdev_ioctl;
 	boot_dev->priv_data = (void *)boot_priv_data;
 
 	/* Register sdmmc_boot device. */
-	pr_debug("registering boot device\n");
+	pr_trace("Registering boot device\n");
 	error = tegrabl_blockdev_register_device(boot_dev);
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
@@ -203,35 +224,37 @@ static tegrabl_error_t sdmmc_register_region(sdmmc_context_t *context)
 	user_priv_data = tegrabl_calloc(1, sizeof(sdmmc_priv_data_t));
 
 	/* Check for memory allocation. */
-	if (!user_priv_data) {
+	if (user_priv_data == NULL) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 2);
 		goto fail;
 	}
 
-	context->count_devices += 1;
+	hsdmmc->count_devices += 1U;
 	user_priv_data->device = DEVICE_USER;
-	user_priv_data->context = (void *)context;
+	user_priv_data->context = (void *)hsdmmc;
 
 	/* Initialize block driver with user area region. */
-	pr_debug("init user device\n");
-	device_id = TEGRABL_STORAGE_SDMMC_USER << 16 | context->controller_id;
+	pr_debug("Init user device\n");
+	device_id = TEGRABL_STORAGE_SDMMC_USER << 16 | hsdmmc->controller_id;
 
 	/* Allocate memory for user device handle. */
-	pr_debug("allocating memory for user device\n");
+	pr_trace("Allocating memory for user device\n");
 	user_dev = tegrabl_calloc(1, sizeof(tegrabl_bdev_t));
 
 	/* Check for memory allocation. */
-	if (!user_dev) {
+	if (user_dev == NULL) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 3);
 		goto fail;
 	}
 
 	error = tegrabl_blockdev_initialize_bdev(user_dev, device_id,
-									 context->block_size_log2,
-									 context->user_blocks);
-	if (error != TEGRABL_NO_ERROR)
+									 hsdmmc->block_size_log2,
+									 hsdmmc->user_blocks);
+	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
+	}
 
+	user_dev->buf_align_size = TEGRABL_SDMMC_BUF_ALIGN_SIZE;
 	/* Fill bdev function pointers. */
 	user_dev->read_block = sdmmc_bdev_read_block;
 #if !defined(CONFIG_DISABLE_EMMC_BLOCK_WRITE)
@@ -239,13 +262,15 @@ static tegrabl_error_t sdmmc_register_region(sdmmc_context_t *context)
 #endif
 #if !defined(CONFIG_ENABLE_BLOCKDEV_BASIC)
 	user_dev->erase = sdmmc_bdev_erase;
+	user_dev->xfer = sdmmc_bdev_xfer;
+	user_dev->xfer_wait = sdmmc_bdev_xfer_wait;
 #endif
 	user_dev->close = sdmmc_bdev_close;
 	user_dev->ioctl = sdmmc_bdev_ioctl;
 	user_dev->priv_data = (void *)user_priv_data;
 
 	/* Register sdmmc_user device. */
-	pr_debug("registering user device\n");
+	pr_trace("Registering user device\n");
 	error = tegrabl_blockdev_register_device(user_dev);
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
@@ -260,16 +285,16 @@ static tegrabl_error_t sdmmc_register_region(sdmmc_context_t *context)
 		goto fail;
 	}
 
-	context->count_devices += 1;
+	hsdmmc->count_devices += 1;
 	rpmb_priv_data->device = DEVICE_RPMB;
-	rpmb_priv_data->context = (void *)context;
+	rpmb_priv_data->context = (void *)hsdmmc;
 
 	/* Initialize block driver with rpmb area region. */
-	pr_debug("init rpmb device\n");
-	device_id = TEGRABL_STORAGE_SDMMC_RPMB << 16 | context->controller_id;
+	pr_debug("Init RPMB device\n");
+	device_id = TEGRABL_STORAGE_SDMMC_RPMB << 16 | hsdmmc->controller_id;
 
 	/* Allocate memory for rpmb device handle. */
-	pr_debug("allocating memory for rpmb device\n");
+	pr_trace("Allocating memory for RPMB device\n");
 	rpmb_dev = tegrabl_calloc(1, sizeof(tegrabl_bdev_t));
 
 	/* Check for memory allocation. */
@@ -280,10 +305,11 @@ static tegrabl_error_t sdmmc_register_region(sdmmc_context_t *context)
 
 	error = tegrabl_blockdev_initialize_bdev(rpmb_dev, device_id,
 									 RPMB_DATA_SIZE_LOG2,
-									 context->rpmb_blocks);
+									 hsdmmc->rpmb_blocks);
 	if (error != TEGRABL_NO_ERROR)
 		goto fail;
 
+	rpmb_dev->buf_align_size = TEGRABL_SDMMC_BUF_ALIGN_SIZE;
 	/* Fill bdev function pointers. */
 	rpmb_dev->read_block = sdmmc_bdev_read_block;
 #if !defined(CONFIG_DISABLE_EMMC_BLOCK_WRITE)
@@ -291,119 +317,140 @@ static tegrabl_error_t sdmmc_register_region(sdmmc_context_t *context)
 #endif
 #if !defined(CONFIG_ENABLE_BLOCKDEV_BASIC)
 	rpmb_dev->erase = sdmmc_bdev_erase;
+	rpmb_dev->xfer = sdmmc_bdev_xfer;
+	rpmb_dev->xfer_wait = sdmmc_bdev_xfer_wait;
 #endif
 	rpmb_dev->close = sdmmc_bdev_close;
 	rpmb_dev->ioctl = sdmmc_bdev_ioctl;
 	rpmb_dev->priv_data = (void *)rpmb_priv_data;
 
 	/* Register sdmmc_rpmb device. */
-	pr_debug("registering rpmb device\n");
+	pr_trace("Registering RPMB device\n");
 	error = tegrabl_blockdev_register_device(rpmb_dev);
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
 #endif
 fail:
-	if (error && boot_dev) {
-		tegrabl_free(boot_dev);
-	}
+	if (error != TEGRABL_NO_ERROR) {
+		if (boot_dev != NULL) {
+			tegrabl_free(boot_dev);
+		}
 
-	if (error && boot_priv_data) {
-		tegrabl_free(boot_priv_data);
-	}
+		if (boot_priv_data != NULL) {
+			tegrabl_free(boot_priv_data);
+		}
 
-	if (error && user_dev) {
-		tegrabl_free(user_dev);
-	}
+		if (user_dev != NULL) {
+			tegrabl_free(user_dev);
+		}
 
-	if (error && user_priv_data) {
-		tegrabl_free(user_priv_data);
-	}
+		if (user_priv_data != NULL) {
+			tegrabl_free(user_priv_data);
+		}
 
 #if defined(CONFIG_ENABLE_SDMMC_RPMB)
-	if (error && rpmb_dev) {
-		tegrabl_free(rpmb_dev);
-	}
+		if (rpmb_dev != NULL) {
+			tegrabl_free(rpmb_dev);
+		}
 
-	if (error && rpmb_priv_data) {
-		tegrabl_free(rpmb_priv_data);
-	}
+		if (rpmb_priv_data != NULL) {
+			tegrabl_free(rpmb_priv_data);
+		}
 #endif
+	}
 
 	return error;
 }
 
-tegrabl_error_t sdmmc_bdev_open(
-		struct tegrabl_mb1bct_emmc_params *emmc_params, uint32_t flag)
+tegrabl_error_t sdmmc_bdev_open(uint32_t instance, struct tegrabl_sdmmc_platform_params *params)
 {
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
-	sdmmc_context_t *context = NULL;
+	struct tegrabl_sdmmc *hsdmmc = NULL;
+	uint8_t flag = SKIP_NONE;
 
-	if (!emmc_params) {
+	if (params == NULL) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 		goto fail;
 	}
 
-	if (emmc_params->instance > INSTANCE_3) {
+	if (instance >= MAX_SDMMC_INSTANCES) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_NOT_SUPPORTED, 6);
 		goto fail;
 	}
 
-	pr_debug("instance: %d\n", emmc_params->instance);
-	context = contexts[emmc_params->instance];
+	pr_debug("Instance: %d\n", instance);
+
+	pr_trace("clk_src = %d\n", params->clk_src);
+	pr_trace("clk_freq = %d\n", params->clk_freq);
+	pr_trace("best_mode = %d\n", params->best_mode);
+	pr_trace("tap_value = %d\n", params->tap_value);
+	pr_trace("trim_value = %d\n", params->trim_value);
+	pr_trace("pd_offset = %d\n", params->pd_offset);
+	pr_trace("pu_offset = %d\n", params->pu_offset);
+	pr_trace("dqs_trim_hs400 = %d\n", params->dqs_trim_hs400);
+	pr_trace("enable_strobe_hs400 = %d\n", params->enable_strobe_hs400);
+	pr_trace("is_skip_init = %d\n", params->is_skip_init);
+
+	hsdmmc = contexts[instance];
+	if (params->is_skip_init) {
+		flag = SKIP_INIT;
+	}
 
 	/* Check if the handle is NULL or not. */
-	if (context != NULL) {
-		if (context->clk_src == emmc_params->clk_src &&
-			context->best_mode == emmc_params->best_mode &&
-			context->tap_value == emmc_params->tap_value &&
-			context->trim_value == emmc_params->trim_value) {
+	if (hsdmmc != NULL) {
+		if (hsdmmc->clk_src == params->clk_src &&
+			hsdmmc->best_mode == params->best_mode &&
+			hsdmmc->tap_value == params->tap_value &&
+			hsdmmc->trim_value == params->trim_value) {
 			pr_info("sdmmc bdev is already initialized\n");
 			goto fail;
+		} else {
+			flag = SKIP_INIT_UPDATE_CONFIG;
 		}
 	} else {
-		/* Allocate memory for context. */
-		pr_debug("allocating memory for context\n");
-		context = tegrabl_alloc(TEGRABL_HEAP_DMA, sizeof(sdmmc_context_t));
+		/* Allocate memory for context */
+		pr_trace("Allocating memory for context\n");
+		hsdmmc = tegrabl_alloc(TEGRABL_HEAP_DMA, sizeof(struct tegrabl_sdmmc));
 
 		/* Check for memory allocation. */
-		if (!context) {
+		if (hsdmmc == NULL) {
 			error = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 6);
 			goto fail;
 		}
 
 		/* Initialize the memory with zero. */
-		memset(context, 0x0, sizeof(sdmmc_context_t));
+		memset(hsdmmc, 0x0, sizeof(struct tegrabl_sdmmc));
 	}
 
-	context->clk_src = emmc_params->clk_src;
-	context->controller_id = emmc_params->instance;
-	context->best_mode = emmc_params->best_mode;
-	context->tap_value = emmc_params->tap_value;
-	context->trim_value = emmc_params->trim_value;
+	hsdmmc->clk_src = params->clk_src;
+	hsdmmc->controller_id = instance;
+	hsdmmc->best_mode = params->best_mode;
+	hsdmmc->tap_value = params->tap_value;
+	hsdmmc->trim_value = params->trim_value;
 
 	/* Call sdmmc_init to proceed with initialization. */
 	pr_debug("sdmmc init\n");
 
-	error = sdmmc_init(context->controller_id, context, flag);
+	error = sdmmc_init(hsdmmc->controller_id, hsdmmc, flag);
 	if (error != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
 
-	if (!contexts[context->controller_id]) {
+	if (contexts[hsdmmc->controller_id] == NULL) {
 		/* Fill the required function pointers and register the device. */
-		pr_debug("sdmmc device register\n");
-		error = sdmmc_register_region(context);
+		pr_trace("sdmmc device register\n");
+		error = sdmmc_register_region(hsdmmc);
 		if (error != TEGRABL_NO_ERROR) {
 			goto fail;
 		}
 	}
 
-	contexts[emmc_params->instance] = context;
+	contexts[instance] = hsdmmc;
 fail:
 
-	if ((error != TEGRABL_NO_ERROR) && context) {
-		tegrabl_dealloc(TEGRABL_HEAP_DMA, context);
+	if ((error != TEGRABL_NO_ERROR) && (hsdmmc != NULL)) {
+		tegrabl_dealloc(TEGRABL_HEAP_DMA, hsdmmc);
 	}
 
 	return error;
@@ -412,7 +459,7 @@ fail:
 tegrabl_error_t sdmmc_bdev_close(tegrabl_bdev_t *dev)
 {
 	sdmmc_priv_data_t *priv_data;
-	sdmmc_context_t *context;
+	struct tegrabl_sdmmc *hsdmmc;
 
 	if (dev == NULL) {
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 46);
@@ -423,14 +470,14 @@ tegrabl_error_t sdmmc_bdev_close(tegrabl_bdev_t *dev)
 	}
 
 	priv_data = (sdmmc_priv_data_t *)dev->priv_data;
-	context = (sdmmc_context_t *)priv_data->context;
+	hsdmmc = (struct tegrabl_sdmmc *)priv_data->context;
 
 	/* Close allocated context for sdmmc. */
-	if (priv_data && (context->count_devices == 1)) {
-		contexts[context->controller_id] = NULL;
-		tegrabl_dealloc(TEGRABL_HEAP_DMA, context);
-	} else if (priv_data && context->count_devices) {
-		context->count_devices--;
+	if ((priv_data != NULL) && (hsdmmc->count_devices == 1U)) {
+		contexts[hsdmmc->controller_id] = NULL;
+		tegrabl_dealloc(TEGRABL_HEAP_DMA, hsdmmc);
+	} else if ((priv_data != NULL) && (hsdmmc->count_devices != 0U)) {
+		hsdmmc->count_devices--;
 	} else {
 		/* No Action Required */
 	}

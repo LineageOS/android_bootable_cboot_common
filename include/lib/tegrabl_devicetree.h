@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -22,11 +22,16 @@
 /**
  * @brief Types of device tree supported
  */
-enum tegrabl_dt_type {
-	TEGRABL_DT_BL,
-	TEGRABL_DT_KERNEL,
-	TEGRABL_DT_COUNT,
-};
+/* macro tegrabl dt */
+typedef uint32_t tegrabl_dt_type_t;
+#define TEGRABL_DT_BL 0
+#define TEGRABL_DT_KERNEL 1
+#if defined(CONFIG_ENABLE_CBO)
+#define TEGRABL_DT_CBO 2
+#define TEGRABL_DT_COUNT 3
+#else
+#define TEGRABL_DT_COUNT 2
+#endif
 
 /**
  * @brief Get the next node's offset
@@ -100,7 +105,7 @@ tegrabl_error_t tegrabl_dt_get_gic_intr(const void *fdt, int node,
  * @return TEGRABL_NO_ERROR if the specified number of interrupts is read
  *		   successfully, otherwise appropriate error.
  */
-tegrabl_error_t tegrabl_dt_set_fdt_handle(enum tegrabl_dt_type type,
+tegrabl_error_t tegrabl_dt_set_fdt_handle(tegrabl_dt_type_t type,
 										  void *fdt);
 
 /**
@@ -112,7 +117,7 @@ tegrabl_error_t tegrabl_dt_set_fdt_handle(enum tegrabl_dt_type type,
  * @return TEGRABL_NO_ERROR if the specified number of interrupts is read
  *		   successfully, otherwise appropriate error.
  */
-tegrabl_error_t tegrabl_dt_get_fdt_handle(enum tegrabl_dt_type type,
+tegrabl_error_t tegrabl_dt_get_fdt_handle(tegrabl_dt_type_t type,
 										  void **fdt);
 
 /**
@@ -491,5 +496,17 @@ tegrabl_error_t tegrabl_get_alias_by_name(const void *fdt_ptr, char *name,
  */
 tegrabl_error_t tegrabl_get_alias_id(char *prefix, char *alias_name,
 		int *alias_id);
+
+
+/**
+ * @brief Create DT space by given size for fdt handle
+ *
+ * @param fdt pointer to fdt handle.
+ * @param inc_size increaed size to be created.
+ * @param max_size max space size available.
+ *
+ * @return TEGRABL_NO_ERROR in case of success else error code.
+ */
+tegrabl_error_t tegrabl_dt_create_space(void *fdt, uint32_t inc_size, uint32_t max_size);
 
 #endif /* __TEGRABL_DEVICETREE_H__ */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - 2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -19,24 +19,27 @@
 #include <tegrabl_timer.h>
 #include <tegrabl_utils.h>
 #include <tegrabl_i2c.h>
+#include <tegrabl_i2c_dev_err_aux.h>
 
-struct tegrabl_i2c_dev *tegrabl_i2c_dev_open(enum tegrabl_instance_i2c instance,
+struct tegrabl_i2c_dev *tegrabl_i2c_dev_open(tegrabl_instance_i2c_t instance,
 	uint32_t slave_addr, uint32_t reg_addr_size, uint32_t bytes_per_reg)
 {
 	struct tegrabl_i2c_dev *hi2cdev;
 	struct tegrabl_i2c *hi2c;
 
-	pr_debug("%s: entry\n", __func__);
+	pr_trace("%s: entry\n", __func__);
 
 	hi2cdev = tegrabl_malloc(sizeof(*hi2cdev));
 	if (hi2cdev == NULL) {
-		pr_error("%s: i2c dev memory alloc failed\n", __func__);
+		TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_NO_MEMORY, "%d", "i2c dev for instnace %d",
+			(uint32_t)sizeof(*hi2cdev), instance);
 		return NULL;
 	}
 
 	hi2c = tegrabl_i2c_open(instance);
 	if (hi2c == NULL) {
-		pr_error("%s: i2c open failed\n", __func__);
+		tegrabl_free(hi2cdev);
+		TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_INIT_FAILED, "instance %d", instance);
 		return NULL;
 	}
 
@@ -47,7 +50,7 @@ struct tegrabl_i2c_dev *tegrabl_i2c_dev_open(enum tegrabl_instance_i2c instance,
 	hi2cdev->bytes_per_reg = bytes_per_reg;
 	hi2cdev->wait_time_for_write_us = 0;
 
-	pr_debug("%s: exit\n", __func__);
+	pr_trace("%s: exit\n", __func__);
 	return hi2cdev;
 }
 
@@ -68,47 +71,59 @@ tegrabl_error_t tegrabl_i2c_dev_read(struct tegrabl_i2c_dev *hi2cdev, void *buf,
 	uint32_t i;
 	uint32_t j = 0;
 
-	pr_debug("%s: entry\n", __func__);
+	pr_trace("%s: entry\n", __func__);
 
 	if ((hi2cdev == NULL) || (buf == NULL)) {
-		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
-		goto fail;
+		error = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, TEGRABL_I2C_DEV_READ);
+		TEGRABL_SET_ERROR_STRING(error, "hi2cdev %p, buf %p", hi2cdev, buf);
+		goto invalid_param;
 	}
+
 	hi2c = hi2cdev->hi2c;
 	slave_addr = hi2cdev->slave_addr;
 	bytes_per_reg = hi2cdev->bytes_per_reg;
 	reg_addr_size = hi2cdev->reg_addr_size;
 
-	buffer = tegrabl_malloc(reg_addr_size);
-	if (buffer == NULL) {
-		pr_error("intermediate memory for i2c failed\n");
-		error = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
+	if (reg_addr_size > sizeof(reg_addr)) {
+		error = TEGRABL_ERROR(TEGRABL_ERR_TOO_LARGE, TEGRABL_I2C_DEV_READ);
+		TEGRABL_SET_ERROR_STRING(error, "register address size %d", "%d",
+				reg_addr_size, (uint32_t)sizeof(reg_addr));
 		goto fail;
 	}
-	pr_debug("i2c write slave: 0x%x, register 0x%x\n", slave_addr, reg_addr);
-	pr_debug("reg_addr_size %d, instance %d\n", reg_addr_size,
+
+	buffer = tegrabl_malloc(reg_addr_size);
+	if (buffer == NULL) {
+		error = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, TEGRABL_I2C_DEV_READ);
+		TEGRABL_SET_ERROR_STRING(error, "%d", "register address computation", reg_addr_size);
+		goto fail;
+	}
+
+	pr_trace("i2c read slave: 0x%x, register 0x%x\n", slave_addr, reg_addr);
+	pr_trace("reg_addr_size %d, instance %d\n", reg_addr_size,
 		hi2cdev->instance);
-	pr_debug("bytes_per_reg %d\n", bytes_per_reg);
+	pr_trace("bytes_per_reg %d\n", bytes_per_reg);
 
 	curr_reg_addr = reg_addr;
 
 	regs_remaining = reg_count;
 	do {
-		if (regs_remaining * bytes_per_reg  < MAX_I2C_TRANSFER_SIZE)
+		if ((regs_remaining * bytes_per_reg) < MAX_I2C_TRANSFER_SIZE) {
 			regs_to_transfer = regs_remaining;
-		else
+		} else {
 			regs_to_transfer = DIV_FLOOR(MAX_I2C_TRANSFER_SIZE, bytes_per_reg);
+		}
 		repeat_start = 1;
 
 		/* copy current slave register address */
 		i = 0;
 		do  {
-			buffer[i] = (curr_reg_addr >> (8 * i)) & 0xFF;
+			buffer[i] = (curr_reg_addr >> (8U * i)) & 0xFFU;
 		} while (++i < reg_addr_size);
 
 		error = tegrabl_i2c_write(hi2c, slave_addr, 1, buffer, i);
 		if (error != TEGRABL_NO_ERROR) {
 			TEGRABL_SET_HIGHEST_MODULE(error);
+			TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_SEND_FAILED, "register address 0x%08x", reg_addr);
 			goto fail;
 		}
 
@@ -117,11 +132,14 @@ tegrabl_error_t tegrabl_i2c_dev_read(struct tegrabl_i2c_dev *hi2cdev, void *buf,
 		error = tegrabl_i2c_read(hi2c, slave_addr, repeat_start, &pbuf[j], i);
 		if (error != TEGRABL_NO_ERROR) {
 			TEGRABL_SET_HIGHEST_MODULE(error);
+			TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_READ_FAILED,
+					"data of size %d at register address 0x%08x", i, reg_addr);
 			goto fail;
 		}
+
 		j  += i;
 
-		pr_debug("curr reg = %x, regs transferred = %d, regs remain = %d\n",
+		pr_trace("curr reg = %x, regs transferred = %d, regs remain = %d\n",
 			 curr_reg_addr, regs_to_transfer, regs_remaining);
 		regs_remaining -= regs_to_transfer;
 		curr_reg_addr += regs_to_transfer;
@@ -129,12 +147,16 @@ tegrabl_error_t tegrabl_i2c_dev_read(struct tegrabl_i2c_dev *hi2cdev, void *buf,
 
 fail:
 	if (error != TEGRABL_NO_ERROR) {
-		pr_error("i2c dev read failed\n");
+		TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_READ_FAILED,
+				"%d registers of size %d from slave 0x%02x at 0x%08x via instance %d",
+				reg_count, bytes_per_reg, slave_addr, reg_addr, hi2cdev->instance);
 	}
 
 	if (buffer != NULL) {
 		tegrabl_free(buffer);
 	}
+
+invalid_param:
 	return error;
 }
 
@@ -155,11 +177,12 @@ tegrabl_error_t tegrabl_i2c_dev_write(struct tegrabl_i2c_dev *hi2cdev,
 	uint32_t i;
 	uint32_t j = 0;
 
-	pr_debug("%s: entry\n", __func__);
+	pr_trace("%s: entry\n", __func__);
 
 	if ((hi2cdev == NULL) || (buf == NULL)) {
-		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
-		goto fail;
+		error = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, TEGRABL_I2C_DEV_WRITE);
+		TEGRABL_SET_ERROR_STRING(error, "hi2cdev %p, buf %p", hi2cdev, buf);
+		goto invalid_param;
 	}
 
 	hi2c = hi2cdev->hi2c;
@@ -167,23 +190,32 @@ tegrabl_error_t tegrabl_i2c_dev_write(struct tegrabl_i2c_dev *hi2cdev,
 	bytes_per_reg = hi2cdev->bytes_per_reg;
 	reg_addr_size = hi2cdev->reg_addr_size;
 
-	pr_debug("i2c write slave: 0x%x, register 0x%x\n", slave_addr, reg_addr);
-	pr_debug("reg_addr_size %d, instance %d\n", reg_addr_size,
+	if (reg_addr_size > sizeof(reg_addr)) {
+		error = TEGRABL_ERROR(TEGRABL_ERR_TOO_LARGE, TEGRABL_I2C_DEV_WRITE);
+		TEGRABL_SET_ERROR_STRING(error, "register address size %d", "%d",
+				reg_addr_size, (uint32_t)sizeof(reg_addr));
+		goto fail;
+	}
+
+	pr_trace("i2c write slave: 0x%x, register 0x%x\n", slave_addr, reg_addr);
+	pr_trace("reg_addr_size %d, instance %d\n", reg_addr_size,
 		hi2cdev->instance);
-	pr_debug("bytes_per_reg %d\n", bytes_per_reg);
+	pr_trace("bytes_per_reg %d\n", bytes_per_reg);
 
 	curr_reg_addr = reg_addr;
 
-	buffer = tegrabl_malloc(MIN(reg_addr_size + reg_count * bytes_per_reg,
+	buffer = tegrabl_malloc(MIN((reg_addr_size + (reg_count * bytes_per_reg)),
 		MAX_I2C_TRANSFER_SIZE));
 	if (buffer == NULL) {
-		pr_error("intermediate memory for i2c failed\n");
-		error = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
+		error = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, TEGRABL_I2C_DEV_WRITE);
+		TEGRABL_SET_ERROR_STRING(error, "%d", "register address computation", reg_addr_size);
 		goto fail;
 	}
+
 	regs_remaining = reg_count;
+
 	do {
-		if (regs_remaining * bytes_per_reg + reg_addr_size <
+		if (((regs_remaining * bytes_per_reg) + reg_addr_size) <
 			MAX_I2C_TRANSFER_SIZE) {
 			regs_to_transfer = regs_remaining;
 		} else {
@@ -195,7 +227,7 @@ tegrabl_error_t tegrabl_i2c_dev_write(struct tegrabl_i2c_dev *hi2cdev,
 		/* copy current slave register address */
 		i = 0;
 		do  {
-			buffer[i] = (curr_reg_addr >> (8 * i)) & 0xFF;
+			buffer[i] = (curr_reg_addr >> (8U * i)) & 0xFFU;
 		} while (++i < reg_addr_size);
 
 		memcpy(&buffer[i], &pbuf[j], regs_to_transfer * bytes_per_reg);
@@ -204,10 +236,12 @@ tegrabl_error_t tegrabl_i2c_dev_write(struct tegrabl_i2c_dev *hi2cdev,
 
 		error = tegrabl_i2c_write(hi2c, slave_addr, repeat_start, buffer, i);
 		if (error != TEGRABL_NO_ERROR) {
-			TEGRABL_SET_HIGHEST_MODULE(error);
+			TEGRABL_SET_HIGHEST_MODULE(error)
+			TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_SEND_FAILED, "register address 0x%08x", reg_addr);
+;
 			goto fail;
 		}
-		pr_debug("curr reg = %x, regs transferred = %d, regs remain = %d\n",
+		pr_trace("curr reg = %x, regs transferred = %d, regs remain = %d\n",
 			 curr_reg_addr, regs_to_transfer, regs_remaining);
 		regs_remaining -= regs_to_transfer;
 		curr_reg_addr += regs_to_transfer;
@@ -218,25 +252,30 @@ tegrabl_error_t tegrabl_i2c_dev_write(struct tegrabl_i2c_dev *hi2cdev,
 
 fail:
 	if (error != TEGRABL_NO_ERROR) {
-		pr_error("i2c dev write failed\n");
+		TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_WRITE_FAILED,
+				"%d registers of size %d to slave 0x%02x at 0x%08x via instance %d",
+				reg_count, bytes_per_reg, slave_addr, reg_addr, hi2cdev->instance);
 	}
 
 	if (buffer != NULL) {
 		tegrabl_free(buffer);
 	}
+
+invalid_param:
 	return error;
 }
 
 tegrabl_error_t tegrabl_i2c_dev_ioctl(struct tegrabl_i2c_dev *hi2cdev,
-	enum tegrabl_i2c_dev_ioctl ioctl, void *args)
+	tegrabl_i2c_dev_ioctl_t ioctl, void *args)
 {
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 
-	pr_debug("%s: entry\n", __func__);
+	pr_trace("%s: entry\n", __func__);
 
 	if ((hi2cdev == NULL) || (args == NULL)) {
-		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
-		goto fail;
+		error = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, TEGRABL_I2C_DEV_IOCTL);
+		TEGRABL_SET_ERROR_STRING(error, "hi2cdev %p, args %p", hi2cdev, args);
+		goto invalid_param;
 	}
 
 	switch (ioctl) {
@@ -244,22 +283,32 @@ tegrabl_error_t tegrabl_i2c_dev_ioctl(struct tegrabl_i2c_dev *hi2cdev,
 		hi2cdev->wait_time_for_write_us = *((time_t *)args);
 		break;
 	default:
-		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		error = TEGRABL_ERROR(TEGRABL_ERR_NOT_SUPPORTED, TEGRABL_I2C_DEV_IOCTL);
+		TEGRABL_SET_ERROR_STRING(error, "ioctl %d", ioctl);
 		break;
 	}
 
+	/* Keep label of fail but just goto it for passing MISRA checking */
+	goto fail;
+
 fail:
 	if (error != TEGRABL_NO_ERROR) {
-		pr_error("i2c dev ioctl failed\n");
+		TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_COMMAND_FAILED, "ioctl %d on instance %d",
+				ioctl, hi2cdev->instance);
 	}
+
+invalid_param:
 	return error;
 }
 
 tegrabl_error_t tegrabl_i2c_dev_close(struct tegrabl_i2c_dev *hi2cdev)
 {
+	tegrabl_error_t error = TEGRABL_NO_ERROR;
+
 	if (hi2cdev == NULL) {
-		pr_error("%s: invliad handle\n", __func__);
-		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		error = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER, TEGRABL_I2C_DEV_CLOSE);
+		TEGRABL_SET_ERROR_STRING(error, "hi2cdev %p", hi2cdev);
+		return error;
 	}
 
 	tegrabl_free(hi2cdev);

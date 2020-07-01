@@ -11,12 +11,13 @@
 
 #ifndef TEGRABL_UFS_HCI_H
 #define TEGRABL_UFS_HCI_H
+#include <tegrabl_ufs_rpmb.h>
 
-#define DATA_DIR_NIL 0x0
-#define DATA_DIR_H2D 0x1
-#define DATA_DIR_D2H 0x2
-#define OCS_SUCCESS 0x0
-#define OCS_INVALID 0xF
+#define DATA_DIR_NIL 0x0U
+#define DATA_DIR_H2D 0x1U
+#define DATA_DIR_D2H 0x2U
+#define OCS_SUCCESS 0x0U
+#define OCS_INVALID 0xFU
 
 /** Create structure for Transfer Request descriptor
  */
@@ -130,10 +131,10 @@ struct transfer_request_descriptor {
 #define UFS_TRD_DW7_0_PRDTL_RANGE ((15) : (0))
 
 /****************************************************/
-#define UFS_TRD_DW0_0_CT_UFS 1
+#define UFS_TRD_DW0_0_CT_UFS 1U
 
-#define UFS_TRD_DW0_0_DD_WRITE 1
-#define UFS_TRD_DW0_0_DD_READ 2
+#define UFS_TRD_DW0_0_DD_WRITE 1U
+#define UFS_TRD_DW0_0_DD_READ 2U
 
 
 /** END Transfer Request Descriptor defines */
@@ -173,67 +174,70 @@ struct dme_cmd {
 /** End structure to hold DME commands*/
 
 /** UIC CMD Opcodes */
-#define DME_GET 0x1
-#define DME_SET 0x2
-#define DME_PEER_GET 0x3
-#define DME_PEER_SET 0x4
-#define DME_ENABLE 0x12
-#define DME_RESET 0x14
-#define DME_LINKSTARTUP 0x16
+#define DME_GET 0x1U
+#define DME_SET 0x2U
+#define DME_PEER_GET 0x3U
+#define DME_PEER_SET 0x4U
+#define DME_ENABLE 0x12U
+#define DME_RESET 0x14U
+#define DME_LINKSTARTUP 0x16U
+#define DME_HIBERNATE_ENTER 0x17U
+#define DME_HIBERNATE_EXIT 0x18U
 /** End UIC CMD Opcodes */
 
 /** UIC MIB Attributes */
-#define pa_avail_tx_data_lanes 0x1520
-#define pa_avail_rx_data_lanes 0x1540
-#define pa_active_tx_data_lanes 0x1560
-#define pa_connected_tx_data_lanes 0x1561
-#define pa_tx_gear 0x1568
-#define pa_tx_termination 0x1569
-#define pa_hs_series 0x156A
-#define pa_active_rx_data_lanes 0x1580
-#define pa_connected_rx_data_lanes 0x1581
-#define pa_rx_gear 0x1583
-#define pa_rx_termination 0x1584
-#define pa_tx_hs_g1_prepare_length 0x1553
-#define pa_tx_hs_g2_prepare_length 0x1555
-#define pa_tx_hs_g3_prepare_length 0x1557
+#define pa_avail_tx_data_lanes		0x1520U
+#define pa_avail_rx_data_lanes		0x1540U
+#define pa_active_tx_data_lanes		0x1560U
+#define pa_connected_tx_data_lanes	0x1561U
+#define pa_tx_gear			0x1568U
+#define pa_tx_termination		0x1569U
+#define pa_hs_series			0x156AU
+#define pa_active_rx_data_lanes		0x1580U
+#define pa_connected_rx_data_lanes	0x1581U
+#define pa_rx_gear			0x1583U
+#define pa_rx_termination		0x1584U
+#define pa_tx_hs_g1_prepare_length	0x1553U
+#define pa_tx_hs_g2_prepare_length	0x1555U
+#define pa_tx_hs_g3_prepare_length	0x1557U
 
-#define pa_maxrxhsgear 0x1587
+#define pa_maxrxhsgear			0x1587U
 
-#define pa_tx_hs_g1_sync_length 0x1552
-#define pa_tx_hs_g2_sync_length 0x1554
-#define pa_tx_hs_g3_sync_length 0x1556
+#define pa_tx_hs_g1_sync_length		0x1552U
+#define pa_tx_hs_g2_sync_length		0x1554U
+#define pa_tx_hs_g3_sync_length		0x1556U
 
-#define pa_local_tx_lcc_enable 0x155e
-#define pa_peer_tx_lcc_enable 0x155f
-#define pa_tx_trailing_clocks 0x1564
-#define pa_pwr_mode 0x1571
-#define pa_sleep_no_config_time 0x15a2
-#define pa_stall_no_config_time 0x15a3
-#define pa_save_config_time 0x15a4
+#define pa_local_tx_lcc_enable		0x155eU
+#define pa_peer_tx_lcc_enable		0x155fU
+#define pa_tx_trailing_clocks		0x1564U
+#define pa_pwr_mode			0x1571U
+#define pa_sleep_no_config_time		0x15a2U
+#define pa_stall_no_config_time		0x15a3U
+#define pa_save_config_time		0x15a4U
 
-#define pa_hibern8time 0x15a7
-#define pa_tactivate 0x15a8
-#define pa_granularity 0x15aa
+#define pa_hibern8time			0x15a7U
+#define pa_tactivate			0x15a8U
+#define pa_granularity			0x15aaU
 
-#define pwr_mode_user_data0 0x15B0
-#define pwr_mode_user_data1 0x15B1
-#define pwr_mode_user_data2 0x15B2
+#define pwr_mode_user_data0		0x15B0U
+#define pwr_mode_user_data1		0x15B1U
+#define pwr_mode_user_data2		0x15B2U
 
-#define t_cportflags 0x4025
-#define t_connectionstate 0x4020
+#define t_cportflags			0x4025U
+#define t_connectionstate		0x4020U
 
-#define dme_layerenable 0xD000
-#define dme_linkstartup 0xD020
-#define vs_txburstclosuredelay 0xD084
+#define dme_layerenable			0xD000U
+#define dme_linkstartup			0xD020U
+#define vs_txburstclosuredelay		0xD084U
 
-#define dme_fc0protectiontimeoutval 0xD041
-#define dme_tc0replaytimeoutval 0xD042
-#define dme_afc0reqtimeoutval 0xD043
+#define dme_fc0protectiontimeoutval	0xD041U
+#define dme_tc0replaytimeoutval		0xD042U
+#define dme_afc0reqtimeoutval		0xD043U
 
-#define vs_debugsaveconfigtime 0xD0A0
-#define vs_debugsaveconfigtime_tref 0x6
-#define vs_debugsaveconfigtime_st_sct 0x3
+#define vs_debugsaveconfigtime		0xD0A0U
+#define vs_debugsaveconfigtime_tref	0x6U
+#define vs_debugsaveconfigtime_st_sct	0x3U
+
 #define set_tref(x) (((x) & 0x7) << 2)
 #define set_st_sct(x) (((x) & 0x3) << 0)
 
@@ -241,121 +245,145 @@ struct dme_cmd {
  * SLOW : PWM
  * SLOW_AUTO : PWM (but does auto burst closure for power saving)
  */
-#define PWRMODE_SLOW_MODE 0x2
-#define PWRMODE_FAST_MODE 0x1
-#define PWRMODE_FASTAUTO_MODE 0x4
-#define PWRMODE_SLOWAUTO_MODE 0x5
+#define PWRMODE_SLOW_MODE		0x2U
+#define PWRMODE_FAST_MODE		0x1U
+#define PWRMODE_FASTAUTO_MODE		0x4U
+#define PWRMODE_SLOWAUTO_MODE		0x5U
 
 /** Define ranges for UPIU Fields */
-#define UFS_UPIU_FLAGS_O_SHIFT 6
-#define UFS_UPIU_FLAGS_U_SHIFT 5
-#define UFS_UPIU_FLAGS_D_SHIFT 4
-#define UFS_UPIU_FLAGS_R_SHIFT 6
-#define UFS_UPIU_FLAGS_W_SHIFT 5
-#define UFS_UPIU_FLAGS_A_SHIFT 0
-#define UFS_UPIU_FLAGS_A_MASK 0x3
+#define UFS_UPIU_FLAGS_O_SHIFT		6U
+#define UFS_UPIU_FLAGS_U_SHIFT		5U
+#define UFS_UPIU_FLAGS_D_SHIFT		4U
+#define UFS_UPIU_FLAGS_R_SHIFT		6U
+#define UFS_UPIU_FLAGS_W_SHIFT		5U
+#define UFS_UPIU_FLAGS_A_SHIFT		0U
+#define UFS_UPIU_FLAGS_A_MASK		0x3U
 
 /** Define transaction codes etc for different UPIUs */
-#define UPIU_NOP_OUT_TRANSACTION 0x0
-#define UPIU_NOP_IN_TRANSACTION 0x20
-#define UPIU_COMMAND_TRANSACTION 0x1
-#define UPIU_RESPONSE_TRANSACTION 0x21
-#define UPIU_QUERY_REQUEST_TRANSACTION 0x16
-#define UPIU_QUERY_RESPONSE_TRANSACTION 0x36
+#define UPIU_NOP_OUT_TRANSACTION	0x0U
+#define UPIU_NOP_IN_TRANSACTION		0x20U
+#define UPIU_COMMAND_TRANSACTION	0x1U
+#define UPIU_RESPONSE_TRANSACTION	0x21U
+#define UPIU_QUERY_REQUEST_TRANSACTION	0x16U
+#define UPIU_QUERY_RESPONSE_TRANSACTION	0x36U
 
 /* TODO fill in other transactions */
 
 /** Define codes etc for different types of Query Requests*/
-#define UPIU_QUERY_FUNC_STD_READ 0x1
-#define UPIU_QUERY_FUNC_STD_WRITE 0x81
+#define UPIU_QUERY_FUNC_STD_READ	0x1U
+#define UPIU_QUERY_FUNC_STD_WRITE	0x81U
 /** Define codes etc for different types of Command Requests*/
-#define UPIU_COMMAND_READ 0x1
-#define UPIU_COMMAND_WRITE 0x81
+#define UPIU_COMMAND_READ		0x1U
+#define UPIU_COMMAND_WRITE		0x81U
 
 /** Define codes etc for different families of Command*/
-#define UPIU_COMMAND_SET_SCSI 0x0
+#define UPIU_COMMAND_SET_SCSI		0x0U
+#define UPIU_COMMAND_SET_UFS		0x1U
 
 /** All CDB defintions from SCSI block and primary commands*/
-#define SCSI_READ6_OPCODE		0x08
-#define SCSI_FORMAT_UNIT_OPCODE		0x04
-#define SCSI_INQUIRY_OPCODE		0x12
-#define SCSI_MODE_SELECT10_OPCODE	0x55
-#define SCSI_MODE_SENSE10_OPCODE	0x5A
-#define SCSI_ORE_FETCH10_OPCODE		0x34
-#define SCSI_READ10_OPCODE		0x28
-#define SCSI_READ_CAPACITY10_OPCODE	0x25
-#define SCSI_REQUEST_SENSE_OPCODE	0x03
-#define SCSI_UNMAP_OPCODE		0x42
-#define SCSI_VERIFY10_OPCODE		0x2F
-#define SCSI_WRITE6_OPCODE		0x0A
-#define SCSI_WRITE10_OPCODE		0x2A
-#define SCSI_WRITE_BUFFER_OPCODE	0x3B
+#define SCSI_READ6_OPCODE		0x08U
+#define SCSI_FORMAT_UNIT_OPCODE		0x04U
+#define SCSI_INQUIRY_OPCODE		0x12U
+#define SCSI_MODE_SELECT10_OPCODE	0x55U
+#define SCSI_MODE_SENSE10_OPCODE	0x5AU
+#define SCSI_ORE_FETCH10_OPCODE		0x34U
+#define SCSI_READ10_OPCODE		0x28U
+#define SCSI_READ_CAPACITY10_OPCODE	0x25U
+#define SCSI_REQUEST_SENSE_OPCODE	0x03U
+#define SCSI_UNMAP_OPCODE		0x42U
+#define SCSI_VERIFY10_OPCODE		0x2FU
+#define SCSI_WRITE6_OPCODE		0x0AU
+#define SCSI_WRITE10_OPCODE		0x2AU
+#define SCSI_WRITE_BUFFER_OPCODE	0x3BU
 
-#define SCSI_STATUS_GOOD 0x0
-#define SCSI_STATUS_CHECK_CONDITION 0x2
-#define SCSI_STATUS_BUSY                    0x8
+#define SCSI_STATUS_GOOD		0x0U
+#define SCSI_STATUS_CHECK_CONDITION	0x2U
+#define SCSI_STATUS_BUSY		0x8U
+
+/* RPMB */
+#define SCSI_SECURITY_PROTOCOL_UFS	0xECU
+#define SCSI_SECURITY_PROTOCOL_OUT_OPCODE	0xB5U
+#define SCSI_SECURITY_PROTOCOL_IN_OPCODE	0xA2U
+#define SCSI_SECURITY_PROTOCOL_CMD_LEN	12U
 
 /** Define codes etc for different types of Query READ/WRITE Requests*/
-#define TSF_OPCODE_READ_DESC 0x1
-#define TSF_OPCODE_WRITE_DESC 0x2
-#define TSF_OPCODE_READ_ATTRB 0x3
-#define TSF_OPCODE_READ_FLAG 0x5
-#define TSF_OPCODE_SET_FLAG 0x6
+#define TSF_OPCODE_READ_DESC		0x1U
+#define TSF_OPCODE_WRITE_DESC		0x2U
+#define TSF_OPCODE_READ_ATTRB		0x3U
+#define TSF_OPCODE_WRITE_ATTRB		0x4U
+#define TSF_OPCODE_READ_FLAG		0x5U
+#define TSF_OPCODE_SET_FLAG			0x6U
 
 /* TODO fill in other query reqs */
 /** Define codes etc for different Attribute IDNs*/
-#define QUERY_ATTRB_BOOT_LUN_EN 0x0
-#define QUERY_ATTRB_CURR_POWER_MODE 0x2
-#define QUERY_ATTRB_ACTIVE_ICC_LVL 0x3
-#define QUERY_ATTRB_REF_CLK_FREQ 0xA
+#define QUERY_ATTRB_BOOT_LUN_EN		0x0U
+#define QUERY_ATTRB_CURR_POWER_MODE	0x2U
+#define QUERY_ATTRB_ACTIVE_ICC_LVL	0x3U
+#define QUERY_ATTRB_REF_CLK_FREQ	0xAU
 
 /** Define codes etc for different Flag IDNs*/
-#define QUERY_FLAG_DEVICE_INIT_IDN 0x1
+#define QUERY_FLAG_DEVICE_INIT_IDN	0x1U
 
 /** Define codes etc for different Descriptor IDNs*/
-#define QUERY_DESC_DEVICE_DESC_IDN 0x0
-#define QUERY_DESC_CONF_DESC_IDN 0x1
-#define QUERY_DESC_UNIT_DESC_IDN 0x2
+#define QUERY_DESC_DEVICE_DESC_IDN	0x0U
+#define QUERY_DESC_CONF_DESC_IDN	0x1U
+#define QUERY_DESC_UNIT_DESC_IDN	0x2U
+#define QUERY_DESC_GEO_DESC_IDN		0x7U
 
 /* TODO fill in other descriptor ids*/
 
 /** Define offsets etc for different Descriptors*/
-#define UFS_DESC_MAX_SIZE 255
+#define UFS_DESC_MAX_SIZE		255U
 /** DEVICE DESCRIPTOR */
-#define UFS_DEV_DESC_LENGTH                 0x0
-#define UFS_DEV_DESC_DESC_TYPE              0x1
-#define UFS_DEV_DESC_DEVICE                 0x2
-#define UFS_DEV_DESC_DEVICE_CLASS           0x3
-#define UFS_DEV_DESC_DEVICE_SUB_CLASS       0x4
-#define UFS_DEV_DESC_PROTOCOL               0x5
-#define UFS_DEV_DESC_NUM_LUN                0x6
-#define UFS_DEV_DESC_NUM_WLUN               0x7
-#define UFS_DEV_DESC_BOOT_ENABLE            0x8
-#define UFS_DEV_DESC_DESC_ACCESS_ENABLE     0x9
-#define UFS_DEV_DESC_INIT_POWER_MODE        0xA
-#define UFS_DEV_DESC_HIGH_PRIORITY_LUN      0xB
-#define UFS_DEV_DESC_SECURE_REMOVAL_TYPE    0xC
-#define UFS_DEV_DESC_SECURITY_LU            0xD
-#define UFS_DEV_DESC_RESERVED               0xE
-#define UFS_DEV_DESC_UD0_BASE_OFFSET        0x1A
-#define UFS_DEV_DESC_UD_CONFIG_PLENGTH      0x1B
+#define UFS_DEV_DESC_LENGTH			0x0U
+#define UFS_DEV_DESC_DESC_TYPE			0x1U
+#define UFS_DEV_DESC_DEVICE			0x2U
+#define UFS_DEV_DESC_DEVICE_CLASS		0x3U
+#define UFS_DEV_DESC_DEVICE_SUB_CLASS		0x4U
+#define UFS_DEV_DESC_PROTOCOL			0x5U
+#define UFS_DEV_DESC_NUM_LUN			0x6U
+#define UFS_DEV_DESC_NUM_WLUN			0x7U
+#define UFS_DEV_DESC_BOOT_ENABLE		0x8U
+#define UFS_DEV_DESC_DESC_ACCESS_ENABLE		0x9U
+#define UFS_DEV_DESC_INIT_POWER_MODE		0xAU
+#define UFS_DEV_DESC_HIGH_PRIORITY_LUN		0xBU
+#define UFS_DEV_DESC_SECURE_REMOVAL_TYPE	0xCU
+#define UFS_DEV_DESC_SECURITY_LU		0xDU
+#define UFS_DEV_DESC_RESERVED			0xEU
+#define UFS_DEV_DESC_UD0_BASE_OFFSET		0x1AU
+#define UFS_DEV_DESC_UD_CONFIG_PLENGTH		0x1BU
 
 /** UNIT DESCRIPTOR */
-#define UFS_UNIT_DESC_LENGTH                0x0
-#define UFS_UNIT_DESC_DESC_TYPE             0x1
-#define UFS_UNIT_DESC_UNIT_INDEX            0x2
-#define UFS_UNIT_DESC_LU_ENABLE             0x3
-#define UFS_UNIT_DESC_BOOT_LUN_ID           0x4
-#define UFS_UNIT_DESC_LU_WRITE_PROTECT      0x5
-#define UFS_UNIT_DESC_LU_QUEUE_DEPTH        0x6
-#define UFS_UNIT_DESC_RESERVED              0x7
-#define UFS_UNIT_DESC_MEMORY_TYPE           0x8
-#define UFS_UNIT_DESC_DATA_RELIABILITY      0x9
-#define UFS_UNIT_DESC_LOGICAL_BLOCK_SIZE    0xA
-#define UFS_UNIT_DESC_QLOGICAL_BLOCK_COUNT  0xB
-#define UFS_UNIT_DESC_ERASE_BLOCK_SIZE      0x13
-#define UFS_UNIT_DESC_PROVISIONING_TYPE     0x17
-#define UFS_UNIT_DESC_QPHY_MEM_RSRC_COUNT   0x18
+#define UFS_UNIT_DESC_LENGTH			0x0U
+#define UFS_UNIT_DESC_DESC_TYPE			0x1U
+#define UFS_UNIT_DESC_UNIT_INDEX		0x2U
+#define UFS_UNIT_DESC_LU_ENABLE			0x3U
+#define UFS_UNIT_DESC_BOOT_LUN_ID		0x4U
+#define UFS_UNIT_DESC_LU_WRITE_PROTECT		0x5U
+#define UFS_UNIT_DESC_LU_QUEUE_DEPTH		0x6U
+#define UFS_UNIT_DESC_RESERVED			0x7U
+#define UFS_UNIT_DESC_MEMORY_TYPE		0x8U
+#define UFS_UNIT_DESC_DATA_RELIABILITY		0x9U
+#define UFS_UNIT_DESC_LOGICAL_BLOCK_SIZE	0xAU
+#define UFS_UNIT_DESC_QLOGICAL_BLOCK_COUNT	0xBU
+#define UFS_UNIT_DESC_ERASE_BLOCK_SIZE		0x13U
+#define UFS_UNIT_DESC_PROVISIONING_TYPE		0x17U
+#define UFS_UNIT_DESC_QPHY_MEM_RSRC_COUNT	0x18U
+
+/* Well known logical unit id in LUN field of UPIU */
+#define UFS_UPIU_LUN_0				0x0U
+#define UFS_UPIU_LUN_1				0x1U
+#define UFS_UPIU_LUN_2				0x2U
+#define UFS_UPIU_LUN_3				0x3U
+#define UFS_UPIU_LUN_4				0x4U
+#define UFS_UPIU_LUN_5				0x5U
+#define UFS_UPIU_LUN_6				0x6U
+#define UFS_UPIU_LUN_7				0x7U
+#define UFS_UPIU_REPORT_LUNS_WLUN		0x81U
+#define UFS_UPIU_UFS_DEVICE_WLUN		0xD0U
+#define UFS_UPIU_BOOT_WLUN			0xB0U
+#define UFS_UPIU_RPMB_WLUN			0xC4U
+
 
 TEGRABL_PACKED(
 struct ufs_device_descriptor {
@@ -596,10 +624,10 @@ union ucd_generic_resp_upiu
  * so pad accordingly to form array.
  * TODO implement MACRO if possible to complain if alignment not met
  */
-#define CMD_DESC_REQ_LENGTH 512
-#define CMD_DESC_RESP_LENGTH 512
-#define CMD_DESC_PRDT_LENGTH 512
-#define MAX_PRDT_LENGTH 16
+#define CMD_DESC_REQ_LENGTH 512U
+#define CMD_DESC_RESP_LENGTH 512U
+#define CMD_DESC_PRDT_LENGTH 512U
+#define MAX_PRDT_LENGTH 16U
 
 TEGRABL_PACKED(
 struct cmd_descriptor
@@ -633,16 +661,14 @@ uint32_t tegrabl_ufs_get_devInfo_partial_init(void);
 void tegrabl_ufs_free_trd_cmd_desc(void);
 uint32_t tegrabl_ufs_get_trd_slot(void);
 uint32_t tegrabl_ufs_complete_init(void);
-uint32_t tegrabl_ufs_get_attribute(uint32_t*, uint32_t, uint32_t);
-uint32_t tegrabl_ufs_get_descriptor(uint8_t*, uint32_t, uint32_t);
 uint32_t tegrabl_ufs_set_dme_command(uint8_t cmd_op,
 	uint16_t gen_sel_idx, uint16_t mib_attr, uint32_t* data);
-uint32_t tegrabl_ufs_clock_enable(void);
+tegrabl_error_t tegrabl_ufs_clock_enable(void);
 uint32_t tegrabl_ufs_reset_disable(void);
 uint32_t tegrabl_ufs_create_trd(uint32_t trd_index,
-	uint32_t cmd_desc_index, uint32_t data_dir, uint32_t prdt_length);
-tegrabl_error_t tegrabl_ufs_test_unit_ready(uint32_t lun);
-tegrabl_error_t tegrabl_ufs_request_sense(uint32_t lun);
+	uint32_t cmd_desc_index, uint32_t data_dir, uint16_t prdt_length);
+tegrabl_error_t tegrabl_ufs_test_unit_ready(uint8_t lun);
+tegrabl_error_t tegrabl_ufs_request_sense(uint8_t lun);
 tegrabl_error_t tegrabl_ufs_set_timer_threshold(uint32_t Gear,
 	uint32_t ActiveLanes);
 uint32_t tegrabl_ufs_link_uphy_pll_setup(uint32_t Pll);
@@ -654,5 +680,12 @@ tegrabl_error_t tegrabl_ufs_set_activate_time(void);
 tegrabl_error_t tegrabl_ufs_read_capacity(uint32_t *size);
 tegrabl_error_t tegrabl_ufs_get_provisioning_type(uint32_t lun,
 	uint8_t *provision_type);
-tegrabl_error_t tegrabl_ufs_erase(uint32_t start_block, uint32_t blocks);
+tegrabl_error_t tegrabl_ufs_erase(struct tegrabl_bdev *dev, uint8_t lun_id, uint32_t start_block,
+					uint32_t blocks);
+uint8_t tegrabl_ufs_is_rpmb_lun_supported(void);
+tegrabl_error_t tegrabl_ufs_get_lun_capacity(uint8_t lun_id, uint32_t *block_size_log2,
+						uint32_t *block_count);
+tegrabl_error_t ufs_rpmb_io(uint8_t is_write,
+		ufs_rpmb_context_t *rpmb_context, struct tegrabl_ufs_context *context);
+
 #endif

@@ -17,13 +17,14 @@
 #include <tegrabl_bootimg.h>
 
 struct tegrabl_kernel_bin {
-	enum tegrabl_binary_type bin_type;
+	tegrabl_binary_type_t bin_type;
 	bool load_from_storage;
 	struct tegrabl_binary_info binary;
 };
 
 struct tegrabl_kernel_load_callbacks {
-	tegrabl_error_t (*verify_boot)(union tegrabl_bootimg_header *, void *);
+	tegrabl_error_t (*verify_boot)(union tegrabl_bootimg_header *, void *,
+								   void *);
 };
 
 /**

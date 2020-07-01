@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2016-2018, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -26,49 +26,50 @@
 		(((uint64_t)(TEGRABL_NVPT_MAGIC_WO_COMPLEMENT) << 32) | \
 		(~((uint64_t)(TEGRABL_NVPT_MAGIC_WO_COMPLEMENT))))
 
-#define TEGRABL_NVPT_VERSION 0x0100
-
+#define TEGRABL_NVPT_VERSION 0x0100U
+#define TEGRABL_NVPT_VERSION_V2 0x0200U
 #define TEGRABL_NVPT_AES_HASH_BLOCK_LEN    16
-
+#define TEGRABL_NVPT_SHA256_LEN 32
+#define TEGRABL_NVPT_RESERVED 48
 /**
  * Defines the partition type.
  */
-enum tegrabl_nvpt_partition_type {
-	TEGRABL_NVPT_TYPE_BCT = 0X1,
-	TEGRABL_NVPT_TYPE_BOOTLOADER,
-	TEGRABL_NVPT_TYPE_MB1 = TEGRABL_NVPT_TYPE_BOOTLOADER,
-	TEGRABL_NVPT_TYPE_PARTITION_TABLE,
-	TEGRABL_NVPT_TYPE_OS,
-	TEGRABL_NVPT_TYPE_OS_DTB,
-	TEGRABL_NVPT_TYPE_NVDATA,
-	TEGRABL_NVPT_TYPE_DATA,
-	TEGRABL_NVPT_TYPE_MBR,
-	TEGRABL_NVPT_TYPE_EBR,
-	TEGRABL_NVPT_TYPE_GP1,
-	TEGRABL_NVPT_TYPE_GPT,
-	TEGRABL_NVPT_TYPE_BOOTLOADER_STAGE2,
-	TEGRABL_NVPT_TYPE_DUSE_BYPASS,
-	TEGRABL_NVPT_TYPE_CONFIG_TABLE,
-	TEGRABL_NVPT_TYPE_WB0,
-	TEGRABL_NVPT_TYPE_SECURE_OS,
-	TEGRABL_NVPT_TYPE_MB1_BCT,
-	TEGRABL_NVPT_TYPE_SPE_FW,
-	TEGRABL_NVPT_TYPE_MTS_PRE,
-	TEGRABL_NVPT_TYPE_MTS_BPK,
-	TEGRABL_NVPT_TYPE_DRAM_ECC,
-	TEGRABL_NVPT_TYPE_BLACKLIST_INFO,
-	TEGRABL_NVPT_TYPE_EXTENDED_CAN_FW,
-	TEGRABL_NVPT_TYPE_MB2,
-	TEGRABL_NVPT_TYPE_APE_FW,
-	TEGRABL_NVPT_TYPE_SCE_FW,
-	TEGRABL_NVPT_TYPE_CPU_BL,
-	TEGRABL_NVPT_TYPE_EKS,
-	TEGRABL_NVPT_TYPE_BPMP_FW,
-	TEGRABL_NVPT_TYPE_BPMP_FW_DTB,
-	TEGRABL_NVPT_TYPE_GPH,
-	TEGRABL_NVPT_TYPE_RAMDISK,
-	TEGRABL_NVPT_TYPE_FORCE32 = 0X7FFFFFFF,
-};
+/* macro tegrabl nvpt partition */
+typedef uint32_t tegrabl_nvpt_partition_type_t;
+#define TEGRABL_NVPT_TYPE_BCT 0X1
+#define TEGRABL_NVPT_TYPE_BOOTLOADER 0X2
+#define TEGRABL_NVPT_TYPE_MB1 TEGRABL_NVPT_TYPE_BOOTLOADER
+#define TEGRABL_NVPT_TYPE_PARTITION_TABLE 0X3
+#define TEGRABL_NVPT_TYPE_OS 0X4
+#define TEGRABL_NVPT_TYPE_OS_DTB 0X5
+#define TEGRABL_NVPT_TYPE_NVDATA 0X6
+#define TEGRABL_NVPT_TYPE_DATA 0X7
+#define TEGRABL_NVPT_TYPE_MBR 0X8
+#define TEGRABL_NVPT_TYPE_EBR 0X9
+#define TEGRABL_NVPT_TYPE_GP1 0XA
+#define TEGRABL_NVPT_TYPE_GPT 0XB
+#define TEGRABL_NVPT_TYPE_BOOTLOADER_STAGE2 0XC
+#define TEGRABL_NVPT_TYPE_DUSE_BYPASS 0XD
+#define TEGRABL_NVPT_TYPE_CONFIG_TABLE 0XE
+#define TEGRABL_NVPT_TYPE_WB0 0XF
+#define TEGRABL_NVPT_TYPE_SECURE_OS 0X10
+#define TEGRABL_NVPT_TYPE_MB1_BCT 0X11
+#define TEGRABL_NVPT_TYPE_SPE_FW 0X12
+#define TEGRABL_NVPT_TYPE_MTS_PRE 0X13
+#define TEGRABL_NVPT_TYPE_MTS_BPK 0X14
+#define TEGRABL_NVPT_TYPE_DRAM_ECC 0X15
+#define TEGRABL_NVPT_TYPE_BLACKLIST_INFO 0X16
+#define TEGRABL_NVPT_TYPE_EXTENDED_CAN_FW 0X17
+#define TEGRABL_NVPT_TYPE_MB2 0X18
+#define TEGRABL_NVPT_TYPE_APE_FW 0X19
+#define TEGRABL_NVPT_TYPE_SCE_FW 0X1A
+#define TEGRABL_NVPT_TYPE_CPU_BL 0X1B
+#define TEGRABL_NVPT_TYPE_EKS 0X1C
+#define TEGRABL_NVPT_TYPE_BPMP_FW 0X1D
+#define TEGRABL_NVPT_TYPE_BPMP_FW_DTB 0X1E
+#define TEGRABL_NVPT_TYPE_GPH 0X1F
+#define TEGRABL_NVPT_TYPE_RAMDISK 0X20
+#define TEGRABL_NVPT_TYPE_FORCE32 0X7FFFFFFF
 
 /**
  * Defines MBR-like information for a partition.
@@ -99,7 +100,7 @@ struct tegrabl_nvpt_partition_info {
 	uint64_t end_physical_address;
 
 	/* Holds the partition type.*/
-	enum tegrabl_nvpt_partition_type partition_type;
+	tegrabl_nvpt_partition_type_t partition_type;
 
 	/* Indicates if the partition is to be made write protected on bootup.*/
 	uint32_t is_write_protected;
@@ -169,6 +170,33 @@ struct tegrabl_nvpt_header_insecure {
 	/* Holds the signature for secure header and all partition entries.*/
 	uint8_t signature[TEGRABL_NVPT_AES_HASH_BLOCK_LEN];
 };
+
+
+/**
+ * Defines the insecure header.
+ * The following data is neither signed nor encrypted.
+ */
+struct tegrabl_nvpt_header_insecure_v2 {
+	/* Holds the magic number used to identify partition table on storage.*/
+	uint64_t magic;
+
+	/* Holds the partition table format version number.*/
+	uint32_t insecure_version;
+
+	/* Holds the length of partition data (in bytes) as stored on storage
+	device. It includes the entire header, all partition table entries,
+	and any padding. This value is never encrypted.*/
+	uint32_t insecure_length;
+
+	/* Holds the signature for secure header and all partition entries.*/
+	uint8_t signature[TEGRABL_NVPT_SHA256_LEN];
+
+	uint8_t reserved[TEGRABL_NVPT_RESERVED];
+};
+
+
+
+
 
 /**
  * Defines the secure header.
@@ -260,5 +288,18 @@ tegrabl_error_t tegrabl_nvpt_publish(tegrabl_bdev_t *dev,
  */
 tegrabl_error_t tegrabl_nvpt_read_table(tegrabl_bdev_t *dev,
 		void **buffer);
+
+/**
+ * @brief Query whether system is booted with three level partition
+ * table layout.
+ *
+ * @param is_three_level_pt_enabled points to buffer which will be updated
+ * with the three level pt infomration. It is set to true when system
+ * is booted with three level PT layout and false otherwise.
+ *
+ * @return TEGRABL_NO_ERROR if successful else appropriate error.
+ */
+tegrabl_error_t tegrabl_nvpt_pt_has_3_levels(
+                bool *is_three_level_pt_enabled);
 
 #endif /* INCLUDED_TEGRABL_NVPT_H */

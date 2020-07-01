@@ -36,8 +36,8 @@ tegrabl_error_t tegrabl_keyboard_init(void)
 	return TEGRABL_NO_ERROR;
 }
 
-tegrabl_error_t tegrabl_keyboard_get_key_data(enum key_code *code,
-											  enum key_event *event)
+tegrabl_error_t tegrabl_keyboard_get_key_data(key_code_t *code,
+											  key_event_t *event)
 {
 	tegrabl_error_t ret = TEGRABL_NO_ERROR;
 
