@@ -135,6 +135,38 @@ fail:
 	return err;
 }
 
+static tegrabl_error_t verify_boot_img_header(union tegrabl_bootimg_header *hdr, uint32_t img_size)
+{
+	uint32_t hdr_size;
+	uint64_t hdr_size_fields_sum;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+
+	/* Check if the binary has header */
+	if (memcmp(hdr->magic, ANDROID_MAGIC, ANDROID_MAGIC_SIZE)) {
+		/* This is raw kernel image, so skip header sanity checks */
+		goto fail;
+	}
+
+	if (hdr->pagesize < sizeof(union tegrabl_bootimg_header)) {
+		pr_error("Page size field (0x%08x) is less than header structure size (0x%08lx)\n",
+				 hdr->pagesize, sizeof(union tegrabl_bootimg_header));
+		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		goto fail;
+	}
+
+	hdr_size = hdr->pagesize;
+	hdr_size_fields_sum = hdr_size + hdr->kernelsize + hdr->ramdisksize + hdr->secondsize;
+	if (hdr_size_fields_sum > img_size) {
+		pr_error("Header size fields (0x%016lx) is greater than actual binary size (0x%08x)\n",
+				 hdr_size_fields_sum, img_size);
+		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 1);
+		goto fail;
+	}
+
+fail:
+	return err;
+}
+
 /* Extract kernel from an Android boot image, and return the address where it is installed in memory */
 static tegrabl_error_t extract_kernel(void *boot_img_load_addr, void **kernel_load_addr)
 {
@@ -158,7 +190,6 @@ static tegrabl_error_t extract_kernel(void *boot_img_load_addr, void **kernel_lo
 	hdr = (union tegrabl_bootimg_header *)boot_img_load_addr;
 	payload_addr = (uintptr_t)hdr + hdr->pagesize;
 	kernel_size = hdr->kernelsize;
-
 	err = validate_kernel(hdr, &hdr_crc);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_error("Error %u failed to validate kernel\n", err);
@@ -168,6 +199,14 @@ static tegrabl_error_t extract_kernel(void *boot_img_load_addr, void **kernel_lo
 
 	*kernel_load_addr = (void *)tegrabl_get_kernel_load_addr();
 	pr_trace("%u: kernel load addr: %p\n", __LINE__, *kernel_load_addr);
+
+	/* Sanity check */
+	if (kernel_size > MAX_KERNEL_IMAGE_SIZE) {
+		pr_error("Kernel size (0x%08x) is greater than allocated size (0x%08x)\n",
+				 hdr->kernelsize, MAX_KERNEL_IMAGE_SIZE);
+		err = TEGRABL_ERROR(TEGRABL_ERR_TOO_LARGE, 0);
+		goto fail;
+	}
 
 	is_compressed = is_compressed_content((uint8_t *)payload_addr, &decomp);
 	if (!is_compressed) {
@@ -188,7 +227,8 @@ static tegrabl_error_t extract_kernel(void *boot_img_load_addr, void **kernel_lo
 
 	pr_info("Done\n");
 
-	return TEGRABL_NO_ERROR;
+fail:
+	return err;
 }
 
 static tegrabl_error_t extract_ramdisk(void *boot_img_load_addr)
@@ -222,13 +262,19 @@ static tegrabl_error_t extract_ramdisk(void *boot_img_load_addr)
 	}
 	ramdisk_size = file_size;
 
-fail:
-	return err;
 #else
 	union tegrabl_bootimg_header *hdr = NULL;
 	uint64_t ramdisk_offset = (uint64_t)NULL; /* Offset of 1st ramdisk byte in boot.img */
-
 	hdr = (union tegrabl_bootimg_header *)boot_img_load_addr;
+
+	/* Sanity check */
+	if (hdr->ramdisksize > RAMDISK_MAX_SIZE) {
+		pr_error("Ramdisk size (0x%08x) is greater than allocated size (0x%08x)\n",
+				 hdr->ramdisksize, RAMDISK_MAX_SIZE);
+		err = TEGRABL_ERROR(TEGRABL_ERR_TOO_LARGE, 1);
+		goto fail;
+	}
+
 	ramdisk_offset = ROUND_UP_POW2(hdr->pagesize + hdr->kernelsize, hdr->pagesize);
 	ramdisk_offset = (uintptr_t)hdr + ramdisk_offset;
 	ramdisk_size = hdr->ramdisksize;
@@ -240,9 +286,10 @@ fail:
 	}
 
 	bootimg_cmdline = (char *)hdr->cmdline;
-
-	return err;
 #endif
+
+fail:
+	return err;
 }
 
 #if !defined(CONFIG_DT_SUPPORT)
@@ -334,7 +381,9 @@ static tegrabl_error_t tegrabl_load_from_fixed_storage(bool load_from_storage,
 													   void **boot_img_load_addr,
 													   void **dtb_load_addr,
 													   void **kernel_dtbo,
-													   void *data)
+													   void *data,
+													   uint32_t data_size,
+													   uint32_t *boot_img_size)
 {
 	uint32_t file_size;
 	bool is_file_loaded_from_fs = false;
@@ -355,6 +404,7 @@ static tegrabl_error_t tegrabl_load_from_fixed_storage(bool load_from_storage,
 			goto fail;
 		}
 		*boot_img_load_addr = data;
+		*boot_img_size = data_size;
 		goto boot_image_load_done;
 	}
 
@@ -404,7 +454,7 @@ static tegrabl_error_t tegrabl_load_from_fixed_storage(bool load_from_storage,
 	kernel_size = file_size;
 #else
 	pr_info("Loading kernel from partition ...\n");
-	err = tegrabl_load_binary(TEGRABL_BINARY_KERNEL, boot_img_load_addr, NULL);
+	err = tegrabl_load_binary(TEGRABL_BINARY_KERNEL, boot_img_load_addr, boot_img_size);
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
@@ -490,7 +540,8 @@ fail:
 #if defined(CONFIG_ENABLE_BOOT_DEVICE_SELECT)
 static tegrabl_error_t tegrabl_load_from_removable_storage(struct tegrabl_bdev *bdev,
 														   void **boot_img_load_addr,
-														   void **dtb_load_addr)
+														   void **dtb_load_addr,
+														   uint32_t *boot_img_size)
 {
 	struct tegrabl_fm_handle *fm_handle;
 	uint32_t file_size;
@@ -512,6 +563,7 @@ static tegrabl_error_t tegrabl_load_from_removable_storage(struct tegrabl_bdev *
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
+	*boot_img_size = file_size;
 #if defined(CONFIG_OS_IS_L4T)
 	err = tegrabl_validate_binary(TEGRABL_BINARY_KERNEL, BOOT_IMAGE_MAX_SIZE, *boot_img_load_addr);
 	if (err != TEGRABL_NO_ERROR) {
@@ -540,7 +592,8 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 											void **kernel_entry_point,
 											void **kernel_dtb,
 											struct tegrabl_kernel_load_callbacks *callbacks,
-											void *data)
+											void *data,
+											uint32_t data_size)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	void *kernel_dtbo = NULL;
@@ -554,6 +607,7 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 	uint8_t *boot_order;
 	void *boot_img_load_addr = NULL;
 	struct tegrabl_fm_handle *fm_handle;
+	uint32_t boot_img_size = 0;
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
 
@@ -577,7 +631,7 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 				pr_error("Error (%u) network stack init\n", err);
 				continue;
 			}
-			err = net_boot_load_kernel_images(&boot_img_load_addr, kernel_dtb);
+			err = net_boot_load_kernel_images(&boot_img_load_addr, kernel_dtb, &boot_img_size);
 			if (err != TEGRABL_NO_ERROR) {
 				pr_error("Error (%u) network load failed for kernel & kernel-dtb\n", err);
 				continue;
@@ -621,7 +675,10 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 			}
 
 			tegrabl_fm_publish(bdev, &fm_handle);
-			err = tegrabl_load_from_removable_storage(bdev, &boot_img_load_addr, kernel_dtb);
+			err = tegrabl_load_from_removable_storage(bdev,
+													  &boot_img_load_addr,
+													  kernel_dtb,
+													  &boot_img_size);
 			if (err == TEGRABL_NO_ERROR) {
 				is_load_done = true;
 			} else {
@@ -637,8 +694,13 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 
 		case BOOT_FROM_BUILTIN_STORAGE:
 		default:
-			err = tegrabl_load_from_fixed_storage(kernel->load_from_storage, &boot_img_load_addr,
-												  kernel_dtb, &kernel_dtbo, data);
+			err = tegrabl_load_from_fixed_storage(kernel->load_from_storage,
+												  &boot_img_load_addr,
+												  kernel_dtb,
+												  &kernel_dtbo,
+												  data,
+												  data_size,
+												  &boot_img_size);
 			if (err == TEGRABL_NO_ERROR) {
 				is_load_done = true;
 			} else {
@@ -660,8 +722,13 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 		if (boot_from_builtin_done) {
 			goto fail;
 		}
-		err = tegrabl_load_from_fixed_storage(kernel->load_from_storage, &boot_img_load_addr, kernel_dtb,
-											  &kernel_dtbo, data);
+		err = tegrabl_load_from_fixed_storage(kernel->load_from_storage,
+											  &boot_img_load_addr,
+											  kernel_dtb,
+											  &kernel_dtbo,
+											  data,
+											  data_size,
+											  &boot_img_size);
 		if (err != TEGRABL_NO_ERROR) {
 			pr_error("Error (%u) builtin kernel/dtb load failed\n", err);
 #if defined(CONFIG_ENABLE_A_B_SLOT)
@@ -678,6 +745,11 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 
 	if (callbacks != NULL && callbacks->verify_boot != NULL) {
 		callbacks->verify_boot(boot_img_load_addr, *kernel_dtb, kernel_dtbo);
+	}
+
+	err = verify_boot_img_header(boot_img_load_addr, boot_img_size);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
 	}
 
 	err = extract_kernel(boot_img_load_addr, kernel_entry_point);
@@ -712,11 +784,13 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 											void **kernel_entry_point,
 											void **kernel_dtb,
 											struct tegrabl_kernel_load_callbacks *callbacks,
-											void *data)
+											void *data,
+											uint32_t data_size)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	void *kernel_dtbo = NULL;
 	void *boot_img_load_addr = NULL;
+	uint32_t boot_img_size = 0;
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
 
@@ -725,8 +799,13 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 		goto fail;
 	}
 
-	err = tegrabl_load_from_fixed_storage(kernel->load_from_storage, &boot_img_load_addr, kernel_dtb,
-										  &kernel_dtbo, data);
+	err = tegrabl_load_from_fixed_storage(kernel->load_from_storage,
+										  &boot_img_load_addr,
+										  kernel_dtb,
+										  &kernel_dtbo,
+										  data,
+										  data_size,
+										  &boot_img_size);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_error("Error (%u) builtin kernel/dtb load failed\n", err);
 		goto fail;
@@ -760,6 +839,11 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 
 	if (callbacks != NULL && callbacks->verify_boot != NULL) {
 		callbacks->verify_boot(boot_img_load_addr, *kernel_dtb, kernel_dtbo);
+	}
+
+	err = verify_boot_img_header(boot_img_load_addr, boot_img_size);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
 	}
 
 	err = extract_kernel(boot_img_load_addr, kernel_entry_point);

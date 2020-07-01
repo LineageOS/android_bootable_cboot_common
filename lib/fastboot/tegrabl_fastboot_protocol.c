@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -465,7 +465,7 @@ static void cmd_boot(const char *arg, void *data, uint32_t sz)
 	kernel.bin_type = TEGRABL_BINARY_KERNEL;
 	kernel.load_from_storage = false;
 	err = tegrabl_load_kernel_and_dtb(&kernel, &kernel_entry_point,
-									  &kernel_dtb, NULL, data);
+									  &kernel_dtb, NULL, data, download_size);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_error("kernel boot failed\n");
 		return;
