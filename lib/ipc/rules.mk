@@ -16,7 +16,7 @@ MODULE_DEPS += \
 
 GLOBAL_INCLUDES += \
 	$(LOCAL_DIR)/../../include/lib \
-	$(LOCAL_DIR)/../../../../../../core/include/ \
+	$(LOCAL_DIR)/../../../../../hardware/nvidia/hwinc/core \
 	$(LOCAL_DIR)/../../../../../nvtboot/common/include
 
 MODULE_SRCS += \
