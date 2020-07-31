@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2014-2020, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -482,12 +482,29 @@ char *tegrabl_linuxboot_prepare_cmdline(char *initcmdline)
 	int idx, remain;
 	uint32_t i;
 	struct tegrabl_linuxboot_param *extra_params = NULL;
+	char *bootimg_cmdline = tegrabl_get_bootimg_cmdline();
 
 	memset(s_cmdline, 0, sizeof(s_cmdline));
 	i = init_cmd_list(initcmdline);
 
 	remain = sizeof(s_cmdline) / sizeof(char) - i;
 	ptr = &s_cmdline[i];
+
+	if (bootimg_cmdline && strlen(bootimg_cmdline)) {
+		pr_debug("Bootimg cmdline: %s\n", bootimg_cmdline);
+		idx = tegrabl_linuxboot_add_string(ptr, remain, bootimg_cmdline, NULL);
+		if (idx <= 0) {
+			pr_error("%s: failed to integrate bootimg cmdline\n", __func__);
+		} else if (idx > remain) {
+			pr_error("%s: bootimg cmdline is truncated to %s\n", __func__, ptr);
+			ptr += remain;
+			remain = 0;
+			goto done;
+		} else {
+			remain -= idx;
+			ptr += idx;
+		}
+	}
 
 	for (i = 0; common_params[i].str != NULL; i++) {
 		if (!does_command_exist(common_params[i].str)) {
@@ -526,6 +543,8 @@ char *tegrabl_linuxboot_prepare_cmdline(char *initcmdline)
 		}
 		pr_debug("Cmdline: %s\n", s_cmdline);
 	}
+
+done:
 	pr_info("Linux Cmdline: %s\n", s_cmdline);
 
 	return s_cmdline;

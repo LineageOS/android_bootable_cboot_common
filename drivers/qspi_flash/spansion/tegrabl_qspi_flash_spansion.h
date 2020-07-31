@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -28,6 +28,8 @@ tegrabl_error_t qspi_flash_x4_enable_spansion(struct tegrabl_qspi_flash_driver_i
 #if !defined(CONFIG_DISABLE_QSPI_FLASH_WRITE_512B_PAGE)
 tegrabl_error_t qspi_flash_page_512bytes_enable_spansion(struct tegrabl_qspi_flash_driver_info *hqfdi);
 #endif
+
+tegrabl_error_t qspi_flash_blank_check_enable_spansion(struct tegrabl_qspi_flash_driver_info *hqfdi);
 
 #endif /* INCLUDED_TEGRABL_QSPI_FLASH_SPANSION_H*/
 

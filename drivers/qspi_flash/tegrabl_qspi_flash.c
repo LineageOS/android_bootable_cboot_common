@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -33,7 +33,7 @@ static struct device_info device_info_list[] = {
 	{"Spansion 16MB", 0x01, 0x20, 0x18, 0x10/* 64KB  */, 0x0c/* 4KB */, 8,
 				FLAG_DDR | FLAG_QPI | FLAG_BULK | FLAG_PAGE512},
 	{"Spansion 32MB", 0x01, 0x02, 0x19, 0x10/* 64KB  */, 0x0c/* 4KB */, 8,
-				FLAG_DDR | FLAG_QPI | FLAG_BULK | FLAG_PAGE512_FIXED},
+		FLAG_DDR | FLAG_QPI | FLAG_BULK | FLAG_PAGE512 | FLAG_BLANK_CHK},
 	{"Spansion 64MB", 0x01, 0x02, 0x20, 0x12/* 256KB */, 0x0c/* 4KB */, 8,
 				FLAG_DDR | FLAG_QPI | FLAG_BULK | FLAG_PAGE512},
 	{"Micron 16MB", 0x20, 0xBB, 0x18, 0x10/* 64KB */, 0x0c/* 4KB */, 0,
@@ -365,6 +365,10 @@ static tegrabl_error_t read_device_id_info(
 		err = qspi_flash_page_512bytes_enable_spansion(hqfdi);
 	}
 #endif
+	if ((device_flag & (uint8_t) FLAG_BLANK_CHK) != 0U) {
+		/* Enable Blank Check to speed up erase on Spansion parts */
+		err = qspi_flash_blank_check_enable_spansion(hqfdi);
+	}
 
 	return err;
 }

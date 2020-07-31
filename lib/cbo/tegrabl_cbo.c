@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2018-2020, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -19,7 +19,7 @@
 #include <string.h>
 
 #define NVIDIA_BOOT_PARTITION_GUID	"6637b54f-c21b-48a7-952e-a8d071029d6b"
-#define CBO_DT_SIZE					(16 * 1024) /* 16KB */
+#define CBO_DT_SIZE					(4 * 1024) /* 4KB */
 
 static struct cbo_info g_cbo_info;
 

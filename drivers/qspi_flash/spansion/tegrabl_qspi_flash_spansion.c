@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -241,3 +241,39 @@ tegrabl_error_t qspi_flash_page_512bytes_enable_spansion(struct tegrabl_qspi_fla
 }
 #endif
 
+tegrabl_error_t qspi_flash_blank_check_enable_spansion(struct tegrabl_qspi_flash_driver_info *hqfdi)
+{
+	tegrabl_error_t err;
+	uint8_t reg_val;
+	/* Do not error out if we fail to enable BC */
+	pr_trace("Spansion: Request to enable Blank Check on erase ...\n");
+
+	err = qspi_read_reg(hqfdi, QSPI_FLASH_REG_CR3V, &reg_val);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("Read CR3V cmd failed, (err:0x%x)\n", err);
+		return TEGRABL_NO_ERROR;
+	}
+
+	reg_val |= (uint8_t) QSPI_FLASH_BLANK_CHECK_ENABLE;
+	err = qspi_write_reg(hqfdi, QSPI_FLASH_REG_CR3V, &reg_val);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("Write CR3V cmd failed, (err:0x%x)\n", err);
+		return TEGRABL_NO_ERROR;
+	}
+
+	err = qspi_writein_progress(hqfdi, QSPI_FLASH_WIP_WAIT_FOR_READY,
+					QSPI_FLASH_WIP_WAIT_IN_US);
+
+	if (err == TEGRABL_NO_ERROR) {
+		err = qspi_read_reg(hqfdi, QSPI_FLASH_REG_CR3V, &reg_val);
+		if ((err == TEGRABL_NO_ERROR) &&
+			((reg_val & QSPI_FLASH_BLANK_CHECK_ENABLE) != 0U)) {
+			hqfdi->chip_info.page_write_size = 512;
+			pr_trace("QSPI Flash: Set Blank Check OK\n");
+		} else {
+			pr_error("CR3V: Blank Check enable failed, (err:0x%x)\n", err);
+		}
+	}
+
+	return err;
+}

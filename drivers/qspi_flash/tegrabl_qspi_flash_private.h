@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -108,7 +108,9 @@ extern "C"
 #define QSPI_FLASH_WIP_ENABLE					0x01U
 #define QSPI_FLASH_WIP_DISABLE					0x00U
 #define QSPI_FLASH_WIP_FIELD					0x01U
+/* CR3V feature flags */
 #define QSPI_FLASH_PAGE512_ENABLE				0x10U
+#define QSPI_FLASH_BLANK_CHECK_ENABLE			0x20U
 
 #define FLASH_SIZE_1MB_LOG2					0x14U
 #define FLASH_SIZE_16MB_LOG2				0x18U
@@ -127,14 +129,14 @@ extern "C"
 #define DEVICE_ID_LEN						3U
 
 /* Bit definitions of flag in vendor_info */
-#define FLAG_PAGE512						0x01U
-#define FLAG_QPI							0x02U
-#define FLAG_QUAD							0x04U
-#define FLAG_BULK							0x08U
-#define FLAG_PAGE_SIZE_512					0x10U
-#define FLAG_DDR							0x20U
-#define FLAG_UNIFORM						0x40U
-#define FLAG_PAGE512_FIXED					0x80U
+#define FLAG_PAGE512					0x01U
+#define FLAG_QPI					0x02U
+#define FLAG_QUAD					0x04U
+#define FLAG_BULK					0x08U
+#define FLAG_BLANK_CHK					0x10U
+#define FLAG_DDR					0x20U
+#define FLAG_UNIFORM					0x40U
+#define FLAG_PAGE512_FIXED				0x80U
 
 /* QSPI Transfer timeout 5sec */
 #define QSPI_XFER_TIMEOUT 5000000U

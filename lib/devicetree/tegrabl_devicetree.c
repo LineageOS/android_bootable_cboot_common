@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -555,7 +555,7 @@ int tegrabl_add_subnode_if_absent(void *fdt, int parentnode, char *nodename)
 
 	node = fdt_subnode_offset(fdt, parentnode, nodename);
 	if (node < 0) {
-		pr_error("\"%s\" doesn't exist, creating\n", nodename);
+		pr_warn("\"%s\" doesn't exist, creating\n", nodename);
 		node = fdt_add_subnode(fdt, parentnode, nodename);
 		if (node < 0) {
 			pr_error("Creating node \"%s\" failed\n", nodename);

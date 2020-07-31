@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -283,7 +283,7 @@ tegrabl_error_t tegrabl_regulator_set_voltage(int32_t phandle, uint32_t volts,
 		if (entry->set_volts) {
 			volts = entry->set_volts;
 		} else {
-			pr_error("set volts not configured for '%s'\n", entry->name);
+			pr_warn("set volts not configured for '%s'\n", entry->name);
 			err = TEGRABL_ERROR(TEGRABL_ERR_NOT_SUPPORTED, 2);
 			goto fail;
 		}
