@@ -59,7 +59,7 @@ tegrabl_load_from_partition(struct tegrabl_kernel_bin *kernel,
 		goto boot_image_load_done;
 	}
 
-	bin_type = TEGRABL_BINARY_KERNEL;
+	bin_type = kernel->bin_type;
 #if defined(CONFIG_ENABLE_L4T_RECOVERY)
 	if (boot_to_recovery) {
 		bin_type = TEGRABL_BINARY_RECOVERY_IMG;
