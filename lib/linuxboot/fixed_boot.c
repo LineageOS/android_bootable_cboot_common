@@ -54,6 +54,14 @@ struct tegrabl_img_dtb_fdt {
 		.dtb_bin_type = TEGRABL_BINARY_RECOVERY_DTB,
 		.preload_dtb_bin_type = TEGRABL_DT_INVALID
 	},
+#elif defined(CONFIG_OS_IS_ANDROID)
+	{
+		.img_name_str = "SOS",
+		.dtb_name_str = "kernel-dtb",
+		.img_bin_type = TEGRABL_BINARY_RECOVERY_KERNEL,
+		.dtb_bin_type = TEGRABL_BINARY_KERNEL_DTB,
+		.preload_dtb_bin_type = TEGRABL_DT_KERNEL
+	},
 #endif
 };
 
@@ -73,6 +81,8 @@ tegrabl_load_from_partition(struct tegrabl_kernel_bin *kernel,
 
 #if defined(CONFIG_ENABLE_L4T_RECOVERY)
 	img_dtb_fdt = boot_to_recovery ? &img_dtb_fdt_table[1] : &img_dtb_fdt_table[0];
+#elif defined(CONFIG_OS_IS_ANDROID)
+	img_dtb_fdt = kernel->bin_type == TEGRABL_BINARY_RECOVERY_KERNEL ? &img_dtb_fdt_table[1] : &img_dtb_fdt_table[0];
 #else
 	img_dtb_fdt = &img_dtb_fdt_table[0];
 #endif
