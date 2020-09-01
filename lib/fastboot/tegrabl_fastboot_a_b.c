@@ -31,6 +31,7 @@ const char *fastboot_a_b_var_list[] = {
 	"current-slot",
 	"slot-suffixes",
 	"has-slot",
+	"slot-count",
 };
 
 const char *fastboot_a_b_slot_var_list[] = {
@@ -201,6 +202,7 @@ tegrabl_error_t tegrabl_fastboot_a_b_var_handler(const char *arg,
 	bool slot_unbootable;
 	uint8_t slot_retry_count = 0;
 	bool has_slot = false;
+	uint8_t num_slots = 0;
 
 	if (IS_VAR_TYPE("has-slot:")) {
 		error = partition_has_slot(arg + strlen("has-slot:"), &has_slot,
@@ -225,6 +227,12 @@ tegrabl_error_t tegrabl_fastboot_a_b_var_handler(const char *arg,
 			goto fail;
 		}
 		COPY_RESPONSE(slot_suffix);
+	} else if (IS_VAR_TYPE("slot-count")) {
+		error = tegrabl_get_slot_num(&num_slots);
+		if (error != TEGRABL_NO_ERROR) {
+			goto fail;
+		}
+		sprintf(response + strlen(response), "%u", num_slots);
 	} else if (IS_VAR_TYPE("slot-successful:")) {
 		suffix = arg + strlen("slot-successful:");
 		error = tegrabl_is_slot_successful(suffix, &slot_successful);
