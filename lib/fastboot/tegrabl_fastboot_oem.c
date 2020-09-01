@@ -16,6 +16,7 @@
 #include <tegrabl_debug.h>
 #include <tegrabl_fastboot_protocol.h>
 #include <string.h>
+#include <tegrabl_exit.h>
 
 static struct tegrabl_fastboot_oem_ops oem_ops;
 
@@ -100,6 +101,9 @@ tegrabl_error_t tegrabl_fastboot_oem_handler(const char *arg)
 		}
 
 		fastboot_ack("INFO", ecid_str);
+	} else if (IS_VAR_TYPE("force-recovery")) {
+		fastboot_okay("");
+		tegrabl_reboot_forced_recovery();
 	}
 
 	return ret;
