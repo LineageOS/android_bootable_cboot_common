@@ -463,9 +463,9 @@ tegrabl_error_t tegrabl_a_b_get_slot_via_suffix(const char *suffix,
 {
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 
-	if ((*suffix == '\0') || (strcmp(suffix, BOOT_CHAIN_SUFFIX_A) == 0)) {
+	if ((*suffix == '\0') || (*suffix == 'a') || (strcmp(suffix, BOOT_CHAIN_SUFFIX_A) == 0)) {
 		*boot_slot_id = (uint32_t)BOOT_SLOT_A;
-	} else if (strcmp(suffix, BOOT_CHAIN_SUFFIX_B) == 0) {
+	} else if ((*suffix == 'b') || (strcmp(suffix, BOOT_CHAIN_SUFFIX_B) == 0)) {
 		*boot_slot_id = (uint32_t)BOOT_SLOT_B;
 	} else {
 		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
