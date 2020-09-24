@@ -20,15 +20,15 @@
 
 const struct tegrabl_fastboot_partition_info
 	fastboot_partition_map_table[] = {
-	{ "recovery", "SOS", "SOS_b", FASTBOOT_FS_TYPE_BASIC },
-	{ "boot", "kernel", "kernel_b", FASTBOOT_FS_TYPE_BASIC},
-	{ "dtb", "kernel-dtb", "kernel-dtb_b", FASTBOOT_FS_TYPE_BASIC},
-	{ "system", "APP", "APP_b", FASTBOOT_FS_TYPE_EXT4 },
+	{ "recovery", "SOS_a", "SOS_b", FASTBOOT_FS_TYPE_BASIC },
+	{ "boot", "kernel_a", "kernel_b", FASTBOOT_FS_TYPE_BASIC},
+	{ "dtb", "kernel-dtb_a", "kernel-dtb_b", FASTBOOT_FS_TYPE_BASIC},
+	{ "system", "APP_a", "APP_b", FASTBOOT_FS_TYPE_EXT4 },
 	{ "userdata", "UDA", NULL, FASTBOOT_FS_TYPE_EXT4 },
-	{ "vendor", "vendor", "vendor_b", FASTBOOT_FS_TYPE_EXT4 },
+	{ "vendor", "vendor_a", "vendor_b", FASTBOOT_FS_TYPE_EXT4 },
 	{ "bmp", "BMP", "BMP_b", FASTBOOT_FS_TYPE_BASIC },
 	{ "rpb", "RPB", NULL, FASTBOOT_FS_TYPE_BASIC },
-	{ "odm", "odm", "odm_b", FASTBOOT_FS_TYPE_EXT4 },
+	{ "odm", "odm_a", "odm_b", FASTBOOT_FS_TYPE_EXT4 },
 };
 
 const char *tegrabl_nv_private_partition_list[] = {
