@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -67,12 +67,13 @@ uint8_t tegrabl_usbh_get_device_id(uint16_t vendor_id, uint16_t product_id)
 {
 	struct xusb_host_context *ctx = tegrabl_get_usbh_context();
 
-	if (ctx->enum_dev.dev_addr == 0) {
+	if (ctx->curr_dev_priv->enum_dev.dev_addr == 0) {
 		return 0;
 	}
 
-	if ((ctx->enum_dev.vendor_id == vendor_id) && (ctx->enum_dev.product_id == product_id)) {
-		return ctx->enum_dev.dev_addr;
+	if ((ctx->curr_dev_priv->enum_dev.vendor_id == vendor_id) &&
+		(ctx->curr_dev_priv->enum_dev.product_id == product_id)) {
+		return ctx->curr_dev_priv->enum_dev.dev_addr;
 	}
 
 	return 0;
@@ -110,7 +111,7 @@ tegrabl_error_t tegrabl_usbh_snd_data(uint8_t dev_id, void *buffer, uint32_t *le
 	i = *length;
 	while (i > 0) {
 		transfered = (i >= MAX_TRANSFER_SIZE) ? MAX_TRANSFER_SIZE : i;
-		err = tegrabl_xhci_xfer_data(ctx, ctx->enum_dev.ep[0].addr, buffer + j, &transfered);
+		err = tegrabl_xhci_xfer_data(ctx, ctx->curr_dev_priv->enum_dev.ep[0].addr, buffer + j, &transfered);
 		transfered_total += transfered;
 		if (err != TEGRABL_NO_ERROR) {
 			*length = transfered_total;
@@ -137,7 +138,8 @@ tegrabl_error_t tegrabl_usbh_rcv_data(uint8_t dev_id, void *buffer, uint32_t *le
 	i = *length;
 	while (i > 0) {
 		transfered = (i >= MAX_TRANSFER_SIZE) ? MAX_TRANSFER_SIZE : i;
-		err = tegrabl_xhci_xfer_data(ctx, (ctx->enum_dev.ep[1].addr | 0x80), buffer + j, &transfered);
+		err = tegrabl_xhci_xfer_data(ctx, (ctx->curr_dev_priv->enum_dev.ep[1].addr | 0x80), buffer + j,
+									 &transfered);
 		transfered_total += transfered;
 		tegrabl_dma_unmap_buffer(TEGRABL_MODULE_XUSB_HOST, 0, buffer + j, transfered,
 								 TEGRABL_DMA_FROM_DEVICE);

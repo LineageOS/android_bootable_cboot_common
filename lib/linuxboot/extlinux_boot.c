@@ -38,6 +38,8 @@ static struct conf extlinux_conf;
 static uint32_t boot_entry;
 static time_t user_input_wait_timeout_ms;
 static bool extlinux_boot_is_success;
+static char *g_ramdisk_path;
+static char *g_boot_args;
 
 static char *skip_leading_whitespace(char * const str)
 {
@@ -103,14 +105,15 @@ static void extract_val(char * const str, char * const key, char ** const buf)
 	*buf = skip_leading_whitespace(val);
 }
 
-static void parse_conf_file(void *conf_load_addr, struct conf *extlinux_conf)
+static tegrabl_error_t parse_conf_file(void *conf_load_addr, struct conf *extlinux_conf)
 {
 	char *timeout = NULL;
 	char *default_boot = NULL;
 	char *str;
-	int entry = -1;
+	int entry;
 	char *key = NULL;
 	char *token = strtok(conf_load_addr, "\n");
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	if (token == NULL) {
 		pr_error("Nothing to parse in conf file\n");
@@ -118,6 +121,7 @@ static void parse_conf_file(void *conf_load_addr, struct conf *extlinux_conf)
 	}
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
+	entry = -1;
 	do {
 		pr_trace("str: %s, len: %lu\n", token, strlen(token));
 		str = remove_whitespace_and_comment(token);
@@ -144,7 +148,14 @@ static void parse_conf_file(void *conf_load_addr, struct conf *extlinux_conf)
 		key = "LABEL";
 		if (!strncmp(key, str, strlen(key))) {
 			entry++;
-			extract_val(str, key, &extlinux_conf->section[entry].label);
+			extlinux_conf->section[entry] = tegrabl_malloc(sizeof(struct boot_section));
+			if (extlinux_conf->section[entry] == NULL) {
+				pr_error("Failed to allocate memory for %u boot section\n", entry);
+				err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
+				goto fail;
+			}
+			memset(extlinux_conf->section[entry], 0, sizeof(struct boot_section));
+			extract_val(str, key, &extlinux_conf->section[entry]->label);
 			continue;
 		}
 		if (entry < 0) {
@@ -152,27 +163,27 @@ static void parse_conf_file(void *conf_load_addr, struct conf *extlinux_conf)
 		}
 		key = "MENU LABEL";
 		if (!strncmp(key, str, strlen(key))) {
-			extract_val(str, key, &extlinux_conf->section[entry].menu_label);
+			extract_val(str, key, &extlinux_conf->section[entry]->menu_label);
 			continue;
 		}
 		key = "LINUX";
 		if (!strncmp(key, str, strlen(key))) {
-			extract_val(str, key, &extlinux_conf->section[entry].linux_path);
+			extract_val(str, key, &extlinux_conf->section[entry]->linux_path);
 			continue;
 		}
 		key = "INITRD";
 		if (!strncmp(key, str, strlen(key))) {
-			extract_val(str, key, &extlinux_conf->section[entry].initrd_path);
+			extract_val(str, key, &extlinux_conf->section[entry]->initrd_path);
 			continue;
 		}
 		key = "FDT";
 		if (!strncmp(key, str, strlen(key))) {
-			extract_val(str, key, &extlinux_conf->section[entry].dtb_path);
+			extract_val(str, key, &extlinux_conf->section[entry]->dtb_path);
 			continue;
 		}
 		key = "APPEND";
 		if (!strncmp(key, str, strlen(key))) {
-			extract_val(str, key, &extlinux_conf->section[entry].boot_args);
+			extract_val(str, key, &extlinux_conf->section[entry]->boot_args);
 			continue;
 		}
 	} while ((token = strtok(NULL, "\n")) != NULL);
@@ -188,28 +199,28 @@ static void parse_conf_file(void *conf_load_addr, struct conf *extlinux_conf)
 	extlinux_conf->num_boot_entries = entry + 1;
 
 	for (entry = 0; (uint32_t)entry < extlinux_conf->num_boot_entries; entry++) {
-		if (strncmp(extlinux_conf->section[entry].label, default_boot, strlen(default_boot)) == 0) {
+		if (strncmp(extlinux_conf->section[entry]->label, default_boot, strlen(default_boot)) == 0) {
 			extlinux_conf->default_boot_entry = entry;
 		}
-		if (extlinux_conf->section[entry].menu_label) {
-			pr_trace("menu label: %s\n", extlinux_conf->section[entry].menu_label);
+		if (extlinux_conf->section[entry]->menu_label) {
+			pr_trace("menu label: %s\n", extlinux_conf->section[entry]->menu_label);
 		}
-		if (extlinux_conf->section[entry].linux_path) {
-			pr_trace("\tlinux path  : %s\n", extlinux_conf->section[entry].linux_path);
+		if (extlinux_conf->section[entry]->linux_path) {
+			pr_trace("\tlinux path  : %s\n", extlinux_conf->section[entry]->linux_path);
 		}
-		if (extlinux_conf->section[entry].initrd_path) {
-			pr_trace("\tinitrd path : %s\n", extlinux_conf->section[entry].initrd_path);
+		if (extlinux_conf->section[entry]->initrd_path) {
+			pr_trace("\tinitrd path : %s\n", extlinux_conf->section[entry]->initrd_path);
 		}
-		if (extlinux_conf->section[entry].dtb_path) {
-			pr_trace("\tdtb path    : %s\n", extlinux_conf->section[entry].dtb_path);
+		if (extlinux_conf->section[entry]->dtb_path) {
+			pr_trace("\tdtb path    : %s\n", extlinux_conf->section[entry]->dtb_path);
 		}
-		if (extlinux_conf->section[entry].boot_args) {
-			pr_trace("\tboot args   : %s\n", extlinux_conf->section[entry].boot_args);
+		if (extlinux_conf->section[entry]->boot_args) {
+			pr_trace("\tboot args   : %s\n", extlinux_conf->section[entry]->boot_args);
 		}
 	}
 
 fail:
-	return;
+	return err;
 }
 
 static tegrabl_error_t load_and_parse_conf_file(struct tegrabl_fm_handle *fm_handle,
@@ -239,7 +250,7 @@ static tegrabl_error_t load_and_parse_conf_file(struct tegrabl_fm_handle *fm_han
 	}
 
 	/* Parse extlinux.conf file */
-	parse_conf_file(conf_load_addr, extlinux_conf);
+	err = parse_conf_file(conf_load_addr, extlinux_conf);
 
 fail:
 	return err;
@@ -256,7 +267,7 @@ static int display_boot_menu(struct conf * const extlinux_conf)
 	/* Display boot menu */
 	pr_info("%s\n", extlinux_conf->menu_title);
 	for (idx = 0; idx < extlinux_conf->num_boot_entries; idx++) {
-		pr_info("[%u]: \"%s\"\n", idx + 1, extlinux_conf->section[idx].menu_label);
+		pr_info("[%u]: \"%s\"\n", idx + 1, extlinux_conf->section[idx]->menu_label);
 	}
 
 	/* Get user input */
@@ -483,6 +494,7 @@ tegrabl_error_t extlinux_boot_load_kernel_and_dtb(struct tegrabl_fm_handle *fm_h
 {
 	char *linux_path;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	uint32_t entry;
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
 
@@ -497,6 +509,8 @@ tegrabl_error_t extlinux_boot_load_kernel_and_dtb(struct tegrabl_fm_handle *fm_h
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
+	g_ramdisk_path = extlinux_conf.section[boot_entry]->initrd_path;
+	g_boot_args = extlinux_conf.section[boot_entry]->boot_args;
 
 	/* Get load address of kernel and dtb */
 	err = tegrabl_get_boot_img_load_addr(boot_img_load_addr);
@@ -506,7 +520,7 @@ tegrabl_error_t extlinux_boot_load_kernel_and_dtb(struct tegrabl_fm_handle *fm_h
 	}
 	*dtb_load_addr = (void *)tegrabl_get_dtb_load_addr();
 
-	linux_path = extlinux_conf.section[boot_entry].linux_path;
+	linux_path = extlinux_conf.section[boot_entry]->linux_path;
 	err = load_binary_with_sig(fm_handle,
 							   TEGRABL_BINARY_KERNEL,
 							   BOOT_IMAGE_MAX_SIZE,
@@ -520,14 +534,14 @@ tegrabl_error_t extlinux_boot_load_kernel_and_dtb(struct tegrabl_fm_handle *fm_h
 
 #if defined(CONFIG_DT_SUPPORT)
 	uint32_t dtb_size;
-	char *dtb_path;
+	char *dtb_path = NULL;
 
 	err = tegrabl_dt_get_fdt_handle(TEGRABL_DT_KERNEL, dtb_load_addr);
 	if ((err == TEGRABL_NO_ERROR) && (*dtb_load_addr !=  NULL)) {
 		goto fail;
 	}
 
-	dtb_path = extlinux_conf.section[boot_entry].dtb_path;
+	dtb_path = extlinux_conf.section[boot_entry]->dtb_path;
 	err = load_binary_with_sig(fm_handle,
 							   TEGRABL_BINARY_KERNEL_DTB,
 							   DTB_MAX_SIZE,
@@ -541,6 +555,9 @@ tegrabl_error_t extlinux_boot_load_kernel_and_dtb(struct tegrabl_fm_handle *fm_h
 #endif	/* CONFIG_DT_SUPPORT */
 
 fail:
+	for (entry = 0; entry < extlinux_conf.num_boot_entries; entry++) {
+		tegrabl_free(extlinux_conf.section[entry]);
+	}
 	return err;
 }
 
@@ -559,7 +576,7 @@ tegrabl_error_t extlinux_boot_load_ramdisk(struct tegrabl_fm_handle *fm_handle,
 		goto fail;
 	}
 
-	if (extlinux_conf.section[boot_entry].initrd_path == NULL) {
+	if (g_ramdisk_path == NULL) {
 		pr_warn("Ramdisk image path not found\n");
 		goto fail;
 	}
@@ -567,7 +584,7 @@ tegrabl_error_t extlinux_boot_load_ramdisk(struct tegrabl_fm_handle *fm_handle,
 	pr_info("Loading ramdisk from rootfs ...\n");
 	*ramdisk_load_addr = (void *)tegrabl_get_ramdisk_load_addr();
 	err = tegrabl_fm_read(fm_handle,
-						  extlinux_conf.section[boot_entry].initrd_path,
+						  g_ramdisk_path,
 						  NULL,
 						  *ramdisk_load_addr,
 						  &file_size,
@@ -587,7 +604,7 @@ tegrabl_error_t extlinux_boot_update_bootargs(void *kernel_dtb)
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
 
-	err = tegrabl_linuxboot_update_bootargs(kernel_dtb, extlinux_conf.section[boot_entry].boot_args);
+	err = tegrabl_linuxboot_update_bootargs(kernel_dtb, g_boot_args);
 	if (err != 0) {
 		pr_warn("Failed to update DTB bootargs with extlinux.conf\n");
 	}

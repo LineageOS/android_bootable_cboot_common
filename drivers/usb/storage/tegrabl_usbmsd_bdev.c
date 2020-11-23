@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software and related documentation
@@ -582,11 +582,11 @@ static void do_bulk_reset(struct tegrabl_usbmsd_context *context)
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 
 	/* Get host context, bInterfaceNumber is in enum_dev.interface_indx */
-	iface_num = context->host_context.enum_dev.interface_indx;
+	iface_num = context->host_context.curr_dev_priv->enum_dev.interface_indx;
 	pr_debug("bIinterfaceNumber = %d\n", iface_num);
 
 	/* Check protocol here, must be BBB */
-	protocol = context->host_context.enum_dev.protocol;
+	protocol = context->host_context.curr_dev_priv->enum_dev.protocol;
 	if (protocol != BULK_PROTOCOL) {
 		pr_error("Bad protocol = 0x%02X\n", protocol);
 		error = TEGRABL_ERROR(TEGRABL_ERR_BAD_PARAMETER,
@@ -713,7 +713,8 @@ tegrabl_error_t tegrabl_usbmsd_bdev_open(uint32_t instance)
 	}
 
 	/* Check host context - zeros means it didn't enumerate a device */
-	if ((host_ctx->enum_dev.vendor_id == 0) && (host_ctx->enum_dev.product_id == 0)) {
+	if ((host_ctx->curr_dev_priv->enum_dev.vendor_id == 0) &&
+		(host_ctx->curr_dev_priv->enum_dev.product_id == 0)) {
 		pr_error("Empty host context, host driver not loaded?\n");
 		error = TEGRABL_ERROR(TEGRABL_ERR_INIT_FAILED,
 				      TEGRABL_USBMSD_BDEV_OPEN);
@@ -723,7 +724,8 @@ tegrabl_error_t tegrabl_usbmsd_bdev_open(uint32_t instance)
 	}
 
 	/* Check if enumerated device belongs to MSD class and protocol is bulk-only */
-	if ((host_ctx->enum_dev.class != USB_MSD_CLASS) || (host_ctx->enum_dev.protocol != BULK_PROTOCOL)) {
+	if ((host_ctx->curr_dev_priv->enum_dev.class != USB_MSD_CLASS) ||
+		(host_ctx->curr_dev_priv->enum_dev.protocol != BULK_PROTOCOL)) {
 		pr_error("Enumerated device doesn't belong to MSD class or protocol is not bulk-only!!\n");
 		error = TEGRABL_ERROR(TEGRABL_ERR_INIT_FAILED,
 				      TEGRABL_USBMSD_BDEV_OPEN);
@@ -739,27 +741,27 @@ tegrabl_error_t tegrabl_usbmsd_bdev_open(uint32_t instance)
 #ifdef USB_DEBUG
 	/* Verify that host context is OK w/a few debug prints */
 	pr_info("host context, Vendor 0x%04X, Product 0x%04X\n",
-		 context->host_context.enum_dev.vendor_id,
-		 context->host_context.enum_dev.product_id);
+		 context->host_context.curr_dev_priv->enum_dev.vendor_id,
+		 context->host_context.curr_dev_priv->enum_dev.product_id);
 	pr_info("Device address = %d, InterfaceNumber = %d\n",
-		 context->host_context.enum_dev.dev_addr,
-		 context->host_context.enum_dev.interface_indx);
+		 context->host_context.curr_dev_priv->enum_dev.dev_addr,
+		 context->host_context.curr_dev_priv->enum_dev.interface_indx);
 	pr_info("class/subclass/protocol = %02X/%02X/%02X\n",
-		 context->host_context.enum_dev.class,
-		 context->host_context.enum_dev.subclass,
-		 context->host_context.enum_dev.protocol);
+		 context->host_context.curr_dev_priv->enum_dev.class,
+		 context->host_context.curr_dev_priv->enum_dev.subclass,
+		 context->host_context.curr_dev_priv->enum_dev.protocol);
 	pr_info("USB_DIR_OUT = %d: EP0 = address %d, maxpackets out = %d\n",
-		 USB_DIR_OUT, context->host_context.enum_dev.ep[0].addr,
-		 context->host_context.enum_dev.ep[0].packet_size);
+		 USB_DIR_OUT, context->host_context.curr_dev_priv->enum_dev.ep[0].addr,
+		 context->host_context.curr_dev_priv->enum_dev.ep[0].packet_size);
 	pr_info("USB_DIR_IN  = %d: EP1 = address %d, maxpackets in = %d\n",
-		 USB_DIR_IN, context->host_context.enum_dev.ep[1].addr,
-		 context->host_context.enum_dev.ep[1].packet_size);
+		 USB_DIR_IN, context->host_context.curr_dev_priv->enum_dev.ep[1].addr,
+		 context->host_context.curr_dev_priv->enum_dev.ep[1].packet_size);
 #endif
 	/* Save some host context to our context for ease of use */
 
 	/* NOTE: host driver hardcodes OUT EP as ep[0], IN EP as ep[1]! */
-	context->out_ep = context->host_context.enum_dev.ep[USB_DIR_OUT].addr;
-	context->in_ep = context->host_context.enum_dev.ep[USB_DIR_IN].addr;
+	context->out_ep = context->host_context.curr_dev_priv->enum_dev.ep[USB_DIR_OUT].addr;
+	context->in_ep = context->host_context.curr_dev_priv->enum_dev.ep[USB_DIR_IN].addr;
 
 	context->tag = 0x1;		/* increment after each CSW xfer */
 
@@ -850,7 +852,7 @@ static int get_max_lun(struct tegrabl_usbmsd_context *context)
 	tegrabl_error_t error;
 
 	/* Get host context, bInterfaceNumber is in enum_dev.interface_indx */
-	iface_num = context->host_context.enum_dev.interface_indx;
+	iface_num = context->host_context.curr_dev_priv->enum_dev.interface_indx;
 	pr_debug("%s: bIinterfaceNumber = %d\n", __func__, iface_num);
 
 	maxlun = 0;				/* if request fails, use 0 */
@@ -946,7 +948,7 @@ tegrabl_error_t usbmsd_send_cbw(struct tegrabl_usbmsd_context *context,
 	}
 	pr_debug("cmdlen = %d\n", cmdlen);
 
-	dev_id = context->host_context.enum_dev.dev_addr;
+	dev_id = context->host_context.curr_dev_priv->enum_dev.dev_addr;
 
 	/*
 	 * NOTE: num_bytes == 0 is OK here, just means no data phase.
@@ -1014,7 +1016,7 @@ tegrabl_error_t usbmsd_transfer_data(struct tegrabl_usbmsd_context *context,
 		goto fail;
 
 	xfer_length = num_bytes;
-	dev_id = context->host_context.enum_dev.dev_addr;
+	dev_id = context->host_context.curr_dev_priv->enum_dev.dev_addr;
 
 	if (context->xfer_info.buf == NULL) {
 		pr_error("xfer_info buffer is NULL!\n");
@@ -1077,7 +1079,7 @@ tegrabl_error_t usbmsd_get_csw(struct tegrabl_usbmsd_context *context,
 	/* Get status of last CBW from device */
 	xfer_length = CSW_SIZE;
 	memset(&csw, 0, xfer_length);
-	dev_id = context->host_context.enum_dev.dev_addr;
+	dev_id = context->host_context.curr_dev_priv->enum_dev.dev_addr;
 
 #ifdef	USB_DEBUG
 	pr_debug("device ID (address) = %d\n", dev_id);

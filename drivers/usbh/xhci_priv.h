@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -97,6 +97,8 @@
 
 /* USB Setup Packet size */
 #define USB_SETUP_PKT_SIZE  8
+/* USB hub descriptor size */
+#define USB_HUB_DESCRIPTOR_SIZE 12
 /* USB device decriptor size */
 #define USB_DEV_DESCRIPTOR_SIZE 18
 /* USB Configuration decriptor size */
@@ -152,8 +154,10 @@ enum {
 };
 
 enum {
-	FULL_SPEED = 1,
-	HIGH_SPEED = 3
+	XHCI_SUPER_SPEED = 0,
+	XHCI_FULL_SPEED = 1,
+	XHCI_LOW_SPEED = 2,
+	XHCI_HIGH_SPEED = 3
 };
 
 #define USB_MAX_TXFR_RETRIES    3
@@ -217,7 +221,9 @@ enum usb_dev_desc_type {
 	/* Specifies a device qualifier type */
 	USB_DT_DEVICE_QUALIFIER = 6,
 	/* Specifies the other speed configuration type */
-	USB_DT_OTHER_SPEED_CONFIG = 7
+	USB_DT_OTHER_SPEED_CONFIG = 7,
+	/* Specifies a hub descriptor type */
+	USB_DT_HUB = 41
 };
 
 /**
@@ -303,6 +309,9 @@ enum {
 	   host-to-device, recipient: endpoint */
 	HOST2DEV_OTHER = 0x03,
 	/* Specifies the data transfer direction:
+	   host-to-device, class type, recipient: other */
+	HOST2DEV_CLASS_OTHER = 0x23,
+	/* Specifies the data transfer direction:
 	   device-to-host, transmitter: device */
 	DEV2HOST_DEVICE = 0x80,
 	/* Specifies the data transfer direction:
@@ -315,8 +324,14 @@ enum {
 	   device-to-host, transmitter: endpoint */
 	DEV2HOST_OTHER = 0x83,
 	/* Specifies the data transfer direction:
+	   device-to-host, class type, recepient: device */
+	DEV2HOST_CLASS_DEVICE = 0xA0,
+	/* Specifies the data transfer direction:
 	   device-to-host, transmitter: interface */
-	CLASS_SPECIFIC_REQUEST = 0xA1
+	CLASS_SPECIFIC_REQUEST = 0xA1,
+	/* Specifies the data transfer direction:
+	   device-to-host, class type, recepient: other */
+	DEV2HOST_CLASS_OTHER = 0xA3
 };
 
 #define DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))

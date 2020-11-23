@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -29,6 +29,7 @@
 #include <tegrabl_regulator.h>
 #include <tegrabl_gpio.h>
 #include <tegrabl_xusbh_soc.h>
+#include <hub.h>
 
 #define ENABLE_REGULATORS		0U
 
@@ -167,8 +168,8 @@ static tegrabl_error_t xusbh_port_reset(struct xusb_host_context *ctx)
 		temp &= ~PORT_PE;
 		xusbh_xhci_writel(OP_PORTSC(ctx->root_port_number + 3), temp);
 		temp = xusbh_xhci_readl(OP_PORTSC(ctx->root_port_number + 3));
+		ctx->root_port_speed = DEV_PORT_SPEED(temp);
 		if ((temp & PORT_PLS_MASK) == XDEV_U0) {
-			ctx->speed = DEV_PORT_SPEED(temp);
 			pr_info("USB 2.0 port %d new %s USB device detected\n",
 					ctx->root_port_number,
 					DEV_HIGHSPEED(temp) ? "high-speed" :
@@ -265,25 +266,47 @@ static void xusbh_init_ep_ctx(struct xusb_host_context *ctx)
 	struct EP_COMMON *ep;
 	struct xhci_ring *ring;
 
-	ring = (struct xhci_ring *)&ctx->ep_ring[0];
+	ring = (struct xhci_ring *)&ctx->curr_dev_priv->ep_ring[0];
+
 	/* setup input ctx */
-	ep = (struct EP_COMMON *)ctx->input_context;
+	ep = (struct EP_COMMON *)ctx->curr_dev_priv->input_context;
 	/* add slot and ep0 in control slot bit 0-1*/
 	ep[0].field[0] = 0;
 	ep[0].field[1] = 3;
+
 	/* speed and ep entry index */
-	ep[1].field[0] = (ctx->speed << 20) | (1 << 27);
-	/* port id */
-	ep[1].field[1] = ctx->port_id << 16;
-	ep[2].field[1] = (EP_TYPE_CONTROL_BI << 3) |
-					 (3 << 1) |  /* error count*/
-					 (USB_HS_CONTROL_MAX_PACKETSIZE << 16);
+	ep[1].field[0] = (1 << SLOT_CTX_ENTRIES_OFFSET)							|
+					 (ctx->curr_dev_priv->speed << SLOT_CTX_SPEED_OFFSET)	|
+					 (ctx->curr_dev_priv->route_string);
+
+	ep[1].field[1] = ctx->port_id << SLOT_CTX_ROOT_HUB_PORT_NUM_OFFSET;
+
+	ep[2].field[1] = (EP_TYPE_CONTROL_BI << EP_CTX_EP_TYPE_OFFSET)		|
+					 (3 << EP_CTX_ERR_COUNT_OFFSET)						|
+					 (USB_HS_CONTROL_MAX_PACKETSIZE << EP_CTX_MAX_PKT_SIZE_OFFSET);
 	ep[2].field[2] = U64_TO_U32_LO(ring->dma) | ring->cycle_state;
 	tegrabl_dma_map_buffer(TEGRABL_MODULE_XUSB_HOST, 0, (void *)ep, INPUT_CONTEXT_SIZE,
 						   TEGRABL_DMA_TO_DEVICE);
 
 	/* Control packet size before get descriptor device is issued. */
-	ctx->enum_dev.bMaxPacketSize0 = USB_HS_CONTROL_MAX_PACKETSIZE;
+	ctx->curr_dev_priv->enum_dev.bMaxPacketSize0 = USB_HS_CONTROL_MAX_PACKETSIZE;
+
+	pr_trace("Input device context\n");
+	pr_trace("\tControl ctx:\n");
+	pr_trace("\t\tdrop flags: 0x%08x\n", ep[0].field[0]);
+	pr_trace("\t\tadd  flags: 0x%08x\n", ep[0].field[1]);
+	pr_trace("\tSlot ctx:\n");
+	pr_trace("\t\tfield 0   : 0x%08x\n", ep[1].field[0]);
+	pr_trace("\t\tfield 1   : 0x%08x\n", ep[1].field[1]);
+	pr_trace("\t\tfield 2   : 0x%08x\n", ep[1].field[2]);
+	pr_trace("\t\tfield 3   : 0x%08x\n", ep[1].field[3]);
+	pr_trace("\tEndpoint ctx:\n");
+	pr_trace("\t\tfield 0   : 0x%08x\n", ep[2].field[0]);
+	pr_trace("\t\tfield 1   : 0x%08x\n", ep[2].field[1]);
+	pr_trace("\t\tfield 2   : 0x%08x\n", ep[2].field[2]);
+	pr_trace("\t\tfield 3   : 0x%08x\n", ep[2].field[3]);
+	pr_trace("\t\tfield 4   : 0x%08x\n", ep[2].field[4]);
+	tegrabl_mdelay(100);
 }
 
 static void handle_port_status_change_event(struct xusb_host_context *ctx, struct TRB *event)
@@ -346,7 +369,7 @@ static tegrabl_error_t handle_command_completion_event(struct xusb_host_context 
 	}
 	if (ctx->slot_id == 0) {
 		ctx->slot_id = (int)((event->field[3]>>24) & 0xff);
-		pr_error("slot id is %d\n", ctx->slot_id);
+		pr_trace("slot id assigned is %d\n", ctx->slot_id);
 	}
 
 	return err;
@@ -535,7 +558,7 @@ tegrabl_error_t prepare_ctrl_setup_trb(struct xusb_host_context *ctx,
 									   struct device_request *device_request_ptr,
 									   enum trt_type *trt_type)
 {
-	struct xhci_ring *setup = (struct xhci_ring *)&ctx->ep_ring[0];
+	struct xhci_ring *setup = (struct xhci_ring *)&ctx->curr_dev_priv->ep_ring[0];
 	struct setup_trb *setup_trb_ptr = NULL;
 
 	setup->start_cycle_state = setup->cycle_state;
@@ -587,7 +610,7 @@ tegrabl_error_t prepare_ctrl_setup_trb(struct xusb_host_context *ctx,
 void prepare_ctrl_data_trb(struct xusb_host_context *ctx, struct device_request *device_request_ptr,
 						   void *buffer)
 {
-	struct xhci_ring *data = (struct xhci_ring *)&ctx->ep_ring[0];
+	struct xhci_ring *data = (struct xhci_ring *)&ctx->curr_dev_priv->ep_ring[0];
 	struct data_trb *data_trb_ptr = (struct data_trb *)(data->enque_curr_ptr);
 	dma_addr_t dma;
 
@@ -617,7 +640,7 @@ void prepare_ctrl_data_trb(struct xusb_host_context *ctx, struct device_request 
 /* prepare status stage TRB */
 void prepare_ctrl_status_trb(struct xusb_host_context *ctx, struct device_request *device_request_ptr)
 {
-	struct xhci_ring *status = (struct xhci_ring *)&ctx->ep_ring[0];
+	struct xhci_ring *status = (struct xhci_ring *)&ctx->curr_dev_priv->ep_ring[0];
 	struct status_trb *status_trb_ptr = (struct status_trb *)(status->enque_curr_ptr);
 	memset((void *)status_trb_ptr, 0, sizeof(struct TRB));
 
@@ -635,7 +658,7 @@ void prepare_ctrl_status_trb(struct xusb_host_context *ctx, struct device_reques
 #define INTERRUPT_EP_INTERVAL   3
 void prepare_ep_ctx(struct xusb_host_context *ctx, uint32_t ep_index, enum xhci_endpoint_type ep_type)
 {
-	struct EP *ep_context = ctx->dev_context + ep_index + 1;
+	struct EP *ep_context = ctx->curr_dev_priv->dev_context + ep_index + 1;
 	uint32_t ep_ring_index;
 
 	/* TODO: This needs to be rewritten to check ep_index against ep_type! */
@@ -656,24 +679,24 @@ void prepare_ep_ctx(struct xusb_host_context *ctx, uint32_t ep_index, enum xhci_
 	/* MAX_BURST_SIZE is 0 now. Should it be 0x10 to get better perf? */
 	ep_context->dw1.max_burst_size = MAX_BURST_SIZE;
 	ep_context->dw1.ep_type = ep_type;
-	ep_context->dw2.DCS = ctx->ep_ring[ep_ring_index].cycle_state;
-	ep_context->dw2.tr_dequeue_ptr_lo = (U64_TO_U32_LO(ctx->ep_ring[ep_ring_index].dma) >> 4);
-	ep_context->dw3.tr_dequeue_ptr_hi = U64_TO_U32_HI(ctx->ep_ring[ep_ring_index].dma);
+	ep_context->dw2.DCS = ctx->curr_dev_priv->ep_ring[ep_ring_index].cycle_state;
+	ep_context->dw2.tr_dequeue_ptr_lo = (U64_TO_U32_LO(ctx->curr_dev_priv->ep_ring[ep_ring_index].dma) >> 4);
+	ep_context->dw3.tr_dequeue_ptr_hi = U64_TO_U32_HI(ctx->curr_dev_priv->ep_ring[ep_ring_index].dma);
 	if ((ep_type == EP_TYPE_BULK_IN) || (ep_type == EP_TYPE_BULK_OUT)) {
 		if (ep_ring_index == 0UL) {
 			pr_warn("Invalid endpoint ring index %u\n", ep_ring_index);
 			return;
 		}
-		ep_context->dw1.max_packet_size = ctx->enum_dev.ep[ep_ring_index - 1].packet_size;
+		ep_context->dw1.max_packet_size = ctx->curr_dev_priv->enum_dev.ep[ep_ring_index - 1].packet_size;
 		ep_context->dw4.average_trb_length = 0;
 	} else if (ep_type == EP_TYPE_CONTROL_BI) {
-		ep_context->dw1.max_packet_size = ctx->enum_dev.bMaxPacketSize0;
+		ep_context->dw1.max_packet_size = ctx->curr_dev_priv->enum_dev.bMaxPacketSize0;
 		ep_context->dw4.average_trb_length = 0;
 	}
 	return;
 }
 
-#define DB_VALUE(ep, stream)    ((((ep) + 1) & 0xff) | ((stream) << 16))
+#define DB_VALUE(ep, stream)	((((ep) + 1) & 0xff) | ((stream) << 16))
 static tegrabl_error_t xhci_ring_doorbell_wait(struct xusb_host_context *ctx,
 											   enum xhci_endpoint_type trb_type,
 											   uint8_t ep_index)
@@ -693,19 +716,19 @@ static tegrabl_error_t xhci_ring_doorbell_wait(struct xusb_host_context *ctx,
 	}
 
 	pr_debug("%s TRB: from @ %p\n", (ep_index == 0) ? "CONTROL" : "TRANSFER",
-			 ctx->ep_ring[ep_ring_index].enque_start_ptr);
+			 ctx->curr_dev_priv->ep_ring[ep_ring_index].enque_start_ptr);
 
-	tegrabl_dma_map_buffer(TEGRABL_MODULE_XUSB_HOST, 0, (void *)&ctx->dev_context[ep_index+1],
+	tegrabl_dma_map_buffer(TEGRABL_MODULE_XUSB_HOST, 0, (void *)&ctx->curr_dev_priv->dev_context[ep_index+1],
 						   sizeof(struct EP), TEGRABL_DMA_TO_DEVICE);
 	tegrabl_udelay(2);
 	/* change cycle bit */
-	trb = (struct TRB *)ctx->ep_ring[ep_ring_index].enque_start_ptr;
+	trb = (struct TRB *)ctx->curr_dev_priv->ep_ring[ep_ring_index].enque_start_ptr;
 	trb->field[3] &= ~0x1;
-	trb->field[3] |= ctx->ep_ring[ep_ring_index].start_cycle_state;
+	trb->field[3] |= ctx->curr_dev_priv->ep_ring[ep_ring_index].start_cycle_state;
 	tegrabl_dma_map_buffer(TEGRABL_MODULE_XUSB_HOST, 0, trb, sizeof(struct TRB), TEGRABL_DMA_TO_DEVICE);
 	/* Ring EP doorbell */
-	xusbh_xhci_writel(DB(1), DB_VALUE(ep_index, 0));
-	pr_debug("Ding Dong!!!  Ring EP%d doorbell (%x)\n", ep_index, xusbh_xhci_readl(DB(1)));
+	xusbh_xhci_writel(DB(ctx->slot_id), DB_VALUE(ep_index, 0));
+	pr_debug("Ding Dong!!!  Ring EP%d doorbell (%x)\n", ep_index, xusbh_xhci_readl(DB(ctx->slot_id)));
 
 	err = xusbh_wait_irq(ctx, 1000);
 	return err;
@@ -726,9 +749,9 @@ static tegrabl_error_t xusbh_process_ep_stall_clear_req(struct xusb_host_context
 	if (ep_type == EP_TYPE_CONTROL_BI) {
 		device_request_var.wIndex = 0;
 	} else if (ep_type == EP_TYPE_BULK_OUT) {
-		device_request_var.wIndex = (ctx->enum_dev.ep[USB_DIR_OUT].addr);
+		device_request_var.wIndex = (ctx->curr_dev_priv->enum_dev.ep[USB_DIR_OUT].addr);
 	} else if (ep_type == EP_TYPE_BULK_IN) {
-		device_request_var.wIndex = ((ctx->enum_dev.ep[USB_DIR_IN].addr) |= ENDPOINT_DESC_ADDRESS_DIR_IN);
+		device_request_var.wIndex = ((ctx->curr_dev_priv->enum_dev.ep[USB_DIR_IN].addr) |= ENDPOINT_DESC_ADDRESS_DIR_IN);
 	}
 	device_request_var.wLength = 0;
 
@@ -788,6 +811,7 @@ tegrabl_error_t xhci_parse_config_desc(struct xusb_host_context *ctx)
 	uint32_t ep_dir;
 	bool ep_dir_in_flag = false;
 	bool ep_dir_out_flag = false;
+	uint32_t transfer_type;
 
 	/* Initialize to 0 */
 	num_eps = 0;
@@ -795,6 +819,7 @@ tegrabl_error_t xhci_parse_config_desc(struct xusb_host_context *ctx)
 	usb_intf_desc_ptr = (struct usb_intf_desc *)((uint8_t *)(ctx->xusb_data) + USB_CONFIG_DESC_SIZE);
 	/* get number of supported interfaces */
 	num_interfaces = ((struct usb_config_desc *)(ctx->xusb_data))->bNumInterfaces;
+	pr_trace("num interfaces: %u\n", num_interfaces);
 
 	/* Get endpoint descriptor for current interface descriptor */
 	usb_edp_desc_ptr = (struct usb_endpoint_desc *)((uint8_t *)usb_intf_desc_ptr + USB_INTF_DESC_SIZE);
@@ -822,17 +847,22 @@ tegrabl_error_t xhci_parse_config_desc(struct xusb_host_context *ctx)
 		 * Save class, subclass and protocol to host context for use
 		 * in class driver(s)
 		 */
-		ctx->enum_dev.class = usb_intf_desc_ptr->bInterfaceClass;
-		ctx->enum_dev.subclass = usb_intf_desc_ptr->bInterfaceSubClass;
-		ctx->enum_dev.protocol = usb_intf_desc_ptr->bInterfaceProtocol;
-		/* HID and Data and Customer-defined */
-		if (usb_intf_desc_ptr->bInterfaceClass == 0x03 ||
-			usb_intf_desc_ptr->bInterfaceClass == 0x08 ||
-			usb_intf_desc_ptr->bInterfaceClass == 0xff) {
-			ctx->enum_dev.interface_indx = usb_intf_desc_ptr->bInterfaceNumber;
-			/* only support 2 bulk EPs */
+		ctx->curr_dev_priv->enum_dev.class = usb_intf_desc_ptr->bInterfaceClass;
+		ctx->curr_dev_priv->enum_dev.subclass = usb_intf_desc_ptr->bInterfaceSubClass;
+		ctx->curr_dev_priv->enum_dev.protocol = usb_intf_desc_ptr->bInterfaceProtocol;
+		pr_trace("iface: %u,  class/subclass/proto: %x/%x/%x\n",
+				i,
+				ctx->curr_dev_priv->enum_dev.class,
+				ctx->curr_dev_priv->enum_dev.subclass,
+				ctx->curr_dev_priv->enum_dev.protocol);
+		if (usb_intf_desc_ptr->bInterfaceClass == USB_CLASS_MSD ||
+			usb_intf_desc_ptr->bInterfaceClass == USB_CLASS_HUB) {
+			ctx->curr_dev_priv->enum_dev.interface_indx = usb_intf_desc_ptr->bInterfaceNumber;
+			/* only support 2 bulk EPs or interrupt EP (for HUB) */
 			for (j = 0; j < num_eps; j++) {
-				if (usb_edp_desc_ptr->bmAttributes == 0x2) {
+				transfer_type = usb_edp_desc_ptr->bmAttributes & ENDPOINT_DESC_ATTRIBUTES_TRANSFER_TYPE_MASK;
+				if ((transfer_type == ENDPOINT_DESC_ATTRIBUTES_BULK_TYPE) ||
+					(transfer_type == ENDPOINT_DESC_ATTRIBUTES_INTERRUPT_TYPE)) {
 					ep_dir = (usb_edp_desc_ptr->bEndpointAddress) & ENDPOINT_DESC_ADDRESS_DIR_MASK;
 					if (ep_dir == ENDPOINT_DESC_ADDRESS_DIR_IN) {
 						ep_dir = USB_DIR_IN;
@@ -842,23 +872,23 @@ tegrabl_error_t xhci_parse_config_desc(struct xusb_host_context *ctx)
 						ep_dir_out_flag = true;
 					}
 
-					if (ctx->enum_dev.ep[ep_dir].addr == 0) {
+					if (ctx->curr_dev_priv->enum_dev.ep[ep_dir].addr == 0) {
 						pr_debug("%s: ep#%d, dir = %s, max packet = %d\n",
-							 __func__, j, ep_dir ? "IN" : "OUT",
-							 usb_edp_desc_ptr->wMaxPacketSize);
-						ctx->enum_dev.ep[ep_dir].packet_size = (usb_edp_desc_ptr->wMaxPacketSize);
-						ctx->enum_dev.ep[ep_dir].addr = (usb_edp_desc_ptr->bEndpointAddress) &
-														ENDPOINT_DESC_ADDRESS_ENDPOINT_MASK;
+								 __func__, j, ep_dir ? "IN" : "OUT", usb_edp_desc_ptr->wMaxPacketSize);
+						ctx->curr_dev_priv->enum_dev.ep[ep_dir].packet_size =
+							(usb_edp_desc_ptr->wMaxPacketSize);
+						ctx->curr_dev_priv->enum_dev.ep[ep_dir].addr =
+							(usb_edp_desc_ptr->bEndpointAddress) & ENDPOINT_DESC_ADDRESS_ENDPOINT_MASK;
 					}
 					if ((ep_dir_in_flag == true) && (ep_dir_out_flag == true)) {
-						ctx->enum_dev.bInterval = usb_edp_desc_ptr->bInterval;
+						ctx->curr_dev_priv->enum_dev.bInterval = usb_edp_desc_ptr->bInterval;
 						err = TEGRABL_NO_ERROR;
 						break;
 					}
 				}
 				/* Check next endpoint descriptor */
-				usb_edp_desc_ptr = (struct usb_endpoint_desc *)((uint8_t *)usb_edp_desc_ptr +
-																USB_EDP_DESC_SIZE);
+				usb_edp_desc_ptr =
+					(struct usb_endpoint_desc *)((uint8_t *)usb_edp_desc_ptr + USB_EDP_DESC_SIZE);
 			}
 		} else {
 			/* Check next interface if there is any */
@@ -876,15 +906,15 @@ static tegrabl_error_t xhci_address_device(struct xusb_host_context *ctx, bool b
 
 	/* Address Device Command */
 	cmd = ctx->cmd_ring.enque_curr_ptr;
-	cmd->field[0] = U64_TO_U32_LO(ctx->input_context_dma);
-	cmd->field[1] = U64_TO_U32_HI(ctx->input_context_dma);
+	cmd->field[0] = U64_TO_U32_LO(ctx->curr_dev_priv->input_context_dma);
+	cmd->field[1] = U64_TO_U32_HI(ctx->curr_dev_priv->input_context_dma);
 	cmd->field[2] = 0;
 	cmd->field[3] = TRB_TYPE(TRB_ADDR_DEV) | (ctx->slot_id << 24) | ctx->cmd_ring.cycle_state;
 	if (bsr == true) {
 		cmd->field[3] |= ADDR_DEV_BSR;
 	}
 
-	pr_debug("trb: %p  : %08x  %08x  %08x  %08x\n", cmd, cmd->field[0], cmd->field[1], cmd->field[2],
+	pr_debug("ADDR trb: %p  : %08x  %08x  %08x  %08x\n", cmd, cmd->field[0], cmd->field[1], cmd->field[2],
 			 cmd->field[3]);
 
 	dma = tegrabl_dma_map_buffer(TEGRABL_MODULE_XUSB_HOST, 0, (void *)cmd, sizeof(struct TRB),
@@ -918,28 +948,28 @@ static tegrabl_error_t xhci_endpoint_config(
 	int idx;
 
 
-	ctrl = (struct ctrl_ctx *)ctx->input_context;
-	slot = (struct slot_ctx *)(ctx->input_context + 1);
-	ep = (struct EP_COMMON *)(ctx->input_context + 1);
+	ctrl = (struct ctrl_ctx *)ctx->curr_dev_priv->input_context;
+	slot = (struct slot_ctx *)(ctx->curr_dev_priv->input_context + 1);
+	ep = (struct EP_COMMON *)(ctx->curr_dev_priv->input_context + 1);
 	ctrl[0].drop_flags = 0;
 	ctrl[0].add_flags = 1;
-	if (ctx->enum_dev.ep[0].addr != 0) {
-		idx = ctx->enum_dev.ep[0].addr * 2 ;
-		ctrl[0].add_flags |= (1 << (ctx->enum_dev.ep[0].addr * 2));
-		ring = (struct xhci_ring *)&ctx->ep_ring[1];
+	if (ctx->curr_dev_priv->enum_dev.ep[0].addr != 0) {
+		idx = ctx->curr_dev_priv->enum_dev.ep[0].addr * 2 ;
+		ctrl[0].add_flags |= (1 << (ctx->curr_dev_priv->enum_dev.ep[0].addr * 2));
+		ring = (struct xhci_ring *)&ctx->curr_dev_priv->ep_ring[1];
 		ep[idx].field[2] = U64_TO_U32_LO(ring->dma) | ring->cycle_state;
 		ep[idx].field[1] = (EP_TYPE_BULK_OUT << 3) | (3 << 1) |  /* error count*/
-						   (ctx->enum_dev.ep[0].packet_size << 16);
+						   (ctx->curr_dev_priv->enum_dev.ep[0].packet_size << 16);
 		slot->info[0] |= 0x10000000;
 	}
 
-	if (ctx->enum_dev.ep[1].addr != 0) {
-		idx = ctx->enum_dev.ep[1].addr * 2 + 1;
-		ctrl[0].add_flags |= (1 << (ctx->enum_dev.ep[1].addr * 2 + 1));
-		ring = (struct xhci_ring *)&ctx->ep_ring[2];
+	if (ctx->curr_dev_priv->enum_dev.ep[1].addr != 0) {
+		idx = ctx->curr_dev_priv->enum_dev.ep[1].addr * 2 + 1;
+		ctrl[0].add_flags |= (1 << (ctx->curr_dev_priv->enum_dev.ep[1].addr * 2 + 1));
+		ring = (struct xhci_ring *)&ctx->curr_dev_priv->ep_ring[2];
 		ep[idx].field[2] = U64_TO_U32_LO(ring->dma) | ring->cycle_state;
 		ep[idx].field[1] = (EP_TYPE_BULK_IN << 3) | (3 << 1) |  /* error count*/
-						   (ctx->enum_dev.ep[1].packet_size << 16);
+						   (ctx->curr_dev_priv->enum_dev.ep[1].packet_size << 16);
 		slot->info[0] |= 0x10000000;
 	}
 	pr_debug("ctrl_slot : add_flags = 0x%x\n", ctrl[0].add_flags);
@@ -947,8 +977,8 @@ static tegrabl_error_t xhci_endpoint_config(
 						   TEGRABL_DMA_TO_DEVICE);
 	/* Endpoint Config Command */
 	cmd = ctx->cmd_ring.enque_curr_ptr;
-	cmd->field[0] = U64_TO_U32_LO(ctx->input_context_dma);
-	cmd->field[1] = U64_TO_U32_HI(ctx->input_context_dma);
+	cmd->field[0] = U64_TO_U32_LO(ctx->curr_dev_priv->input_context_dma);
+	cmd->field[1] = U64_TO_U32_HI(ctx->curr_dev_priv->input_context_dma);
 	cmd->field[2] = 0;
 	cmd->field[3] = TRB_TYPE(TRB_CONFIG_EP) | (ctx->slot_id << 24) | ctx->cmd_ring.cycle_state;
 	pr_debug("trb: %p  : %08x  %08x  %08x  %08x\n", cmd, cmd->field[0], cmd->field[1], cmd->field[2],
@@ -961,7 +991,7 @@ static tegrabl_error_t xhci_endpoint_config(
 	xusbh_xhci_writel(DB(0), 0);
 	pr_debug("Ding Dong!  @%08x  0x%x\n", DB(0), xusbh_xhci_readl(DB(0)));
 	err = xusbh_wait_irq(ctx, 100);
-	tegrabl_dma_unmap_buffer(TEGRABL_MODULE_XUSB_HOST, 0, (void *)ctx->dev_context, sizeof(struct EP) * 10,
+	tegrabl_dma_unmap_buffer(TEGRABL_MODULE_XUSB_HOST, 0, (void *)ctx->curr_dev_priv->dev_context, sizeof(struct EP) * 10,
 							 TEGRABL_DMA_FROM_DEVICE);
 /*
 	xhci_print_slot_ctx(ctx, 0);
@@ -981,18 +1011,61 @@ static tegrabl_error_t xhci_endpoint_config(
 	return err;
 }
 
+static bool xhci_is_device_non_MSD(struct xusb_host_context *ctx, uint8_t bDeviceClass)
+{
+	uint32_t i;
+	uint32_t num_eps;
+	struct usb_intf_desc *usb_intf_desc_ptr;
+	uint32_t num_interfaces;
+	bool is_dev_non_MSD = true;
+
+	if (bDeviceClass != 0) {
+		/* If this is first device */
+		if (ctx->hub_slot_id == 0) {
+			if ((bDeviceClass == USB_CLASS_HUB) ||
+				(bDeviceClass == USB_CLASS_MSD)) {
+				is_dev_non_MSD = false;
+			}
+		/* If this is 2nd device */
+		} else {
+			if ((bDeviceClass == USB_CLASS_MSD)) {
+				is_dev_non_MSD = false;
+			}
+		}
+
+	} else {
+		usb_intf_desc_ptr = (struct usb_intf_desc *)((uint8_t *)(ctx->xusb_data) + USB_CONFIG_DESC_SIZE);
+		num_interfaces = ((struct usb_config_desc *)(ctx->xusb_data))->bNumInterfaces;
+		pr_trace("num interfaces: %u\n", num_interfaces);
+		num_eps = 0;
+		for (i = 0; i < num_interfaces; i++) {
+			usb_intf_desc_ptr =
+				(struct usb_intf_desc *)(((uint8_t *)usb_intf_desc_ptr) + (num_eps * USB_EDP_DESC_SIZE));
+			pr_trace("iface: %u,  class: %x\n", i, usb_intf_desc_ptr->bInterfaceClass);
+			if (usb_intf_desc_ptr->bInterfaceClass == USB_CLASS_MSD) {
+				is_dev_non_MSD = false;
+				break;
+			}
+			num_eps = usb_intf_desc_ptr->bNumEndpoints;
+		}
+	}
+
+	return is_dev_non_MSD;
+}
+
 static tegrabl_error_t xusbh_enumerate_device(struct xusb_host_context *ctx)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	struct device_request device_request_var;
 	uint32_t setup_buffer_size;
 
-	pr_debug("start to enumerate device\n");
+	pr_info("Start to enumerate device\n");
 
 	err = xhci_address_device(ctx, false);
 	if (err != TEGRABL_NO_ERROR) {
 		return err;
 	}
+	pr_trace("address assigned\n");
 
 	/* get device descriptor with addressed control endpoint 0 */
 	pr_debug("get device descriptor\n");
@@ -1005,14 +1078,27 @@ static tegrabl_error_t xusbh_enumerate_device(struct xusb_host_context *ctx)
 	if (err != TEGRABL_NO_ERROR) {
 		return err;
 	}
-
 	tegrabl_dma_unmap_buffer(TEGRABL_MODULE_XUSB_HOST, 0, ctx->xusb_data, SETUP_DATA_BUFFER_SIZE,
 							 TEGRABL_DMA_FROM_DEVICE);
-	ctx->enum_dev.bMaxPacketSize0 = ((struct usb_device_desc *)(ctx->xusb_data))->bMaxPacketSize0;
-	ctx->enum_dev.bNumConfigurations = ((struct usb_device_desc *)(ctx->xusb_data))->bNumConfigurations;
-	ctx->enum_dev.vendor_id = ((struct usb_device_desc *)(ctx->xusb_data))->idVendor;
-	ctx->enum_dev.product_id = ((struct usb_device_desc *)(ctx->xusb_data))->idProduct;
-	pr_debug("USB device %04X:%04X\n", ctx->enum_dev.vendor_id, ctx->enum_dev.product_id);
+
+	ctx->curr_dev_priv->enum_dev.bDeviceClass =
+									((struct usb_device_desc *)(ctx->xusb_data))->bDeviceClass;
+	ctx->curr_dev_priv->enum_dev.bDeviceProtocol =
+									((struct usb_device_desc *)(ctx->xusb_data))->bDeviceProtocol;
+	ctx->curr_dev_priv->enum_dev.bMaxPacketSize0 =
+									((struct usb_device_desc *)(ctx->xusb_data))->bMaxPacketSize0;
+	ctx->curr_dev_priv->enum_dev.bNumConfigurations =
+									((struct usb_device_desc *)(ctx->xusb_data))->bNumConfigurations;
+	ctx->curr_dev_priv->enum_dev.vendor_id =
+									((struct usb_device_desc *)(ctx->xusb_data))->idVendor;
+	ctx->curr_dev_priv->enum_dev.product_id =
+									((struct usb_device_desc *)(ctx->xusb_data))->idProduct;
+	pr_debug("device class/proto: %x/%x\n",
+			 ctx->curr_dev_priv->enum_dev.bDeviceClass,
+			 ctx->curr_dev_priv->enum_dev.bDeviceProtocol);
+	pr_debug("USB device %04X:%04X\n",
+			 ctx->curr_dev_priv->enum_dev.vendor_id,
+			 ctx->curr_dev_priv->enum_dev.product_id);
 
 	/* get config descriptor only!! */
 	pr_debug("get config descriptor only\n");
@@ -1021,16 +1107,14 @@ static tegrabl_error_t xusbh_enumerate_device(struct xusb_host_context *ctx)
 	device_request_var.wValue = USB_DT_CONFIG << 8;
 	device_request_var.wIndex = 0;
 	device_request_var.wLength = USB_CONFIG_DESCRIPTOR_SIZE;
-
 	err = tegrabl_xusbh_process_ctrl_req(ctx, &device_request_var, NULL);
 	if (err != TEGRABL_NO_ERROR) {
 		return err;
 	}
 	tegrabl_dma_unmap_buffer(TEGRABL_MODULE_XUSB_HOST, 0, ctx->xusb_data, USB_CONFIG_DESCRIPTOR_SIZE,
 							 TEGRABL_DMA_FROM_DEVICE);
-
 	/* update configuration value. */
-	ctx->enum_dev.bConfigurationValue = ((struct usb_config_desc *)(ctx->xusb_data))->bConfigurationValue;
+	ctx->curr_dev_priv->enum_dev.bConfigurationValue = ((struct usb_config_desc *)(ctx->xusb_data))->bConfigurationValue;
 
 	/* get complete config descriptor */
 	/* All other fields remain same as above */
@@ -1058,23 +1142,32 @@ static tegrabl_error_t xusbh_enumerate_device(struct xusb_host_context *ctx)
 	if (err != TEGRABL_NO_ERROR) {
 		return err;
 	}
-
 	tegrabl_dma_unmap_buffer(TEGRABL_MODULE_XUSB_HOST, 0, ctx->xusb_data, SETUP_DATA_BUFFER_SIZE,
 							 TEGRABL_DMA_FROM_DEVICE);
+
+	/* Skip enumeration if the device is non-MSD because it cannot boot */
+	if (xhci_is_device_non_MSD(ctx, ctx->curr_dev_priv->enum_dev.bDeviceClass)) {
+		pr_info("This device is non-MSD, skip enumeration\n");
+		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 0);
+		goto fail;
+	}
+
 	err = xhci_parse_config_desc(ctx);
 
-	/* Endpoint Configuration Command */
-	pr_debug("config endpoint\n");
-	err = xhci_endpoint_config(ctx);
-	if (err != TEGRABL_NO_ERROR) {
-		return err;
+	if (ctx->curr_dev_priv->enum_dev.class == USB_CLASS_MSD) {
+		/* Endpoint Configuration Command */
+		pr_debug("config endpoint\n");
+		err = xhci_endpoint_config(ctx);
+		if (err != TEGRABL_NO_ERROR) {
+			return err;
+		}
 	}
 
 	/* set configuration ! */
 	pr_debug("set configuration\n");
 	device_request_var.bmRequestTypeUnion.bmRequestType = HOST2DEV_DEVICE;
 	device_request_var.bRequest = SET_CONFIGURATION;
-	device_request_var.wValue = ctx->enum_dev.bConfigurationValue;
+	device_request_var.wValue = ctx->curr_dev_priv->enum_dev.bConfigurationValue;
 	device_request_var.wIndex = 0;
 	device_request_var.wLength = 0;
 
@@ -1084,10 +1177,11 @@ static tegrabl_error_t xusbh_enumerate_device(struct xusb_host_context *ctx)
 	}
 
 	pr_info("\n");
-	pr_info("Enumerated USB Device %04X:%04X\n", ctx->enum_dev.vendor_id, ctx->enum_dev.product_id);
+	pr_info("Enumerated USB Device %04X:%04X\n",
+			ctx->curr_dev_priv->enum_dev.vendor_id, ctx->curr_dev_priv->enum_dev.product_id);
 	pr_info("\n");
-	if (ctx->enum_dev.ep[0].addr != 0) {
-		ctx->enum_dev.dev_addr = ctx->enum_dev.ep[0].addr;
+	if (ctx->curr_dev_priv->enum_dev.ep[0].addr != 0) {
+		ctx->curr_dev_priv->enum_dev.dev_addr = ctx->curr_dev_priv->enum_dev.ep[0].addr;
 	}
 
 fail:
@@ -1294,13 +1388,12 @@ fail:
 	return e;
 }
 
-tegrabl_error_t init_data_struct(struct xusb_host_context *ctx)
+tegrabl_error_t init_common_data_struct(struct xusb_host_context *ctx)
 {
 	struct xhci_ring *ring;
 	struct TRB *trb;
 	uint32_t max_slot;
 	uint32_t val;
-	uint32_t i;
 	dma_addr_t dma;
 	tegrabl_error_t e = TEGRABL_NO_ERROR;
 
@@ -1391,32 +1484,44 @@ tegrabl_error_t init_data_struct(struct xusb_host_context *ctx)
 	xusbh_xhci_writel(RT_ERSTBA0(0), U64_TO_U32_LO(dma));
 	xusbh_xhci_writel(RT_ERSTBA1(0), U64_TO_U32_HI(dma));
 
+fail:
+	return e;
+}
+
+tegrabl_error_t init_data_struct(struct xusb_host_context *ctx)
+{
+	struct xhci_ring *ring;
+	struct TRB *trb;
+	uint32_t i;
+	dma_addr_t dma;
+	tegrabl_error_t e = TEGRABL_NO_ERROR;
+
 	/* Prepare input context, device context, input control context */
-	ctx->input_context = (struct EP *)tegrabl_alloc_align(TEGRABL_HEAP_DMA, 64, INPUT_CONTEXT_SIZE);
-	if (ctx->input_context == NULL) {
+	ctx->curr_dev_priv->input_context = (struct EP *)tegrabl_alloc_align(TEGRABL_HEAP_DMA, 64, INPUT_CONTEXT_SIZE);
+	if (ctx->curr_dev_priv->input_context == NULL) {
 		pr_error("failed to allocate memory for input context\n");
 		e = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
 		goto fail;
 	}
-	memset(ctx->input_context, 0x0, INPUT_CONTEXT_SIZE);
-	ctx->input_context_dma = tegrabl_dma_map_buffer(TEGRABL_MODULE_XUSB_HOST, 0, (void *)ctx->input_context,
+	memset(ctx->curr_dev_priv->input_context, 0x0, INPUT_CONTEXT_SIZE);
+	ctx->curr_dev_priv->input_context_dma = tegrabl_dma_map_buffer(TEGRABL_MODULE_XUSB_HOST, 0, (void *)ctx->curr_dev_priv->input_context,
 													INPUT_CONTEXT_SIZE, TEGRABL_DMA_TO_DEVICE);
 
-	ctx->dev_context = (struct EP *)tegrabl_alloc_align(TEGRABL_HEAP_DMA, 64, DEV_CONTEXT_SIZE);
-	if (ctx->dev_context == NULL) {
+	ctx->curr_dev_priv->dev_context = (struct EP *)tegrabl_alloc_align(TEGRABL_HEAP_DMA, 64, DEV_CONTEXT_SIZE);
+	if (ctx->curr_dev_priv->dev_context == NULL) {
 		pr_error("failed to allocate memory for device context\n");
 		e = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
 		goto fail;
 	}
-	memset(ctx->dev_context, 0x0, DEV_CONTEXT_SIZE);
-	ctx->dev_context_dma = ctx->dcbaa[1] = tegrabl_dma_map_buffer(TEGRABL_MODULE_XUSB_HOST, 0,
-		(void *)ctx->dev_context, DEV_CONTEXT_SIZE, TEGRABL_DMA_TO_DEVICE);
+	memset(ctx->curr_dev_priv->dev_context, 0x0, DEV_CONTEXT_SIZE);
+	ctx->curr_dev_priv->dev_context_dma = tegrabl_dma_map_buffer(TEGRABL_MODULE_XUSB_HOST, 0,
+		(void *)ctx->curr_dev_priv->dev_context, DEV_CONTEXT_SIZE, TEGRABL_DMA_TO_DEVICE);
 
 	tegrabl_dma_map_buffer(TEGRABL_MODULE_XUSB_HOST, 0, (void *)ctx->dcbaa, 128, TEGRABL_DMA_TO_DEVICE);
 
 	/* Transfer rings for EP0, EP1(OUT), EP1(IN) */
 	for (i = 0; i < 3; i++) {
-		ring = (struct xhci_ring *)&ctx->ep_ring[i];
+		ring = (struct xhci_ring *)&ctx->curr_dev_priv->ep_ring[i];
 
 		ring->first = (struct TRB *)tegrabl_alloc_align(TEGRABL_HEAP_DMA, 16, TR_SEGMENT_SIZE);
 		if (ring->first == NULL) {
@@ -1460,6 +1565,9 @@ fail:
 tegrabl_error_t xhci_start(struct xusb_host_context *ctx)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	uint32_t port_no = 0;
+	uint32_t dev_speed = 0;
+	uint32_t port_device_bitmap = 0;
 
 	/* after power up, the device should be reset already      */
 	/* To be safe, reset it again at here. This is last chance */
@@ -1469,9 +1577,9 @@ tegrabl_error_t xhci_start(struct xusb_host_context *ctx)
 		return err;
 	}
 
-	err = init_data_struct(ctx);
+	err = init_common_data_struct(ctx);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_error("failed to initialize usbh data structures\n");
+		pr_error("Failed to initialize usbh data structure\n");
 		return err;
 	}
 
@@ -1490,17 +1598,121 @@ tegrabl_error_t xhci_start(struct xusb_host_context *ctx)
 	err = xusbh_get_slot_id(ctx);
 	if (err != TEGRABL_NO_ERROR || ctx->slot_id == 0) {
 		pr_warn("Usb slot is NOT ready\n");
-		xhci_dump_fw_log();
 		return TEGRABL_ERROR(TEGRABL_ERR_NOT_CONNECTED, 0);
 	}
 
-	/* configure endpoint and enumerate device */
-	xusbh_init_ep_ctx(ctx);
+	/* Initialize memory for device priv data */
+	ctx->dev_priv[ctx->slot_id] = tegrabl_malloc(sizeof(struct xusb_dev_priv));
+	if (ctx->dev_priv[ctx->slot_id] == NULL) {
+		pr_error("Failed to allocate memory for device with idx: %u\n", ctx->slot_id);
+		return TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
+	}
+	ctx->curr_dev_priv = ctx->dev_priv[ctx->slot_id];
+	memset(ctx->curr_dev_priv, 0, sizeof(struct xusb_dev_priv));
 
+	err = init_data_struct(ctx);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("Failed to initialize usb device priv data structures\n");
+		return err;
+	}
+
+	/* Set device context in DCBAA */
+	ctx->dcbaa[ctx->slot_id] = tegrabl_dma_map_buffer(TEGRABL_MODULE_XUSB_HOST, 0,
+		(void *)ctx->curr_dev_priv->dev_context, DEV_CONTEXT_SIZE, TEGRABL_DMA_TO_DEVICE);
+
+	/* configure endpoint and enumerate device */
+	/* since there is no hub for first USB device, route string will be 0 */
+	ctx->curr_dev_priv->route_string = 0;
+	ctx->curr_dev_priv->speed = ctx->root_port_speed;
+	ctx->hub_slot_id = 0;
+	xusbh_init_ep_ctx(ctx);
 	err = xusbh_enumerate_device(ctx);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_warn("failed to enumerate usb device\n");
+		pr_error("Failed to enumerate USB device\n");
+		goto fail;
 	}
+
+	if (ctx->curr_dev_priv->enum_dev.bDeviceClass == USB_CLASS_HUB) {
+		ctx->hub_slot_id = ctx->slot_id;
+	} else {
+		/* Enumerated device is not hub, so skip below hub ports scan/boot code */
+		goto fail;
+	}
+
+	/* Configure hub and detect ports with device connected */
+	err = hub_init(ctx);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("Failed to initialize hub\n");
+		goto fail;
+	}
+	err = hub_detect_device(ctx, &port_device_bitmap);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+
+	for (port_no = 1; port_no <= ctx->hub_num_ports; port_no++) {
+
+		if (((0x1 << port_no) & port_device_bitmap) == 0) {
+			pr_trace("No device connected on port %u, skip enumeration\n", port_no);
+			continue;
+		}
+
+		/* Set slot id and current device ptr to hub */
+		ctx->slot_id = ctx->hub_slot_id;
+		ctx->curr_dev_priv = ctx->dev_priv[ctx->hub_slot_id];
+		err = hub_reset_port(ctx, port_no, &dev_speed);
+		if (err != TEGRABL_NO_ERROR) {
+			/* Try next port */
+			err = TEGRABL_NO_ERROR;
+			continue;
+		}
+		if (dev_speed == XHCI_LOW_SPEED) {
+			pr_info("Port %u device is low speed, skip enumeration\n", port_no);
+			continue;
+		}
+
+		/* Enable slot for this device connected to HUB */
+		ctx->slot_id = 0;  /* Set slot_id to 0 here so future code can reassign it */
+		err = xusbh_get_slot_id(ctx);
+		if (err != TEGRABL_NO_ERROR || ctx->slot_id == 0) {
+			pr_error("USB slot is NOT ready\n");
+			return TEGRABL_ERROR(TEGRABL_ERR_NOT_CONNECTED, 0);
+		}
+
+		/* Initialize memory for device */
+		ctx->dev_priv[ctx->slot_id] = tegrabl_malloc(sizeof(struct xusb_dev_priv));
+		if (ctx->dev_priv[ctx->slot_id] == NULL) {
+			pr_error("Failed to allocate memory for device with idx: %u\n", ctx->slot_id);
+			return TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 1);
+		}
+		ctx->curr_dev_priv = ctx->dev_priv[ctx->slot_id];
+		memset(ctx->curr_dev_priv, 0, sizeof(struct xusb_dev_priv));
+
+		err = init_data_struct(ctx);
+		if (err != TEGRABL_NO_ERROR) {
+			pr_error("Failed to initialize usb device priv data structure\n");
+			return err;
+		}
+
+		/* Set device context in DCBAA */
+		ctx->dcbaa[ctx->slot_id] = tegrabl_dma_map_buffer(TEGRABL_MODULE_XUSB_HOST, 0,
+			(void *)ctx->curr_dev_priv->dev_context, DEV_CONTEXT_SIZE, TEGRABL_DMA_TO_DEVICE);
+
+		/* configure endpoint and enumerate device */
+		ctx->curr_dev_priv->speed = dev_speed;
+		ctx->curr_dev_priv->route_string = port_no;
+		xusbh_init_ep_ctx(ctx);
+		err = xusbh_enumerate_device(ctx);
+		if (err != TEGRABL_NO_ERROR) {
+			if (err != TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 0)) {
+				pr_error("Failed to enumerate USB device\n");
+			}
+			continue;
+		}
+		break;  /* Enumeration successful, exit the loop */
+	}
+
+fail:
 	return err;
 }
 
@@ -1526,7 +1738,7 @@ tegrabl_error_t tegrabl_xhci_xfer_data(struct xusb_host_context *ctx,
 
 	dir = ((ep_id & 0x80) == 0x80) ? USB_DIR_IN : USB_DIR_OUT;
 	ep_id = (ep_id & 0x7f) * 2 + dir;
-	ep_ring = (struct xhci_ring *)&ctx->ep_ring[(uint32_t)dir + 1];
+	ep_ring = (struct xhci_ring *)&ctx->curr_dev_priv->ep_ring[(uint32_t)dir + 1];
 
 	/* prepare normal trbs */
 	dma = tegrabl_dma_map_buffer(TEGRABL_MODULE_XUSB_HOST, 0, (void *)buffer, *length, TEGRABL_DMA_TO_DEVICE);
@@ -1544,7 +1756,7 @@ tegrabl_error_t tegrabl_xhci_xfer_data(struct xusb_host_context *ctx,
 	}
 	pr_debug("%s - need %d trbs for xfer\n", __func__, (int)need_trbs);
 
-	total_packets = DIV_ROUND_UP((*length), ctx->enum_dev.ep[dir].packet_size);
+	total_packets = DIV_ROUND_UP((*length), ctx->curr_dev_priv->enum_dev.ep[dir].packet_size);
 	if (need_trbs == 1) {
 		transfer_size = *length;
 	} else {
@@ -1564,7 +1776,7 @@ tegrabl_error_t tegrabl_xhci_xfer_data(struct xusb_host_context *ctx,
 		trb->data_buffer_hi = U64_TO_U32_HI(dma);
 		dma += transfer_size;
 		trb->trb_tfr_len = transfer_size;
-		trb->td_size = (total_packets - ((size + transfer_size) / ctx->enum_dev.ep[dir].packet_size));
+		trb->td_size = (total_packets - ((size + transfer_size) / ctx->curr_dev_priv->enum_dev.ep[dir].packet_size));
 		if (count != (need_trbs - 1)) {
 			trb->CH = 1;
 		} else {

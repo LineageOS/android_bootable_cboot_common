@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2018-2020, NVIDIA CORPORATION.  All rights reserved.
 #
 # NVIDIA CORPORATION and its licensors retain all intellectual property
 # and proprietary rights in and to this software, related documentation
@@ -20,6 +20,7 @@ MODULE_SRCS += \
 	$(LOCAL_DIR)/xhci.c \
 	$(LOCAL_DIR)/xhci_pad_ctrl.c \
 	$(LOCAL_DIR)/tegrabl_xusbh_fw.c \
-	$(LOCAL_DIR)/tegrabl_xusbh_scsi_storage_test.c
+	$(LOCAL_DIR)/tegrabl_xusbh_scsi_storage_test.c \
+	$(LOCAL_DIR)/hub.c
 
 include make/module.mk

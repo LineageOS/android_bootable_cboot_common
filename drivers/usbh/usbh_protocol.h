@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -12,6 +12,27 @@
 
 #include <stdint.h>
 #include <tegrabl_dmamap.h>
+
+#define MAX_DEVICE_SLOTS	5
+
+/* USB Class codes */
+#define USB_CLASS_MSD			0x08
+#define USB_CLASS_HUB			0x09
+
+/* USB Device protocol codes */
+#define USB_HUB_HS_SINGLE_TT	0x1
+#define USB_HUB_HS_MULTI_TT		0x2
+
+/* Slot context */
+#define SLOT_CTX_SPEED_OFFSET				20
+#define SLOT_CTX_ENTRIES_OFFSET				27
+#define SLOT_CTX_ROOT_HUB_PORT_NUM_OFFSET	16
+#define SLOT_CTX_NUM_HUB_PORTS_OFFSET		24
+
+/* Endpoint context */
+#define EP_CTX_EP_TYPE_OFFSET				3
+#define EP_CTX_ERR_COUNT_OFFSET				1
+#define EP_CTX_MAX_PKT_SIZE_OFFSET			16
 
 struct setup_trb {
 	uint32_t bmRequestType:8;   /* Request Type */
@@ -194,6 +215,18 @@ struct usb_endpoint_desc {
 	uint8_t bInterval;
 };
 
+/* USB_DT_HUB: Hub descriptor */
+struct usb_hub_desc {
+	uint8_t bDescLength;
+	uint8_t bDescriptorType;
+	uint8_t bNbrPorts;
+	uint16_t wHubCharacteristics;
+	uint8_t bPwrOn2PwrGood;
+	uint8_t bHubContrCurrent;
+	uint8_t bHubHdrDecLat;
+	uint16_t wHubDelay;
+	uint16_t DeviceRemovable;
+};
 
 struct epdw0 {
 	uint32_t ep_state:3;    /* Endpoint State */
@@ -312,6 +345,8 @@ enum {
 };
 
 #define ENDPOINT_DESC_ATTRIBUTES_BULK_TYPE  0x2
+#define ENDPOINT_DESC_ATTRIBUTES_INTERRUPT_TYPE  0x3
+#define ENDPOINT_DESC_ATTRIBUTES_TRANSFER_TYPE_MASK  0x3
 #define ENDPOINT_DESC_ADDRESS_DIR_MASK  0x80
 #define ENDPOINT_DESC_ADDRESS_DIR_OUT   0x00
 #define ENDPOINT_DESC_ADDRESS_DIR_IN    0x80
@@ -412,23 +447,13 @@ struct xhci_ring {
 };
 
 /*
- * xusb_host_context - The context structure for the xusb host driver.
+ * xusb_dev_priv - The private data structure for the USB/hub device.
  */
-struct xusb_host_context {
+struct xusb_dev_priv {
 	/* cmd/transfer/event rings */
-	struct xhci_ring cmd_ring;
-	struct xhci_ring event_ring;
 	struct xhci_ring ep_ring[3];
 	struct xhci_ring ep1_out_ring;
 	struct xhci_ring ep1_in_ring;
-
-	/* data buffer for host<->device handshaking*/
-	uint32_t *xusb_data;
-	dma_addr_t xusb_data_dma;
-	/* For all commands except read and write,
-	 * the data buffer used to get data is BufferXusbData space else
-	 * it is the address of the memory area passed from the top level flow */
-	uint8_t *buffer_data;
 
 	/* Endpoint data structure context */
 	struct EP *dev_context;
@@ -436,36 +461,26 @@ struct xusb_host_context {
 	struct EP *input_context;
 	dma_addr_t input_context_dma;
 
-	uint64_t *dcbaa;
-	struct xhci_erst_entry {
-		uint64_t seg_addr;
-		uint32_t seg_size;
-		uint32_t rsvd;
-	} *erst;
-
-	/* For logging useful into in Boot info table's SecondaryDevStatus field */
-	struct xusb_status *xusb_bit_info;
-	/* Required for Read command */
-	uint8_t logical_blk_addr[4];
-	uint8_t transfer_len[2];
 	/* Copied from various device descriptors */
 	struct {
+		/* Current device address assigned to device by the host */
+		uint8_t dev_addr;
+		/* From the device descriptor */
+		uint8_t bDeviceClass;
+		uint8_t bDeviceProtocol;
+		uint8_t bNumConfigurations;
 		/* Vendor and Product ID */
 		uint16_t vendor_id;
 		uint16_t product_id;
 		uint8_t bMaxPacketSize0;
-		/* current device address assigned to device by the host */
-		uint8_t dev_addr;
-		/* as sent in device descriptor */
-		uint8_t bNumConfigurations;
-		/* from the configuration descriptor */
+		/* From the configuration descriptor */
 		uint8_t bConfigurationValue;
-		/* from the interface descriptor */
+		/* From the interface descriptor */
 		uint8_t interface_indx;
 		uint8_t class;
 		uint8_t subclass;
 		uint8_t protocol;
-		/* from the endpoint descriptors */
+		/* From the endpoint descriptors */
 		uint32_t bInterval;
 		struct {
 			uint16_t packet_size;
@@ -474,33 +489,79 @@ struct xusb_host_context {
 			 * IN type is indexed by 1 (direction in) */
 		} ep[2];
 	} enum_dev;
-	/* Holds the xusb Read start time */
-	uint64_t read_start_time;
+
+	/* Port speed */
+	uint32_t speed;
+	/* Route string */
+	uint8_t route_string;
+};
+
+/*
+ * xusb_host_context - The context structure for the xusb host driver.
+ */
+struct xusb_host_context {
+	uint64_t *dcbaa;
+	struct xhci_ring cmd_ring;
+	struct xhci_ring event_ring;
+
+	struct xhci_erst_entry {
+		uint64_t seg_addr;
+		uint32_t seg_size;
+		uint32_t rsvd;
+	} *erst;
+
+	/* Data buffer for host<->device handshaking*/
+	uint32_t *xusb_data;
+	dma_addr_t xusb_data_dma;
+
+	/* Hub address */
+	uint8_t hub_address;
+	/* No of ports hub has */
+	uint8_t hub_num_ports;
+	/* Root port number */
+	uint8_t root_port_number;
+	/* Root port speed */
+	uint8_t root_port_speed;
+	/* Port Id */
+	uint8_t port_id;
+	/* Slot Id number */
+	uint8_t slot_id;
+	uint8_t hub_slot_id;
+
+	/* Array of pointers to each USB device and pointer to current device*/
+	struct xusb_dev_priv *dev_priv[MAX_DEVICE_SLOTS];
+	struct xusb_dev_priv *curr_dev_priv;
+
+	/* For all commands except read and write,
+	 * the data buffer used to get data is BufferXusbData space else
+	 * it is the address of the memory area passed from the top level flow */
+	uint8_t *buffer_data;
+
+	/* For logging useful info in Boot info table's SecondaryDevStatus field */
+	struct xusb_status *xusb_bit_info;
+
+	/* Completion code from handle_transfer_event */
+	uint8_t comp_code;
+
+	/* Required for Read command */
+	uint8_t logical_blk_addr[4];
+	uint8_t transfer_len[2];
+
 	/* Current page under access in CSB space */
 	uint32_t current_csb_page;
+
 	/* Block size in Log2 scale */
 	uint8_t block_size_log2;
 	/* Page size in Log2 scale */
 	uint8_t page_size_log2;
 	uint32_t page_size;
-	/* Hub Address */
-	uint8_t hub_address;
-	/* Root Port Number */
-	uint8_t root_port_number;
-	/* Root Port Number */
-	uint8_t port_id;
-	/* port speed */
-	uint32_t speed;
-	/* Slod Id Number */
-	uint8_t slot_id;
-	/* RouteString */
-	uint8_t route_string;
-	/* sequence no., for bulk out */
+
+	/* Holds the xusb Read start time */
+	uint64_t read_start_time;
+	/* Sequence no., for bulk out */
 	uint32_t bulk_seq_num_out;
-	/* sequence no., for bulk In */
+	/* Sequence no., for bulk In */
 	uint32_t bulk_seq_num_in;
-	/* completion code from handle_transfer_event */
-	uint8_t comp_code;
 };
 
 #endif

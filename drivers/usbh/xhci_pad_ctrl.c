@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -327,6 +327,7 @@ bool xhci_set_root_port(struct xusb_host_context *ctx)
 		pr_debug("port[%d] = 0x%x\n", i, val);
 		if ((val & PORT_CONNECT) == PORT_CONNECT) {
 			ctx->root_port_number = i - 3;
+			break;
 		} else {
 			/* disable the pad */
 #if 0

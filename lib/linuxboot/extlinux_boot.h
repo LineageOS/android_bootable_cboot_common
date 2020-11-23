@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2019, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2019-2020, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -13,8 +13,6 @@
 
 #if defined(CONFIG_ENABLE_EXTLINUX_BOOT)
 
-#define MAX_BOOT_SECTION            5UL
-
 struct boot_section {
 	char *label;
 	char *menu_label;
@@ -27,7 +25,7 @@ struct boot_section {
 struct conf {
 	uint32_t default_boot_entry;
 	char *menu_title;
-	struct boot_section section[MAX_BOOT_SECTION];
+	struct boot_section *section[20];
 	uint32_t num_boot_entries;
 };
 

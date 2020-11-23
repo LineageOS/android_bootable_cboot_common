@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -318,6 +318,7 @@ tegrabl_error_t tegrabl_gpt_publish(tegrabl_bdev_t *dev,
 	struct tegrabl_gpt_entry *entries = NULL;
 	uint32_t i = 0;
 	uint32_t j = 0;
+	uint32_t k = 0;
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 	struct tegrabl_partition_info *partitions = NULL;
 	uint64_t start_sector;
@@ -337,9 +338,8 @@ tegrabl_error_t tegrabl_gpt_publish(tegrabl_bdev_t *dev,
 	}
 	entries =
 		(struct tegrabl_gpt_entry *)(buffer + TEGRABL_BLOCKDEV_BLOCK_SIZE(dev));
-	num_entries = 0;
 	for (i = 0; i < TEGRABL_GPT_MAX_PARTITION_ENTRIES; i++) {
-		if (entries[i].last_lba - entries[i].first_lba > 0)
+		if (entries[i].last_lba > entries[i].first_lba)
 			num_entries++;
 	}
 
@@ -350,26 +350,37 @@ tegrabl_error_t tegrabl_gpt_publish(tegrabl_bdev_t *dev,
 		goto fail;
 	}
 
-	for (j = 0; j < num_entries; j++) {
+	for (k = 0, j = 0; k < TEGRABL_GPT_MAX_PARTITION_ENTRIES; k++) {
+		if (entries[k].last_lba <= entries[k].first_lba) {
+			pr_debug("Skip empty gpt entry\n");
+			continue;
+		}
+
 		for (i = 0; i < TEGRABL_GPT_MAX_PARTITION_NAME; i++) {
-			partition_name = entries[j].pname[i] & 0xFFU;
+			partition_name = entries[k].pname[i] & 0xFFU;
 			partitions[j].name[i] = (char)partition_name;
 		}
 
 		partitions[j].name[i] = '\0';
-		start_sector = entries[j].first_lba;
-		num_sectors = entries[j].last_lba - start_sector + 1ULL;
+		start_sector = entries[k].first_lba;
+		num_sectors = entries[k].last_lba - start_sector + 1ULL;
 		partitions[j].start_sector = start_sector;
 		partitions[j].num_sectors = num_sectors;
 		partitions[j].total_size = num_sectors << dev->block_size_log2;
-		guid_to_str(entries[j].unique_guid.guid, partitions[j].guid);
-		guid_to_str(entries[j].ptype_guid.guid, partitions[j].ptype_guid);
+		guid_to_str(entries[k].unique_guid.guid, partitions[j].guid);
+		guid_to_str(entries[k].ptype_guid.guid, partitions[j].ptype_guid);
 
 		pr_debug("%02d] Name %s\n", j + 1U, partitions[j].name);
 		pr_debug("Start sector: %"PRIu64"\n", start_sector);
 		pr_debug("Num sectors : %"PRIu64"\n", num_sectors);
 		pr_debug("Size        : %"PRIu64"\n", partitions[j].total_size);
 		pr_debug("Ptype guid  : %s\n", partitions[j].ptype_guid);
+
+		j++;
+		if (j == num_entries) {
+			pr_debug("All valid entries are found\n");
+			break;
+		}
 	}
 
 	*partition_list = partitions;
