@@ -23,10 +23,27 @@
 
 static struct cbo_info g_cbo_info;
 
+/*
+ * p_boot_dev_order is a pointer to an array of pointers pointed to a boot_dev string.
+ * Those strings are the boot_device specified in "boot-order=" in cbo.dtb, or in default_boot_dev_order
+[].
+ */
+static char **p_boot_dev_order;
+
+static const char *default_boot_dev_order[] = {
+	/* Specified in the order of priority from top to bottom */
+	"sd",
+	"usb",
+	"nvme",
+	"emmc",
+	"net",
+};
+
 static uint8_t default_boot_order[NUM_SECONDARY_STORAGE_DEVICES] = {
 	/* Specified in the order of priority from top to bottom */
 	BOOT_FROM_SD,
 	BOOT_FROM_USB,
+	BOOT_FROM_NVME,
 	BOOT_FROM_BUILTIN_STORAGE,
 	BOOT_FROM_NETWORK,
 	BOOT_DEFAULT,
@@ -49,6 +66,7 @@ static struct boot_devices g_boot_devices[] = {
 	{"emmc",	BOOT_FROM_BUILTIN_STORAGE},
 	{"ufs",		BOOT_FROM_BUILTIN_STORAGE},
 	{"sata",	BOOT_FROM_BUILTIN_STORAGE},
+	{"nvme",	BOOT_FROM_NVME},
 };
 
 tegrabl_error_t tegrabl_read_cbo(char *part_name)
@@ -171,6 +189,11 @@ static tegrabl_error_t parse_boot_order(void *fdt, int32_t offset, uint8_t **boo
 		goto fail;
 	}
 
+	err = tegrabl_set_boot_order(count, boot_order);
+	if (err != TEGRABL_NO_ERROR) {
+		goto fail;
+	}
+
 	pr_info("boot-order :-\n");
 	for (i = 0; i < count; i++) {
 		pr_info("%d.%s\n", i + 1, boot_order[i]);
@@ -258,7 +281,7 @@ static void parse_boot_pt_guid(void *fdt, int32_t offset)
 
 	err = tegrabl_dt_get_prop_string(fdt, offset, boot_cfg_vars[6], (const char **)&guid);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_error("Failed to parse GUID\n");
+		pr_warn("Failed to parse GUID\n");
 		goto fail;
 	}
 
@@ -317,24 +340,67 @@ default_boot_order:
 			goto fail;
 		}
 		memcpy(g_cbo_info.boot_priority, default_boot_order, sizeof(default_boot_order));
+
+		pr_info("Using default boot order\n");
+		err = tegrabl_set_boot_order(ARRAY_SIZE(default_boot_dev_order), default_boot_dev_order);
 	}
+
+	tegrabl_print_boot_dev_order();
 
 fail:
 	tegrabl_free(fdt);
 	return err;
 }
 
-void tegrabl_set_boot_order(uint32_t count, const char **boot_order)
+tegrabl_error_t tegrabl_set_boot_order(uint32_t count, const char **boot_order)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	uint32_t i, j;
+	char *src, *dst;
 
 	/* clear the boot priority and set the new values */
 	tegrabl_clear_boot_order();
+
+	/* use count+1 to NULL terminate the array */
+	p_boot_dev_order = tegrabl_calloc(sizeof(char *), count + 1);
+	if (p_boot_dev_order == NULL) {
+		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 2);
+		pr_error("Memory allocation failed for p_boot_dev_order\n");
+		goto fail;
+	}
+
+	/* save strings in boot_order[] to our own memory (pointed by p_boot_dev_order) */
+	for (i = 0; i < count; i++) {
+		src = (char *)boot_order[i];
+		if (src == NULL) {
+			goto exit;
+		}
+		dst = tegrabl_calloc(sizeof(char), strlen(src) + 1);
+		if (dst == NULL) {
+			err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 4);
+			pr_error("%s: memory allocation failed for boot_order[%u]\n", __func__, i);
+			/* free previously allocated memory. */
+			for (j = 0; j < i; ++j) {
+				if (p_boot_dev_order[j]) {
+					tegrabl_free(p_boot_dev_order[j]);
+				}
+			}
+			goto fail;
+		}
+		pr_debug("saving %s\n", src);
+		strcpy(dst, src);
+		p_boot_dev_order[i] = dst;
+	}
+	p_boot_dev_order[i] = NULL;
 
 	err = map_boot_priority(count, boot_order, &g_cbo_info.boot_priority);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_info("Error updating boot-priority\n");
 	}
+
+exit:
+fail:
+	return err;
 }
 
 void tegrabl_set_ip_info(const char *var_name, uint8_t *ip, bool is_dhcp_enabled)
@@ -370,6 +436,21 @@ void tegrabl_set_boot_pt_guid(const char *var_name, const char *guid)
 
 void tegrabl_clear_boot_order(void)
 {
+	char *boot_dev;
+	uint32_t i = 0;
+
+	if (p_boot_dev_order) {
+		while (true) {
+			boot_dev = p_boot_dev_order[i];
+			if (boot_dev == NULL) {
+				break;
+			}
+			tegrabl_free(boot_dev);
+			++i;
+		}
+		*p_boot_dev_order = NULL;
+	}
+
 	if (g_cbo_info.boot_priority != NULL) {
 		tegrabl_free(g_cbo_info.boot_priority);
 		g_cbo_info.boot_priority = NULL;
@@ -471,3 +552,41 @@ bool is_var_boot_cfg(const char *var_name)
 	return false;
 }
 
+char **tegrabl_get_boot_dev_order(void)
+{
+	return p_boot_dev_order;
+}
+
+void tegrabl_print_boot_dev_order(void)
+{
+	uint32_t i;
+	char *boot_dev;
+
+	pr_info("boot-dev-order :-\n");
+
+	i = 0;
+	while (true) {
+		boot_dev = p_boot_dev_order[i];
+		if (boot_dev == NULL) {
+			break;
+		}
+
+		pr_info("%d.%s\n", i + 1, boot_dev);
+		++i;
+	}
+}
+
+char *tegrabl_cbo_map_boot_dev(char *boot_dev, uint8_t *device_id)
+{
+	uint32_t j;
+
+	for (j = 0; j < ARRAY_SIZE(g_boot_devices); j++) {
+		if (!strncmp(boot_dev, g_boot_devices[j].name, strlen(g_boot_devices[j].name))) {
+			*device_id = g_boot_devices[j].device_id;
+			boot_dev += strlen(g_boot_devices[j].name);
+			return boot_dev;
+		}
+	}
+
+	return NULL;
+}

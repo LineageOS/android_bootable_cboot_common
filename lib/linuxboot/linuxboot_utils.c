@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2015-2020, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -52,7 +52,9 @@ void tegrabl_sort(struct tegrabl_carveout_info *p_carveout, uint32_t array[], in
 	}
 }
 
-tegrabl_error_t tegrabl_validate_binary(uint32_t bin_type, uint32_t bin_max_size, void *load_addr)
+#if defined(CONFIG_ENABLE_SECURE_BOOT)
+tegrabl_error_t tegrabl_validate_binary(uint32_t bin_type, uint32_t bin_max_size, void *load_addr,
+										uint32_t *bin_len)
 {
 	char *bin_name;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
@@ -61,11 +63,17 @@ tegrabl_error_t tegrabl_validate_binary(uint32_t bin_type, uint32_t bin_max_size
 
 	TEGRABL_UNUSED(bin_max_size);
 
-	if (bin_type == TEGRABL_BINARY_KERNEL) {
+	switch (bin_type) {
+	case TEGRABL_BINARY_KERNEL:
 		bin_name = "kernel";
-	} else if (bin_type == TEGRABL_BINARY_KERNEL_DTB) {
+		break;
+	case TEGRABL_BINARY_KERNEL_DTB:
 		bin_name = "kernel-dtb";
-	} else {
+		break;
+	case TEGRABL_BINARY_RAMDISK:
+		bin_name = "initrd";
+		break;
+	default:
 		pr_error("Invalid arg, bin type %u\n", bin_type);
 		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 		goto fail;
@@ -77,22 +85,25 @@ tegrabl_error_t tegrabl_validate_binary(uint32_t bin_type, uint32_t bin_max_size
 		goto fail;
 	}
 
-#if defined(CONFIG_ENABLE_SECURE_BOOT)
+	if (bin_len != NULL) {
+		*bin_len = tegrabl_auth_get_binary_len(load_addr);
+	}
+
 	err = tegrabl_auth_payload(bin_type, bin_name, load_addr, bin_max_size);
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
-#endif
 
 fail:
 	 return err;
  }
+#endif  /* CONFIG_ENABLE_SECURE_BOOT */
 
 /* Sanity checks the kernel image extracted from Android boot image */
 tegrabl_error_t tegrabl_verify_boot_img_hdr(union tegrabl_bootimg_header *hdr, uint32_t img_size)
 {
 	uint32_t hdr_size;
-	uint64_t hdr_size_fields_sum;
+	uint64_t hdr_fields_sum;
 	uint32_t known_crc = 0;
 	uint32_t calculated_crc = 0;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
@@ -113,10 +124,16 @@ tegrabl_error_t tegrabl_verify_boot_img_hdr(union tegrabl_bootimg_header *hdr, u
 	}
 
 	hdr_size = hdr->pagesize;
-	hdr_size_fields_sum = hdr_size + hdr->kernelsize + hdr->ramdisksize + hdr->secondsize;
-	if (hdr_size_fields_sum > img_size) {
-		pr_error("Header size fields (0x%016lx) is greater than actual binary size (0x%08x)\n",
-				 hdr_size_fields_sum, img_size);
+	hdr_fields_sum = hdr_size + hdr->kernelsize + hdr->ramdisksize + hdr->secondsize;
+	pr_trace("img/buffer size : 0x%08x\n", (uint32_t)img_size);
+	pr_trace("hdr fields sum  : 0x%08x\n", (uint32_t)hdr_fields_sum);
+	pr_trace("kernel size     : 0x%08x\n", (uint32_t)hdr->kernelsize);
+	pr_trace("ramdisk size    : 0x%08x\n", (uint32_t)hdr->ramdisksize);
+	pr_trace("second size     : 0x%08x\n", (uint32_t)hdr->secondsize);
+	pr_trace("page size       : 0x%08x\n", (uint32_t)hdr->pagesize);
+	if (hdr_fields_sum > img_size) {
+		pr_error("Header size fields (0x%016lx) is greater than actual binary or buffer size (0x%08x)\n",
+				 hdr_fields_sum, img_size);
 		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 1);
 		goto fail;
 	}

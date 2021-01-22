@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2014-2020, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -109,6 +109,48 @@ fail:
 #endif
 
 #define MAX_MEM_CHUNKS	20
+static struct tegrabl_linuxboot_memblock memblock_info_array[MAX_MEM_CHUNKS];
+
+static tegrabl_error_t tegrabl_get_encr_memblk_info_array(uint32_t *blk_arr_cnt,
+					struct tegrabl_linuxboot_memblock **blk_arr)
+{
+	uint32_t i;
+	uint32_t carveout_list[MAX_ENCR_CARVEOUT] = {0};
+	struct tegrabl_linuxboot_memblock memblock;
+	uint32_t carveout_id;
+	tegrabl_error_t status = TEGRABL_NO_ERROR;
+
+	pr_info("Full DRAM encryption enabled, update the memory info\n");
+
+	status = tegrabl_linuxboot_helper_get_info(TEGRABL_LINUXBOOT_INFO_MEMENCR_GSC_LIST,
+									NULL, carveout_list);
+	if (status != TEGRABL_NO_ERROR) {
+		pr_error("Failed to get the carveout list\n");
+		goto fail;
+	}
+
+	for (i = 0; i < MAX_ENCR_CARVEOUT; i++) {
+		/* Get the carveout ids from the carveout list */
+		carveout_id = carveout_list[i];
+		if (carveout_id == 0) {
+			break;
+		}
+
+		status = tegrabl_linuxboot_helper_get_info(TEGRABL_LINUXBOOT_INFO_MEMENCR_ADDR,
+								&carveout_id, &memblock);
+		if (status != TEGRABL_NO_ERROR) {
+			pr_error("Failed to get GSC: %d information\n", carveout_id);
+			goto fail;
+		}
+		memblock_info_array[i].base = memblock.base;
+		memblock_info_array[i].size = memblock.size;
+	}
+	*blk_arr_cnt = i;
+	*blk_arr = memblock_info_array;
+
+fail:
+	return status;
+}
 
 /* Update/add primary memory base & size in 'memory' node of DTB */
 static tegrabl_error_t add_memory_info(void *fdt, int nodeoffset)
@@ -118,12 +160,23 @@ static tegrabl_error_t add_memory_info(void *fdt, int nodeoffset)
 	struct tegrabl_linuxboot_memblock *blk_arr = NULL;
 	uint32_t blk_arr_cnt = 0;
 	tegrabl_error_t status = TEGRABL_NO_ERROR;
+	uint32_t enable_os_mem_encryption = 0;
 	int err;
 	char *name;
 
 	TEGRABL_ASSERT(fdt);
 
-	status = tegrabl_get_memblk_info_array(&blk_arr_cnt, &blk_arr);
+	status = tegrabl_linuxboot_helper_get_info(TEGRABL_LINUXBOOT_INFO_ENABLE_OS_MEM_ENCR,
+		NULL, &enable_os_mem_encryption);
+
+	/* Memory encryption setting is invalid */
+	if (TEGRABL_ERROR_REASON(status) == TEGRABL_ERR_INVALID) {
+		goto fail;
+	}
+
+	status = (enable_os_mem_encryption == 0) ?
+		tegrabl_get_memblk_info_array(&blk_arr_cnt, &blk_arr) :
+		tegrabl_get_encr_memblk_info_array(&blk_arr_cnt, &blk_arr);
 
 	if (status != TEGRABL_NO_ERROR) {
 		pr_error("Failed to get memory blocks info array\n");
@@ -175,7 +228,7 @@ static tegrabl_error_t add_initrd_info(void *fdt, int nodeoffset)
 	int ret = TEGRABL_NO_ERROR;
 	tegrabl_error_t status = TEGRABL_NO_ERROR;
 	struct tegrabl_linuxboot_memblock memblock;
-	uint32_t buf;
+	uint64_t buf;
 
 	TEGRABL_ASSERT(fdt);
 
@@ -184,7 +237,7 @@ static tegrabl_error_t add_initrd_info(void *fdt, int nodeoffset)
 		goto fail;
 	}
 
-	buf = cpu_to_fdt32((uint32_t)memblock.base);
+	buf = cpu_to_fdt64((uint64_t)memblock.base);
 	ret = fdt_setprop(fdt, nodeoffset, "linux,initrd-start", &buf, sizeof(buf));
 	if (ret < 0) {
 		pr_error("Unable to set \"%s\" in FDT\n", "linux,initrd-start");
@@ -192,7 +245,7 @@ static tegrabl_error_t add_initrd_info(void *fdt, int nodeoffset)
 		goto fail;
 	}
 
-	buf = cpu_to_fdt32((uint32_t)(memblock.base + memblock.size));
+	buf = cpu_to_fdt64((uint64_t)(memblock.base + memblock.size));
 	ret = fdt_setprop(fdt, nodeoffset, "linux,initrd-end", &buf, sizeof(buf));
 	if (ret < 0) {
 		pr_error("Unable to set \"%s\" in FDT\n", "linux,initrd-end");
@@ -747,7 +800,6 @@ static struct tegrabl_linuxboot_dtnode_info common_nodes[] = {
 	{ NULL, NULL},
 };
 
-static struct tegrabl_linuxboot_memblock memblock_info_array[MAX_MEM_CHUNKS];
 static uint32_t blk_info_array_cnt;
 
 tegrabl_error_t tegrabl_get_memblk_info_array(uint32_t *array_items_num,

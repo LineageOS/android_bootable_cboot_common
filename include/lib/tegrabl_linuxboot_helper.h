@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2015-2020, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -34,7 +34,13 @@ typedef uint32_t tegrabl_linux_boot_info_t;
 #define TEGRABL_LINUXBOOT_INFO_INITRD 8
 #define TEGRABL_LINUXBOOT_INFO_BOOTIMAGE_CMDLINE 9
 #define TEGRABL_LINUXBOOT_INFO_SECUREOS 10
-#define TEGRABL_LINUXBOOT_INFO_MAX 11
+#define TEGRABL_LINUXBOOT_INFO_MEMENCR_ADDR 11
+#define TEGRABL_LINUXBOOT_INFO_ENABLE_OS_MEM_ENCR 12
+#define TEGRABL_LINUXBOOT_INFO_MEMENCR_GSC_LIST 13
+#define TEGRABL_LINUXBOOT_INFO_MAX 14
+
+/* macro maximum encryption GSC number */
+#define MAX_ENCR_CARVEOUT  16
 
 /**
  * @brief Helper API (with BL-specific implementation), to extract what information
@@ -280,6 +286,13 @@ uint64_t tegrabl_get_dtb_load_addr(void);
  * @return ramdisk load address
  */
 uint64_t tegrabl_get_ramdisk_load_addr(void);
+
+/**
+ * @brief Get the text offset for loading the Linux kernel
+ *
+ * @return the text offset for loading the Linux kernel
+ */
+uint64_t tegrabl_get_kernel_text_offset(void);
 
 /**
  * @brief Check if fw/binary ratchet level is greater than or equal to minimum required level

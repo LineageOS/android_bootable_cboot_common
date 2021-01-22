@@ -160,21 +160,31 @@ nextcomponent:
             err = ext2_read_link(ext2, &inode, link, sizeof(link));
             if (err < 0)
                 return err;
+            else {
+                /* move to the next separator */
+                ptr = next_sep + 1;
+
+                /* consume multiple separators */
+                while (*ptr == '/')
+                    ptr++;
+            }
 
             LTRACEF("symlink read returns %d '%s'\n", err, link);
 
             /* recurse, parsing the link */
             if (link[0] == '/') {
                 /* link starts with '/', so start over again at the rootfs */
-                err = ext2_walk(ext2, link, &ext2->root_inode, inum, recurse + 1);
+                err = ext2_walk(ext2, ptr, &ext2->root_inode, inum, recurse + 1);
             } else {
-                err = ext2_walk(ext2, link, &dir_inode, inum, recurse + 1);
+                err = ext2_walk(ext2, ptr, &dir_inode, inum, recurse + 1);
             }
 
             LTRACEF("recursive walk returns %d\n", err);
 
             if (err < 0)
                 return err;
+            else
+                done = true;
 
             /* if we weren't done with our path parsing, start again with the result of this recurse */
             if (!done) {

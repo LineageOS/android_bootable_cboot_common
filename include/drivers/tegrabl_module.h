@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -75,7 +75,9 @@
 #define TEGRABL_MODULE_VIC 57U				/*0x39*/
 #define TEGRABL_MODULE_AXI_CBB 58U				/* 0x3A */
 #define TEGRABL_MODULE_EQOS 59U				/* 0x3B */
-#define TEGRABL_MODULE_NUM 60U				/* 0x3C Total modules in the list */
+#define TEGRABL_MODULE_PCIE_APB 60U			/* 0x3C */
+#define TEGRABL_MODULE_PCIE_CORE 61U				/* 0x3D */
+#define TEGRABL_MODULE_NUM 62U				/* 0x3E Total modules in the list */
 
 typedef uint32_t tegrabl_module_t;
 

@@ -527,7 +527,7 @@ char *strdup(const char *str)
 	if (copy == NULL) {
 		return NULL;
 	}
-	memcpy(copy, str, len);
+	(void)memcpy(copy, str, len);
 
 	return copy;
 }

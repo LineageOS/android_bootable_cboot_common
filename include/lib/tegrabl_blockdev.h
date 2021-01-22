@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -81,7 +81,8 @@ struct tegrabl_blockdev_xfer_info {
 #define TEGRABL_STORAGE_UFS		7UL
 #define TEGRABL_STORAGE_UFS_USER	8UL
 #define TEGRABL_STORAGE_UFS_RPMB	9UL
-#define TEGRABL_STORAGE_MAX		10UL
+#define TEGRABL_STORAGE_NVME		10UL
+#define TEGRABL_STORAGE_MAX		11UL
 #define TEGRABL_STORAGE_INVALID		TEGRABL_STORAGE_MAX
 typedef uint32_t tegrabl_storage_type_t;
 

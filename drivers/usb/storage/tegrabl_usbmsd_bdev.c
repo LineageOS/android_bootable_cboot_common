@@ -270,6 +270,13 @@ static tegrabl_error_t tegrabl_usbmsd_bdev_read_block(struct tegrabl_bdev *dev,
 		goto fail;
 	}
 
+	xfer_length = count * TEGRABL_BLOCKDEV_BLOCK_SIZE(dev);
+	if ((xfer_length > SZ_64K) && (IS_ALIGNED((uintptr_t)buffer, SZ_64K) == false)) {
+		error = TEGRABL_ERROR(TEGRABL_ERR_NOT_ALIGNED, 0);
+		TEGRABL_SET_ERROR_STRING(error, "buffer: %p", "64KB", buffer);
+		goto fail;
+	}
+
 	context = (struct tegrabl_usbmsd_context *)dev->priv_data;
 	if (context == NULL) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID,
@@ -727,6 +734,9 @@ tegrabl_error_t tegrabl_usbmsd_bdev_open(uint32_t instance)
 	if ((host_ctx->curr_dev_priv->enum_dev.class != USB_MSD_CLASS) ||
 		(host_ctx->curr_dev_priv->enum_dev.protocol != BULK_PROTOCOL)) {
 		pr_error("Enumerated device doesn't belong to MSD class or protocol is not bulk-only!!\n");
+		pr_error("Class = %X, Protocol = %X\n",
+			 host_ctx->curr_dev_priv->enum_dev.class,
+			 host_ctx->curr_dev_priv->enum_dev.protocol);
 		error = TEGRABL_ERROR(TEGRABL_ERR_INIT_FAILED,
 				      TEGRABL_USBMSD_BDEV_OPEN);
 		TEGRABL_PRINT_ERROR_STRING(TEGRABL_ERR_INIT_FAILED,
@@ -1315,7 +1325,8 @@ tegrabl_error_t tegrabl_usbmsd_test_unit_ready(
 			/* TBD: Check csw_status in context instead? */
 			/* csw.Status was bad, do request sense and retry */
 			pr_debug("%s: Bad CSW status\n", __func__);
-			pr_warn("Trying Request Sense, retry @ %d\n", retry);
+			if (retry < 3)
+				pr_warn("Trying Request Sense, retry @ %d\n", retry);
 			rs_err = tegrabl_usbmsd_request_sense(context);
 			if (rs_err != TEGRABL_NO_ERROR)
 				pr_warn("Request sense failed, error 0x%X\n",
@@ -1336,7 +1347,7 @@ tegrabl_error_t tegrabl_usbmsd_test_unit_ready(
 	} while (retry--);
 done:
 	if (error == TEGRABL_NO_ERROR && retry < 3)
-		pr_warn("Request Sense cleared status error!\n");
+		pr_debug("Request Sense cleared status error ...\n");
 fail:
 	pr_debug("%s: Exiting with error code 0x%X\n", __func__, error);
 	return error;
@@ -1435,7 +1446,7 @@ static tegrabl_error_t tegrabl_usbmsd_io(struct tegrabl_usbmsd_context *context,
 		 context->xfer_info.buf);
 	error = usbmsd_transfer_data(context, length);
 	if (error != TEGRABL_NO_ERROR) {
-		pr_warn("DATA TRANSFER FAILED, INCREMENT TAG!?\n");
+		pr_debug("DATA TRANSFER FAILED, INCREMENT TAG!?\n");
 	}
 
 	/* Handle DATA STALL here */
@@ -1463,7 +1474,7 @@ static tegrabl_error_t tegrabl_usbmsd_io(struct tegrabl_usbmsd_context *context,
 	if (error == TEGRABL_NO_ERROR && csw_status != CSW_PASS_STAT) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_CONDITION,
 				      TEGRABL_USBMSD_BAD_STATUS);
-		pr_error("CSW status = 0x%02X!\n", csw_status);
+		pr_debug("CSW status = 0x%02X\n", csw_status);
 	}
 fail:
 	pr_debug("%s: Exiting with error code 0x%X\n", __func__, error);

@@ -118,7 +118,9 @@
 #define SWAP_BITS(val, p1, p2)		\
 	((val) ^ (LEFT_SHIFT(XOR_BITS(val, p1, p2), p1) | LEFT_SHIFT(XOR_BITS(val, p1, p2), p2)))
 
-#define ALIGN(X, A)	 (((X) + ((A)-1)) & ~((A)-1))
+#define ALIGN(X, A)					(((X) + ((A)-1)) & ~((A)-1))
+
+#define IS_ALIGNED(X, A)			((X % A) ? false : true)
 
 /**
  * @brief Computes the crc32 of buffer.

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2018-2020, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -17,7 +17,7 @@
 #define CBO_PARTITION "CPUBL-CFG"
 
 /* specifies number of storage options to boot from */
-#define NUM_SECONDARY_STORAGE_DEVICES 5
+#define NUM_SECONDARY_STORAGE_DEVICES 6
 
 /* specifies pluggable devices */
 #define BOOT_DEFAULT				0 /*default is builtin*/
@@ -26,6 +26,7 @@
 #define BOOT_FROM_USB				3
 /* Builtin storage specifies primary / secondary fixed storage where kernel is expected to be */
 #define BOOT_FROM_BUILTIN_STORAGE	4
+#define BOOT_FROM_NVME				5
 
 #define GUID_STR_LEN				36
 #define GUID_STR_SIZE				(GUID_STR_LEN + 1)
@@ -72,8 +73,10 @@ tegrabl_error_t tegrabl_cbo_parse_info(bool is_cbo_read);
 *
 * @param count number of boot devices
 * @param boot_order pointer to boot device strings in priority order
+*
+* @return TEGRABL_NO_ERROR if success. Error code in case of failure.
 */
-void tegrabl_set_boot_order(uint32_t count, const char **boot_order);
+tegrabl_error_t tegrabl_set_boot_order(uint32_t count, const char **boot_order);
 
 /**
 * @brief set/update ip info
@@ -156,5 +159,27 @@ char *tegrabl_get_boot_pt_guid(void);
 */
 bool is_var_boot_cfg(const char *var_name);
 
-#endif /* INCLUDED_TEGRABL_CBO_H */
+/**
+* @brief get boot_dev_order[] array
+*
+* @return pointer to the boot_dev_order[] array of boot devices.
+*/
+char **tegrabl_get_boot_dev_order(void);
 
+/**
+* @brief print boot_dev_order[] array
+*/
+void tegrabl_print_boot_dev_order(void);
+
+/**
+* @brief map the boot_dev name to device_id
+*
+* @param boot_dev name of the boot_dev
+* @param device_id pointer to device_id
+*
+* @return pointer to the boot_dev after the matched base boot device name
+*         NULL is no matched base boot device name
+*/
+char *tegrabl_cbo_map_boot_dev(char *boot_dev, uint8_t *device_id);
+
+#endif /* INCLUDED_TEGRABL_CBO_H */

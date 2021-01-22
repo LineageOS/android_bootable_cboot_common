@@ -34,6 +34,8 @@
 #define EXTLINUX_CONF_PATH			"/boot/extlinux/extlinux.conf"
 #define EXTLINUX_CONF_MAX_SIZE		4096UL
 
+#define SIG_FILE_SIZE_OFFSET		8
+
 static struct conf extlinux_conf;
 static uint32_t boot_entry;
 static time_t user_input_wait_timeout_ms;
@@ -335,6 +337,7 @@ static tegrabl_error_t load_binary_with_sig(struct tegrabl_fm_handle *fm_handle,
 {
 	uint32_t sigheader_size = 0;
 	uint32_t file_size;
+	uint32_t orig_file_size;
 	void *load_addr;
 	char *bin_type_name;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
@@ -353,6 +356,9 @@ static tegrabl_error_t load_binary_with_sig(struct tegrabl_fm_handle *fm_handle,
 		break;
 	case TEGRABL_BINARY_KERNEL_DTB:
 		bin_type_name = "kernel-dtb";
+		break;
+	case TEGRABL_BINARY_RAMDISK:
+		bin_type_name = "initrd";
 		break;
 	default:
 		pr_error("Invalid bin_type (%d)\n", bin_type);
@@ -392,6 +398,10 @@ static tegrabl_error_t load_binary_with_sig(struct tegrabl_fm_handle *fm_handle,
 		if (fail_flag) {
 			memset(load_addr, 0, sigheader_size);
 		}
+
+		/* retrieve the original binary file size which is at the offset 0x8 of sig file */
+		orig_file_size = (*(uint32_t *)(load_addr + SIG_FILE_SIZE_OFFSET));
+		pr_debug("%s: orig_file_size=%u\n", bin_type_name, orig_file_size);
 #endif
 
 		/* USB transactions require load address to be 64 KB aligned */
@@ -409,7 +419,19 @@ static tegrabl_error_t load_binary_with_sig(struct tegrabl_fm_handle *fm_handle,
 			/* continue to load binary from partition */
 			goto load_from_partition;
 		}
+
 		*load_size = file_size;
+
+		/* If orig_file_size retrieved from sig file is not 0 and is less than the file size read,
+		 * then overload the to-be-returned load_size with orig_file_size.
+		 * The file size read includes pad bytes, so file_size should be greater or equal to orig_file_size.
+		 * Some binary (like initrd) needs to use original file size (without pad bytes).
+		 */
+		if (orig_file_size && (orig_file_size < file_size)) {
+			*load_size = orig_file_size;
+			pr_info("overload load_size to %u (from %u)\n", orig_file_size, file_size);
+		}
+
 		/* Place binary right after binary's signature.
 		 * Note: always offset to a fixed tegrabl_sigheader_size(),
 		 * in case that signature file is corrupted.
@@ -419,7 +441,7 @@ static tegrabl_error_t load_binary_with_sig(struct tegrabl_fm_handle *fm_handle,
 		}
 
 #if defined(CONFIG_ENABLE_SECURE_BOOT)
-		err = tegrabl_validate_binary(bin_type, bin_max_size, bin_load_addr);
+		err = tegrabl_validate_binary(bin_type, bin_max_size, bin_load_addr, NULL);
 		if ((err != TEGRABL_NO_ERROR) || fail_flag) {
 			/* Validation failed or sig file was not read correctly */
 			pr_warn("Failed to validate %s binary (err=%d, fail=%d)\n", bin_type_name, err, fail_flag);
@@ -466,7 +488,7 @@ load_from_partition:
 	*load_size = file_size;
 
 #if defined(CONFIG_ENABLE_SECURE_BOOT)
-	err = tegrabl_validate_binary(bin_type, bin_max_size, bin_load_addr);
+	err = tegrabl_validate_binary(bin_type, bin_max_size, bin_load_addr, &file_size);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_warn("Failed to validate %s binary (err=%d)\n", bin_type_name, err);
 
@@ -481,7 +503,15 @@ load_from_partition:
 		memmove(bin_load_addr, bin_load_addr + sigheader_size, *load_size);
 		err = TEGRABL_NO_ERROR;
 	}
-#endif
+#else
+	if (bin_type == TEGRABL_BINARY_KERNEL) {
+		file_size = bin_max_size;
+	}
+#endif  /* CONFIG_ENABLE_SECURE_BOOT */
+
+	if (bin_type == TEGRABL_BINARY_KERNEL) {
+		err = tegrabl_verify_boot_img_hdr(bin_load_addr, file_size);
+	}
 
 exit:
 	return err;
@@ -583,12 +613,14 @@ tegrabl_error_t extlinux_boot_load_ramdisk(struct tegrabl_fm_handle *fm_handle,
 
 	pr_info("Loading ramdisk from rootfs ...\n");
 	*ramdisk_load_addr = (void *)tegrabl_get_ramdisk_load_addr();
-	err = tegrabl_fm_read(fm_handle,
-						  g_ramdisk_path,
-						  NULL,
-						  *ramdisk_load_addr,
-						  &file_size,
-						  NULL);
+
+	err = load_binary_with_sig(fm_handle,
+							TEGRABL_BINARY_RAMDISK,
+							RAMDISK_MAX_SIZE,
+							g_ramdisk_path,
+							*ramdisk_load_addr,
+							&file_size);
+
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
 	}

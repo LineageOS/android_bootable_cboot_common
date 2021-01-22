@@ -20,7 +20,7 @@
 #include <xhci.h>
 #include <hub.h>
 
-#define HUB_DEVICE_DETECT_TIMEOUT_MS		500
+#define HUB_DEVICE_DETECT_TIMEOUT_MS		1000
 #define HUB_PORT_RESET_TIMEOUT_MS			200
 
 static tegrabl_error_t send_dev_req(struct xusb_host_context *ctx, uint8_t req_type, uint8_t req,
@@ -179,7 +179,7 @@ tegrabl_error_t hub_detect_device(struct xusb_host_context *ctx, uint32_t *port_
 				port_dev_bmap = port_dev_bmap | (0x1 << port_no);
 			}
 		}
-		tegrabl_mdelay(100);
+		tegrabl_mdelay(200);
 		elapsed_time_ms = tegrabl_get_timestamp_ms() - start_time_ms;
 		pr_trace("elapsed time: %lu\n\n", elapsed_time_ms);
 	}

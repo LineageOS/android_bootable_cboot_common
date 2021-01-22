@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2015-2020, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -24,6 +24,7 @@
 
 #if defined(CONFIG_ENABLE_A_B_SLOT)
 #include <tegrabl_a_b_partition_naming.h>
+#include <tegrabl_a_b_boot_control.h>
 #endif
 
 #define AUX_INFO_PARTITION_LOOKUP_ERR		20
@@ -141,7 +142,7 @@ tegrabl_error_t tegrabl_partition_lookup_bdev(const char *partition_name, struct
 	if (partition_info == NULL) {
 		pr_debug("Cannot find partition %s\n", partition_name);
 		error = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, AUX_INFO_PARTITION_NOT_FOUND);
-		memset(partition, 0x0, sizeof(*partition));
+		(void)memset(partition, 0x0, sizeof(*partition));
 		goto fail;
 	}
 
@@ -162,6 +163,9 @@ tegrabl_error_t tegrabl_partition_boot_guid_lookup_bdev(char *pt_type_guid,
 	struct tegrabl_storage_info *entry = NULL;
 	uint32_t num_partitions = 0;
 	uint32_t i = 0;
+#if defined(CONFIG_ENABLE_A_B_SLOT)
+	uint8_t rootfs_id;
+#endif
 
 	if ((partition == NULL) || (bdev == NULL)) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, AUX_INFO_PARTITION_BOOT_LOOKUP_ERR);
@@ -199,6 +203,39 @@ tegrabl_error_t tegrabl_partition_boot_guid_lookup_bdev(char *pt_type_guid,
 	} else {
 		pr_info("Boot partition: %u\n", i);
 	}
+
+#if defined(CONFIG_ENABLE_A_B_SLOT)
+	error = tegrabl_a_b_get_current_rootfs_id(NULL, &rootfs_id);
+	if (error == TEGRABL_NO_ERROR) {
+		if (rootfs_id == ROOTFS_A) {
+			error = tegrabl_partition_lookup_bdev("APP",
+							partition, bdev);
+		} else if (rootfs_id == ROOTFS_B) {
+			error = tegrabl_partition_lookup_bdev("APP_b",
+							partition, bdev);
+		} else {
+			/* Rootfs A/B are both unbootable */
+			error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+			goto fail;
+		}
+
+		if (error == TEGRABL_NO_ERROR) {
+			/* Found partition, goto fail directly */
+			pr_info("Set %dth partition is boot partition\n",
+				rootfs_id);
+			goto fail;
+		}
+		/*
+		 * Didn't find APP or APP_b,
+		 * scan next storage to find valid rootfs.
+		 */
+		goto fail;
+
+	} else {
+		/* rootfs AB isn't enabled, restore error */
+		error = TEGRABL_NO_ERROR;
+	}
+#endif
 
 partition_found:
 	partition->partition_info = &partition_info[i];
@@ -253,7 +290,7 @@ tegrabl_error_t tegrabl_partition_open(const char *partition_name,
 	if (partition_info == NULL) {
 		pr_error("Cannot find partition %s\n", partition_name);
 		error = TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 0);
-		memset(partition, 0x0, sizeof(*partition));
+		(void)memset(partition, 0x0, sizeof(*partition));
 		goto fail;
 	}
 
@@ -288,7 +325,7 @@ fail:
 void tegrabl_partition_close(struct tegrabl_partition *partition)
 {
 	if (partition != NULL) {
-		memset(partition, 0x0, sizeof(*partition));
+		(void)memset(partition, 0x0, sizeof(*partition));
 	}
 }
 

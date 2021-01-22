@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2016-2020, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -18,6 +18,7 @@
 #include <tegrabl_utils.h>
 #include <tegrabl_error.h>
 #include <tegrabl_debug.h>
+#include <tegrabl_arm64.h>
 #include <tegrabl_bootimg.h>
 #include <tegrabl_linuxboot.h>
 #include <tegrabl_linuxboot_helper.h>
@@ -35,14 +36,20 @@
 #include <tegrabl_exit.h>
 #include <tegrabl_linuxboot_utils.h>
 #include <fixed_boot.h>
-#if defined(CONFIG_ENABLE_USB_SD_BOOT)
-#include <usb_sd_boot.h>
+#if defined(CONFIG_ENABLE_USB_SD_BOOT) || defined(CONFIG_ENABLE_NVME_BOOT)
+#include <removable_boot.h>
 #endif
 #if defined(CONFIG_ENABLE_ETHERNET_BOOT)
 #include <net_boot.h>
 #endif
 #if defined(CONFIG_ENABLE_EXTLINUX_BOOT)
 #include <extlinux_boot.h>
+#endif
+#if defined(CONFIG_ENABLE_NVME_BOOT)
+#include <tegrabl_pcie.h>
+#endif
+#if defined(CONFIG_ENABLE_SECURE_BOOT)
+#include <tegrabl_auth.h>
 #endif
 
 #define FDT_SIZE_BL_DT_NODES	(4048 + 4048)
@@ -94,8 +101,10 @@ static tegrabl_error_t extract_kernel(void *boot_img_load_addr,
 	decompressor *decomp = NULL;
 	uint32_t decomp_size = 0; /* kernel size after decompressing */
 	union tegrabl_bootimg_header *hdr = NULL;
+	union tegrabl_arm64_header *ahdr = NULL;
 	uint64_t payload_addr;
 	uint32_t kernel_size;
+	uint64_t kernel_text_offset = tegrabl_get_kernel_text_offset();
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
@@ -106,6 +115,10 @@ static tegrabl_error_t extract_kernel(void *boot_img_load_addr,
 		payload_addr = (uintptr_t)hdr + hdr->pagesize;
 		kernel_size = hdr->kernelsize;
 	} else {  /*  In extinux boot, raw kernel image gets loaded */
+		ahdr = boot_img_load_addr;
+		if (ahdr->magic == ARM64_MAGIC) {
+			kernel_text_offset = ahdr->text_offset;
+		}
 		payload_addr = (uintptr_t)boot_img_load_addr;
 		kernel_size = kernel_bin_size;
 	}
@@ -118,7 +131,7 @@ static tegrabl_error_t extract_kernel(void *boot_img_load_addr,
 		goto fail;
 	}
 
-	*kernel_load_addr = (void *)tegrabl_get_kernel_load_addr();
+	*kernel_load_addr = (void *)(tegrabl_get_kernel_load_addr() + kernel_text_offset);
 	is_compressed = is_compressed_content((uint8_t *)payload_addr, &decomp);
 	if (!is_compressed) {
 		pr_info("Copying kernel image (%u bytes) from %p to %p ... ",
@@ -234,6 +247,69 @@ static tegrabl_error_t extract_kernel_dtb(void **kernel_dtb, void *kernel_dtbo)
 #endif  /* CONFIG_DT_SUPPORT */
 
 #if defined(CONFIG_ENABLE_BOOT_DEVICE_SELECT)
+
+#if defined(CONFIG_ENABLE_NVME_BOOT)
+static bool nvme_load_kernel_and_dtb(char *boot_dev,
+									 void **boot_img_load_addr,
+									 void **kernel_dtb,
+									 void **ramdisk_load_addr,
+									 uint32_t *kernel_size,
+									 uint64_t *ramdisk_size)
+{
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	bool is_load_done = false;
+	int8_t *pcie_ctrl_nums;
+	int8_t ctrl_num;
+	int8_t i;
+
+	pr_debug("%s: boot_dev=%s\n", __func__, boot_dev);
+
+	/*
+	 * boot_dev has the "nvme" stripped from its original boot_dev.
+	 * tegrabl_get_pcie_ctrl_nums() function returns a list of pcie controller numbers based
+	 * on the original boot_dev:
+	 *
+	 * original boot_dev		list of ctrl_nums
+	 * -----------------		-----------------------------------
+	 *   "nvme"					0, 1, . . , max_ctrl_supported-1 (to probe all PCIe controllers)
+	 *   "nvme:C<n>"			n (to probe just PCIe controller Cn)
+	 *   "nvme:pcie@<addr>"		n (to probe a PCIe controller n which has the PCI address of <addr>)
+	 *
+	 * The returned list is terminated with -1.
+	 */
+	pcie_ctrl_nums = tegrabl_get_pcie_ctrl_nums(boot_dev);
+
+	if (pcie_ctrl_nums == NULL) {
+		return false;
+	}
+
+	i = 0;
+	while (!is_load_done) {
+		ctrl_num = pcie_ctrl_nums[i++];
+		pr_debug("%s: NVME kernel load from ctrl=%d.\n", __func__, ctrl_num);
+		if (ctrl_num < 0) {
+			tegrabl_free((void *)pcie_ctrl_nums);
+			break;
+		}
+
+		err = removable_boot_load_kernel_and_dtb(BOOT_FROM_NVME,
+												 (uint8_t)ctrl_num,
+												 boot_img_load_addr,
+												 kernel_dtb,
+												 ramdisk_load_addr,
+												 kernel_size,
+												 ramdisk_size);
+		if (err != TEGRABL_NO_ERROR) {
+			pr_error("%s (%d) boot failed, err: 0x%x\n", "NVME", ctrl_num, err);
+			continue;
+		}
+		tegrabl_free((void *)pcie_ctrl_nums);
+		return true;
+	}
+	return false;
+}
+#endif	/* CONFIG_ENABLE_NVME_BOOT */
+
 tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 											void **kernel_entry_point,
 											void **kernel_dtb,
@@ -244,8 +320,10 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	void *kernel_dtbo = NULL;
 	bool is_load_done = false;
-	uint32_t i = 0;
-	uint8_t *boot_order;
+	uint32_t i;
+	char **boot_dev_order;
+	char *boot_dev;
+	uint8_t device_id;
 	void *boot_img_load_addr = NULL;
 	void *ramdisk_load_addr = NULL;
 	uint32_t kernel_size = 0;
@@ -257,20 +335,51 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 		goto fail;
 	}
 
-	/* Get boot order from cbo.dtb */
-	boot_order = tegrabl_get_boot_order();
+	/*
+	 * Get boot dev order from cbo.dtb. boot_dev_order is the boot device string,
+	 * like "sd", "usb", or "nvme:pcie@14180000", "nvme@5".
+	 */
+	boot_dev_order = tegrabl_get_boot_dev_order();
 
 	/* Try loading boot image and dtb from devices as per boot order */
-	for (i = 0; (boot_order[i] != BOOT_DEFAULT) && (!is_load_done); i++) {
+	i = 0;
+	while (!is_load_done) {
+		boot_dev = boot_dev_order[i++];
+		if (boot_dev == NULL) {
+			break;
+		}
 
-		switch (boot_order[i]) {
+		/*
+		 * tegrabl_cbo_map_boot_dev() function maps the boot device string
+		 * to device_id, as in BOOT_FROM_USB, BOOT_FROM_NVME, or BOOT_FROM_BUILTIN_STORAGE.
+		 * The function also returns a pointer pointed to boot_dev string that pass the
+		 * matched base boot device name.
+		 * The base boot device names are: "usb", "sd", "emmc", "net", "nvme", etc.
+		 * (See g_boot_devices[] in tegrabl_cbo.c file.)
+		 *
+		 * Ex 1:
+		 *   boot_dev -> "emmc";
+		 *   after tegrabl_cbo_map_boot_dev(),
+		 *   boot_dev -> '\0', device_id = BOOT_FROM_BUILTIN_STORAGE
+		 *
+		 * Ex 2:
+		 *   boot_dev -> "nvme:pcie@14180000"
+		 *   after tegrabl_cbo_map_boot_dev(),
+		 *   boot_dev -> ":pcie@14180000", device_id = BOOT_FROM_NVME
+		 */
+		boot_dev = tegrabl_cbo_map_boot_dev(boot_dev, &device_id);
+		if (boot_dev == NULL) {
+			/* Invalid boot_dev */
+			continue;
+		}
 
+		switch (device_id) {
 #if defined(CONFIG_ENABLE_ETHERNET_BOOT)
 		case BOOT_FROM_NETWORK:
 			err = net_boot_load_kernel_and_dtb(&boot_img_load_addr, kernel_dtb);
 			if (err != TEGRABL_NO_ERROR) {
 				pr_error("Net boot failed, err: %u\n", err);
-				continue;
+				break;
 			}
 			is_load_done = true;
 			break;
@@ -279,19 +388,31 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 #if defined(CONFIG_ENABLE_USB_SD_BOOT)
 		case BOOT_FROM_SD:
 		case BOOT_FROM_USB:
-			err = usb_sd_boot_load_kernel_and_dtb(boot_order[i],
-												  &boot_img_load_addr,
-												  kernel_dtb,
-												  &ramdisk_load_addr,
-												  &kernel_size,
-												  &ramdisk_size);
+			err = removable_boot_load_kernel_and_dtb(device_id,
+													 0,
+													&boot_img_load_addr,
+													 kernel_dtb,
+													 &ramdisk_load_addr,
+													 &kernel_size,
+													 &ramdisk_size);
 			if (err != TEGRABL_NO_ERROR) {
-				pr_error("%s boot failed, err: %u\n", boot_order[i] == BOOT_FROM_SD ? "SD" : "USB", err);
-				continue;
+				pr_error("%s boot failed, err: %u\n", device_id == BOOT_FROM_SD ? "SD" : "USB", err);
+				break;
 			}
 			is_load_done = true;
 			break;
-#endif
+#endif	/* CONFIG_ENABLE_USB_SD_BOOT */
+
+#if defined(CONFIG_ENABLE_NVME_BOOT)
+		case BOOT_FROM_NVME:
+			is_load_done = nvme_load_kernel_and_dtb(boot_dev,
+													&boot_img_load_addr,
+													kernel_dtb,
+													&ramdisk_load_addr,
+													&kernel_size,
+													&ramdisk_size);
+			break;
+#endif	/* CONFIG_ENABLE_NVME_BOOT */
 
 		case BOOT_FROM_BUILTIN_STORAGE:
 		default:
@@ -360,6 +481,11 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 	pr_info("%s: Done\n", __func__);
 
 fail:
+#if defined(CONFIG_ENABLE_SECURE_BOOT)
+	pr_debug("%s: completing auth ...\n", __func__);
+	err = tegrabl_auth_complete();
+#endif
+
 	tegrabl_free(kernel_dtbo);
 	tegrabl_usbh_close();
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2016-2020, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -561,6 +561,32 @@ tegrabl_error_t tegrabl_a_b_set_priority(void *smd_addr, uint32_t slot,
 	return TEGRABL_NO_ERROR;
 }
 
+static int tegrabl_get_max_retry_count(void *smd)
+{
+	struct slot_meta_data_v2 *smd_v2;
+	uint16_t version;
+	uint8_t max_bl_retry_count;
+
+	version = tegrabl_a_b_get_version(smd);
+	/* Set the maximum slot retry count to default if smd
+	 * extension is not support
+	 */
+	if ((version & BOOT_CHAIN_VERSION_MASK) < BOOT_CHAIN_VERSION_ROOTFS_AB) {
+		max_bl_retry_count = SLOT_RETRY_COUNT_DEFAULT;
+	} else {
+		smd_v2 = (struct slot_meta_data_v2 *)smd;
+		max_bl_retry_count = smd_v2->smd_ext.max_bl_retry_count;
+	}
+
+	if (max_bl_retry_count == 0 || max_bl_retry_count > SLOT_RETRY_COUNT_DEFAULT) {
+		max_bl_retry_count = SLOT_RETRY_COUNT_DEFAULT;
+		pr_error("Invalid max retry count, set to the default value(%d)\n",
+			max_bl_retry_count);
+	}
+
+	return max_bl_retry_count;
+}
+
 tegrabl_error_t tegrabl_a_b_set_active_slot(void *smd_addr, uint32_t slot_id)
 {
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
@@ -588,8 +614,7 @@ tegrabl_error_t tegrabl_a_b_set_active_slot(void *smd_addr, uint32_t slot_id)
 		TEGRABL_SET_HIGHEST_MODULE(error);
 		goto done;
 	}
-	error = tegrabl_a_b_set_retry_count((void *)smd, slot_id,
-										SLOT_RETRY_COUNT_DEFAULT);
+	error = tegrabl_a_b_set_retry_count((void *)smd, slot_id, tegrabl_get_max_retry_count((void *)smd));
 	if (error != TEGRABL_NO_ERROR) {
 		TEGRABL_SET_HIGHEST_MODULE(error);
 		goto done;
@@ -604,14 +629,241 @@ done:
 	return error;
 }
 
+tegrabl_error_t tegrabl_a_b_get_current_rootfs_id(void *smd, uint8_t *rootfs_id)
+{
+	struct slot_meta_data_v2 *smd_v2;
+	uint8_t rootfs_select;
+	uint16_t version;
+	tegrabl_error_t error = TEGRABL_NO_ERROR;
+
+	if (rootfs_id == NULL) {
+		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+	}
+
+	if (smd == NULL) {
+		error = tegrabl_a_b_get_smd((void **)&smd);
+		if (error != TEGRABL_NO_ERROR) {
+			TEGRABL_SET_HIGHEST_MODULE(error);
+			return error;
+		}
+	}
+
+	version = tegrabl_a_b_get_version(smd);
+	if (BOOTCTRL_SUPPORT_ROOTFS_AB(version) == 0U) {
+		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+	}
+
+	smd_v2 = (struct slot_meta_data_v2 *)smd;
+	rootfs_select = ROOTFS_SELECT(smd_v2);
+	*rootfs_id = GET_ROOTFS_ACTIVE(rootfs_select);
+
+	return TEGRABL_NO_ERROR;
+}
+
+static tegrabl_error_t
+tegrabl_a_b_set_active_rootfs(void *smd, uint8_t rootfs_id)
+{
+	struct slot_meta_data_v2 *smd_v2;
+	uint8_t *rootfs_select;
+
+	if (smd == NULL) {
+		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+	}
+
+	if ((rootfs_id != ROOTFS_A) && (rootfs_id != ROOTFS_B) &&
+	    (rootfs_id != ROOTFS_INVALID)) {
+		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+	}
+
+	smd_v2 = (struct slot_meta_data_v2 *)smd;
+	rootfs_select = &(ROOTFS_SELECT(smd_v2));
+	*rootfs_select = SET_ROOTFS_ACTIVE(rootfs_id, *rootfs_select);
+	*rootfs_select = SET_ROOTFS_RETRY_COUNT(MAX_ROOTFS_AB_RETRY_COUNT,
+						*rootfs_select);
+
+	return TEGRABL_NO_ERROR;
+}
+
+static tegrabl_error_t
+tegrabl_a_b_get_rootfs_retry_count(void *smd, uint8_t *rootfs_retry_count)
+{
+	struct slot_meta_data_v2 *smd_v2;
+	uint8_t rootfs_select;
+
+	if ((smd == NULL) || (rootfs_retry_count == NULL)) {
+		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+	}
+
+	smd_v2 = (struct slot_meta_data_v2 *)smd;
+	rootfs_select = ROOTFS_SELECT(smd_v2);
+	*rootfs_retry_count = GET_ROOTFS_RETRY_COUNT(rootfs_select);
+
+	return TEGRABL_NO_ERROR;
+}
+
+static tegrabl_error_t
+tegrabl_a_b_set_rootfs_retry_count(void *smd, uint8_t rootfs_retry_count)
+{
+	struct slot_meta_data_v2 *smd_v2;
+	uint8_t *rootfs_select;
+
+	if (smd == NULL) {
+		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+	}
+
+	if (rootfs_retry_count > MAX_ROOTFS_AB_RETRY_COUNT) {
+		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+	}
+
+	smd_v2 = (struct slot_meta_data_v2 *)smd;
+	rootfs_select = &(ROOTFS_SELECT(smd_v2));
+	*rootfs_select = SET_ROOTFS_RETRY_COUNT(rootfs_retry_count,
+						*rootfs_select);
+
+	return TEGRABL_NO_ERROR;
+}
+
+static tegrabl_error_t
+tegrabl_a_b_get_rootfs_status(void *smd, uint32_t slot_id,
+				uint8_t *rootfs_status)
+{
+	struct slot_meta_data_v2 *smd_v2;
+
+	if ((smd == NULL) || (slot_id >= MAX_SLOTS) ||
+	    (rootfs_status == NULL)) {
+		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+	}
+
+	smd_v2 = (struct slot_meta_data_v2 *)smd;
+	*rootfs_status = ROOTFS_STATUS(smd_v2, slot_id);
+
+	return TEGRABL_NO_ERROR;
+}
+
+static tegrabl_error_t
+tegrabl_a_b_set_rootfs_status(void *smd, uint32_t slot_id,
+				uint8_t rootfs_status)
+{
+	struct slot_meta_data_v2 *smd_v2;
+
+	if ((smd == NULL) || (slot_id >= MAX_SLOTS)) {
+		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+	}
+
+	if (rootfs_status > ROOTFS_STATUS_END) {
+		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+	}
+
+	smd_v2 = (struct slot_meta_data_v2 *)smd;
+	ROOTFS_STATUS(smd_v2, slot_id) = rootfs_status;
+
+	return TEGRABL_NO_ERROR;
+}
+
+static tegrabl_error_t tegrabl_a_b_select_active_rootfs(void *smd)
+{
+	struct slot_meta_data_v2 *smd_v2;
+	uint8_t rootfs_select, retry_count, rfs_id;
+	uint8_t rfs_status = ROOTFS_STATUS_NORMAL;
+
+	if (smd == NULL) {
+		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+	}
+
+	smd_v2 = (struct slot_meta_data_v2 *)smd;
+	rootfs_select = ROOTFS_SELECT(smd_v2);
+	retry_count = GET_ROOTFS_RETRY_COUNT(rootfs_select);
+	rfs_id = GET_ROOTFS_ACTIVE(rootfs_select);
+
+	if (retry_count == 0) {
+		/* Set current slot as BOOT_FAILED and retry count to 0 */
+		tegrabl_a_b_set_rootfs_status(smd, rfs_id,
+					ROOTFS_STATUS_BOOT_FAILED);
+
+		/* Check next slot rootfs status */
+		tegrabl_a_b_get_rootfs_status(smd, !rfs_id, &rfs_status);
+		if (rfs_status == ROOTFS_STATUS_NORMAL) {
+			/* Switch active rootfs to next slot */
+			tegrabl_a_b_set_active_rootfs(smd, !rfs_id);
+			/* Get restored rootfs retry_count again */
+			tegrabl_a_b_get_rootfs_retry_count(smd, &retry_count);
+		} else {
+			tegrabl_a_b_set_active_rootfs(smd, ROOTFS_INVALID);
+			goto done;
+		}
+	}
+
+	/* Decrease rootfs retry_count, UE will restore it */
+	tegrabl_a_b_set_rootfs_retry_count(smd, retry_count - 1);
+
+done:
+	return TEGRABL_NO_ERROR;
+}
+
+bool tegrabl_a_b_rootfs_is_all_unbootable(void *smd)
+{
+	tegrabl_error_t err;
+	uint8_t rootfs_id;
+
+	err = tegrabl_a_b_get_current_rootfs_id(smd, &rootfs_id);
+	if (err != TEGRABL_NO_ERROR) {
+		/* rootfs AB is not enabled, return false. */
+		return false;
+	}
+
+	if (rootfs_id == ROOTFS_INVALID)
+		return true;
+	else
+		return false;
+}
+
+tegrabl_error_t tegrabl_a_b_get_rootfs_suffix(char *suffix, bool full_suffix)
+{
+	tegrabl_error_t err;
+	uint8_t rootfs_id;
+
+	err = tegrabl_a_b_get_current_rootfs_id(NULL, &rootfs_id);
+	if (err != TEGRABL_NO_ERROR) {
+		/* rootfs AB is not enabled, ROOTFS_A is the default id. */
+		rootfs_id = ROOTFS_A;
+		err = TEGRABL_NO_ERROR;
+	}
+
+	/*
+	 * rootfs A: "_a" or "",
+	 * rootfs B: "_b",
+	 * no bootable rootfs: return error.
+	 */
+	if ((full_suffix == false) && (rootfs_id == ROOTFS_A)) {
+		*suffix = '\0';
+		goto done;
+	}
+
+	if (rootfs_id == ROOTFS_A) {
+		strncpy(suffix, BOOT_CHAIN_SUFFIX_A, BOOT_CHAIN_SUFFIX_LEN);
+	} else if (rootfs_id == ROOTFS_B) {
+		strncpy(suffix, BOOT_CHAIN_SUFFIX_B, BOOT_CHAIN_SUFFIX_LEN);
+	} else {
+		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+	}
+	*(suffix + BOOT_CHAIN_SUFFIX_LEN) = '\0';
+
+done:
+	pr_info("Active rootfs suffix: %s\n", suffix);
+	return err;
+}
+
 static tegrabl_error_t load_smd_bin_copy(smd_bin_copy_t bin_copy)
 {
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 	struct slot_meta_data *smd = NULL;
+	struct slot_meta_data_v2 *smd_v2 = NULL;
 	struct tegrabl_partition part;
 	char *smd_part;
 	uint32_t crc32;
+	uint32_t smd_v2_len = sizeof(struct slot_meta_data_v2);
 	uint32_t smd_len = sizeof(struct slot_meta_data);
+	uint16_t version;
 
 	smd_part = (bin_copy == SMD_COPY_PRIMARY) ? "SMD" : "SMD_b";
 	error = tegrabl_partition_open(smd_part, &part);
@@ -627,7 +879,7 @@ static tegrabl_error_t load_smd_bin_copy(smd_bin_copy_t bin_copy)
 		goto done;
 	}
 
-	error = tegrabl_partition_read(&part, smd_loadaddress, smd_len);
+	error = tegrabl_partition_read(&part, smd_loadaddress, smd_v2_len);
 	if (error != TEGRABL_NO_ERROR) {
 		TEGRABL_SET_HIGHEST_MODULE(error);
 		goto done;
@@ -636,15 +888,33 @@ static tegrabl_error_t load_smd_bin_copy(smd_bin_copy_t bin_copy)
 
 	smd = (struct slot_meta_data *)smd_loadaddress;
 
-	if ((tegrabl_a_b_get_version(smd) & BOOT_CHAIN_VERSION_MASK) >=
+	version = tegrabl_a_b_get_version(smd);
+	if ((version & BOOT_CHAIN_VERSION_MASK) >=
 				BOOT_CHAIN_VERSION_CRC32) {
 		/* Check crc for SMD sanity */
 		crc32 = tegrabl_utils_crc32(0, smd_loadaddress,
-									smd_len - sizeof(crc32));
+					    smd_len - sizeof(crc32));
 		if (crc32 != smd->crc32) {
 			error = TEGRABL_ERROR(TEGRABL_ERR_VERIFY_FAILED, 0);
 			pr_error("%s corrupt with incorrect crc\n", smd_part);
 			goto done;
+		}
+	}
+
+	/* Check crc for SMD extension sanity */
+	if ((version & BOOT_CHAIN_VERSION_MASK) >=
+				BOOT_CHAIN_VERSION_ROOTFS_AB) {
+		smd_v2 = (struct slot_meta_data_v2 *)smd_loadaddress;
+		crc32 = tegrabl_utils_crc32(0, &smd_v2->smd_ext.crc32_len,
+					    smd_v2->smd_ext.crc32_len);
+		if (crc32 != smd_v2->smd_ext.crc32) {
+			error = TEGRABL_ERROR(TEGRABL_ERR_VERIFY_FAILED, 0);
+			pr_error("%s corrupt with incorrect crc in extension\n",
+				 smd_part);
+			goto done;
+		}
+		if (BOOTCTRL_SUPPORT_ROOTFS_AB(version)) {
+			tegrabl_a_b_select_active_rootfs(smd);
 		}
 	}
 
@@ -665,7 +935,7 @@ tegrabl_error_t tegrabl_a_b_get_smd(void **smd)
 		goto done;
 	}
 
-	smd_len = sizeof(struct slot_meta_data);
+	smd_len = sizeof(struct slot_meta_data_v2);
 	smd_loadaddress = tegrabl_malloc(smd_len);
 	if (smd_loadaddress == NULL) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
@@ -728,7 +998,8 @@ static tegrabl_error_t flush_smd_bin_copy(void *smd, smd_bin_copy_t bin_copy)
 		goto done;
 	}
 
-	error = tegrabl_partition_write(&part, smd, sizeof(struct slot_meta_data));
+	error = tegrabl_partition_write(&part, smd,
+					sizeof(struct slot_meta_data_v2));
 	if (error != TEGRABL_NO_ERROR) {
 		TEGRABL_SET_HIGHEST_MODULE(error);
 		goto done;
@@ -743,6 +1014,7 @@ tegrabl_error_t tegrabl_a_b_flush_smd(void *smd)
 {
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 	struct slot_meta_data *bootctrl = (struct slot_meta_data *)smd;
+	struct slot_meta_data_v2 *smd_v2;
 	uint32_t smd_payload_len;
 
 	if (smd == NULL) {
@@ -753,6 +1025,15 @@ tegrabl_error_t tegrabl_a_b_flush_smd(void *smd)
 	/* Update crc field before writing */
 	smd_payload_len = sizeof(struct slot_meta_data) - sizeof(uint32_t);
 	bootctrl->crc32 = tegrabl_utils_crc32(0, smd, smd_payload_len);
+
+	/* Update crc for SMD extension sanity */
+	if ((tegrabl_a_b_get_version(smd) & BOOT_CHAIN_VERSION_MASK) >=
+				BOOT_CHAIN_VERSION_ROOTFS_AB) {
+		smd_v2 = (struct slot_meta_data_v2 *)smd;
+		smd_v2->smd_ext.crc32 = tegrabl_utils_crc32(0,
+						&smd_v2->smd_ext.crc32_len,
+						smd_v2->smd_ext.crc32_len);
+	}
 
 	/* Always flush both primary SMD and secondary SMD for backup, otherwise
 	 * secondary copy will be stale and may lead to unknown behavior */
@@ -847,6 +1128,25 @@ static void rotate_slots_priority(struct slot_meta_data *smd,
 	}
 }
 
+static tegrabl_error_t check_rootfs_ab_status(uint32_t reg, uint8_t *update_smd)
+{
+	uint8_t retry_count;
+	uint32_t current_slot;
+
+	*update_smd = 0;
+
+	/*
+	 * Restore bootloader retry_count
+	 */
+	current_slot = BOOT_CHAIN_REG_SLOT_NUM_GET(reg);
+	retry_count = tegrabl_a_b_get_retry_count_reg(current_slot, reg);
+	++retry_count;
+	tegrabl_a_b_set_retry_count_reg(current_slot, retry_count);
+
+	*update_smd = 1;
+	return TEGRABL_NO_ERROR;
+}
+
 static tegrabl_error_t check_user_redundancy_status(uint32_t reg,
 		struct slot_meta_data *smd, uint8_t *update_smd)
 {
@@ -913,6 +1213,7 @@ static tegrabl_error_t check_redundancy_status(uint32_t reg,
 		struct slot_meta_data *smd, uint8_t *update_smd)
 {
 	tegrabl_error_t error;
+	uint16_t version;
 
 	/*
 	 * For REDUNDANCY BL only, there is no need to update SMD except
@@ -929,13 +1230,18 @@ static tegrabl_error_t check_redundancy_status(uint32_t reg,
 	 *    boot slot when current boot slot's priority is lower than the
 	 *    other slot.
 	 */
-	if (BOOTCTRL_SUPPORT_REDUNDANCY_USER(tegrabl_a_b_get_version(smd))
-		== 0U) {
+	version = tegrabl_a_b_get_version(smd);
+	if ((BOOTCTRL_SUPPORT_REDUNDANCY_USER(version) == 0U) &&
+	    (BOOTCTRL_SUPPORT_ROOTFS_AB(version) == 0U)) {
 		/* REDUNDANCY is supported at bootloader only */
 		error = check_non_user_redundancy_status(reg, smd, update_smd);
-	} else {
+	} else if (BOOTCTRL_SUPPORT_REDUNDANCY_USER(version) != 0U) {
 		/* REDUNDANCY is supported at kernel (or u-boot) */
 		error = check_user_redundancy_status(reg, smd, update_smd);
+	} else if (BOOTCTRL_SUPPORT_ROOTFS_AB(version) != 0U) {
+		error = check_rootfs_ab_status(reg, update_smd);
+	} else {
+		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 	}
 
 	return error;
@@ -947,18 +1253,19 @@ tegrabl_error_t tegrabl_a_b_update_smd(void)
 	struct slot_meta_data *smd = NULL;
 	uint32_t reg;
 	uint8_t bc_flag;
-	uint8_t update_smd;
+	uint8_t update_smd = 0;
+	uint16_t version;
 
 	reg = tegrabl_get_boot_slot_reg();
 	bc_flag = (uint8_t)BOOT_CHAIN_REG_UPDATE_FLAG_GET(reg);
+	error = tegrabl_a_b_get_smd((void **)&smd);
+	if (error != TEGRABL_NO_ERROR) {
+		TEGRABL_SET_HIGHEST_MODULE(error);
+		goto fail;
+	}
+	version = tegrabl_a_b_get_version(smd);
 	if ((BOOT_CHAIN_REG_MAGIC_GET(reg) == BOOT_CHAIN_REG_MAGIC) &&
 		((bc_flag == BC_FLAG_OTA_ON) || (bc_flag == BC_FLAG_REDUNDANCY_BOOT))) {
-		error = tegrabl_a_b_get_smd((void **)&smd);
-		if (error != TEGRABL_NO_ERROR) {
-			TEGRABL_SET_HIGHEST_MODULE(error);
-			goto done;
-		}
-
 		/*
 		 * When control reaches here, BL can claim safe.
 		 *
@@ -968,7 +1275,7 @@ tegrabl_error_t tegrabl_a_b_update_smd(void)
 		 *    based on return flag.
 		 */
 		if ((bc_flag == BC_FLAG_REDUNDANCY_BOOT) &&
-		    (BOOTCTRL_SUPPORT_REDUNDANCY(tegrabl_a_b_get_version(smd)) != 0U)) {
+		    (BOOTCTRL_SUPPORT_REDUNDANCY(version) != 0U)) {
 			error = check_redundancy_status(reg, smd, &update_smd);
 			if ((error != TEGRABL_NO_ERROR) || (update_smd == 0U)) {
 				goto done;
@@ -981,11 +1288,20 @@ tegrabl_error_t tegrabl_a_b_update_smd(void)
 		error = tegrabl_a_b_flush_smd(smd);
 		if (error != TEGRABL_NO_ERROR) {
 			TEGRABL_SET_HIGHEST_MODULE(error);
-			goto done;
+			goto fail;
 		}
 	}
 
 done:
+	/* Always flush smd for rootfs AB */
+	if ((BOOTCTRL_SUPPORT_ROOTFS_AB(version)) && (update_smd == 0U)) {
+		error = tegrabl_a_b_flush_smd(smd);
+		if (error != TEGRABL_NO_ERROR) {
+			TEGRABL_SET_HIGHEST_MODULE(error);
+		}
+	}
+
+fail:
 	/* Clear SR before handing over to kernel */
 	if (BOOT_CHAIN_REG_MAGIC_GET(reg) == BOOT_CHAIN_REG_MAGIC) {
 		reg = 0;

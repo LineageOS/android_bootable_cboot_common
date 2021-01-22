@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2015-2020, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -43,16 +43,20 @@ int32_t tegrabl_bom_compare(struct tegrabl_carveout_info *p_carveout, const uint
  */
 void tegrabl_sort(struct tegrabl_carveout_info *p_carveout, uint32_t array[], int32_t count);
 
+#if defined(CONFIG_ENABLE_SECURE_BOOT)
 /**
  * @brief Validate the binary
  *
  * @param bin_type Type of binary
  * @param bin_max_size Max size of the binary
  * @param load_addr Address where binary is loaded
+ * @param bin_len Binary length extracted from header
  *
  * @return TEGRABL_NO_ERROR if success, specific error if fails
  */
-tegrabl_error_t tegrabl_validate_binary(uint32_t bin_type, uint32_t bin_max_size, void *load_addr);
+tegrabl_error_t tegrabl_validate_binary(uint32_t bin_type, uint32_t bin_max_size, void *load_addr,
+										uint32_t *bin_len);
+#endif
 
 /**
  * @brief Verify boot.img header

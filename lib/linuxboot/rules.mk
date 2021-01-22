@@ -55,7 +55,7 @@ MODULE_SRCS += \
 
 ifneq ($(filter t19x, $(TARGET_FAMILY)),)
 MODULE_SRCS += \
-	$(LOCAL_DIR)/usb_sd_boot.c \
+	$(LOCAL_DIR)/removable_boot.c \
 	$(LOCAL_DIR)/net_boot.c \
 	$(LOCAL_DIR)/extlinux_boot.c
 endif

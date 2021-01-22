@@ -157,6 +157,10 @@ static tegrabl_error_t tegrabl_blockdev_default_read(tegrabl_bdev_t *dev,
 
 	/* handle partial last block */
 	if (len > 0ULL) {
+		if (partial_block_buf == NULL) {
+			error = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
+			goto fail;
+		}
 		/* read the block */
 		error = tegrabl_blockdev_read_block(dev, partial_block_buf, block, 1);
 		if (error != TEGRABL_NO_ERROR) {
@@ -226,7 +230,7 @@ static tegrabl_error_t tegrabl_blockdev_default_write(tegrabl_bdev_t *dev,
 		memcpy((uint8_t *)partial_block_buf + block_offset, buf, tocopy);
 
 		/* write it back out */
-		tegrabl_blockdev_write_block(dev, partial_block_buf, block, 1);
+		error = tegrabl_blockdev_write_block(dev, partial_block_buf, block, 1);
 		if (error != TEGRABL_NO_ERROR) {
 			TEGRABL_SET_HIGHEST_MODULE(error);
 			goto fail;
@@ -279,6 +283,10 @@ static tegrabl_error_t tegrabl_blockdev_default_write(tegrabl_bdev_t *dev,
 
 	/* handle partial last block */
 	if (len > 0ULL) {
+		if (partial_block_buf == NULL) {
+			error = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
+			goto fail;
+		}
 		/* read the block */
 		error = tegrabl_blockdev_read_block(dev, partial_block_buf, block, 1);
 		if (error != TEGRABL_NO_ERROR) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors errain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -207,8 +207,9 @@ tegrabl_error_t sd_erase(tegrabl_bdev_t *dev, bnum_t block, bnum_t count,
 	blk_end = blk_start + MAX_ERASABLE_SECTORS - 1U;
 
 	while (blk_start < erase_blk_end) {
-		if (blk_end > erase_blk_end)
+		if (blk_end > erase_blk_end) {
 			blk_end = erase_blk_end;
+		}
 
 		pr_trace("Send erase block start command (start=0x%x)\n", blk_start);
 		error = sdmmc_send_command(SD_CMD_ERASE_BLK_START, blk_start, RESP_TYPE_R1, 0, hsdmmc);
@@ -246,9 +247,7 @@ tegrabl_error_t sd_erase(tegrabl_bdev_t *dev, bnum_t block, bnum_t count,
 			if (error != TEGRABL_NO_ERROR) {
 				goto exit;
 			}
-			if (sdmmc_verify_response(CMD_SEND_STATUS, 1, hsdmmc) != TEGRABL_NO_ERROR) {
-				continue;
-			} else {
+			if (sdmmc_verify_response(CMD_SEND_STATUS, 1, hsdmmc) == TEGRABL_NO_ERROR) {
 				break;
 			}
 			end_time = tegrabl_get_timestamp_ms();

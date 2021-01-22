@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2018-2020, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -28,6 +28,7 @@ static char *usb_prefix = "/usb";
 static char *sdcard_prefix = "/sd";
 static char *sdmmc_user_prefix = "/sdmmc_user";
 static char *sdmmc_boot_prefix = "/sdmmc_boot";
+static char *nvme_prefix = "/nvme";
 
 static char *get_prefix(uint32_t device_id)
 {
@@ -46,6 +47,9 @@ static char *get_prefix(uint32_t device_id)
 		break;
 	case TEGRABL_STORAGE_SDMMC_BOOT:
 		prefix = sdmmc_boot_prefix;
+		break;
+	case TEGRABL_STORAGE_NVME:
+		prefix = nvme_prefix;
 		break;
 	default:
 		; /* Do nothing */

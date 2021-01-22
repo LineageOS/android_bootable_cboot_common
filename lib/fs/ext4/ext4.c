@@ -19,6 +19,8 @@
 #include <ext2_dir.h>
 #include <ext2_priv.h>
 #include <ext4_priv.h>
+#include <tegrabl_utils.h>
+#include <tegrabl_malloc.h>
 
 #define LOCAL_TRACE    0
 
@@ -150,7 +152,7 @@ static int get_extents_blk(ext2_t *ext2, struct ext2fs_dinode *inode, uint32_t n
         blk_addr = ((blk_addr << 32U) | extent_idx->leaf_lo) * E2FS_BLOCK_SIZE(ext2->super_blk);
         blk_addr += ext2->fs_offset;
 
-        buf2 = malloc(E2FS_BLOCK_SIZE(ext2->super_blk));
+        buf2 = tegrabl_memalign(SZ_64K, E2FS_BLOCK_SIZE(ext2->super_blk));
         if (buf2 == NULL) {
             err = ERR_NO_MEMORY;
             TRACEF("Failed to allocate memory for super block\n");
@@ -266,7 +268,7 @@ static ssize_t ext4_read_data_from_extent(ext2_t *ext2, struct ext2fs_dinode *in
             blk_addr = ((blk_addr << 32U) | extent_idx->leaf_lo) * E2FS_BLOCK_SIZE(ext2->super_blk);
             blk_addr += ext2->fs_offset;
 
-            buf2 = malloc(E2FS_BLOCK_SIZE(ext2->super_blk));
+            buf2 = tegrabl_memalign(SZ_64K, E2FS_BLOCK_SIZE(ext2->super_blk));
             if (buf2 == NULL) {
                 err = ERR_NO_MEMORY;
                 TRACEF("Failed to allocate memory for super block\n");
@@ -378,6 +380,10 @@ static int lookup_hashed_dir(ext2_t *ext2, struct ext2fs_dinode *dir_inode, cons
             break;
         }
     }
+    /* Look up failed */
+    if (!file_entry_found) {
+        err = ERR_NOT_FOUND;
+    }
 
 fail:
     if (entry) {
@@ -463,7 +469,7 @@ int ext4_dir_lookup(ext2_t *ext2, struct ext2fs_dinode *dir_inode, const char *n
         goto fail;
     }
 
-    buf = malloc(E2FS_BLOCK_SIZE(ext2->super_blk));
+    buf = tegrabl_memalign(SZ_64K, E2FS_BLOCK_SIZE(ext2->super_blk));
     if (buf == NULL) {
         TRACEF("Failed to allocate memory for super block\n");
         err = ERR_NO_MEMORY;
@@ -487,9 +493,11 @@ status_t ext4_mount(struct tegrabl_bdev *dev, uint64_t start_sector, fscookie **
 {
     off_t fs_offset;
     uint32_t gd_size;
+    uint32_t total_gd_size;
     struct ext2_block_group_desc *grp_desc;
     int i;
     int err = 0;
+    void *buf = NULL;
     tegrabl_error_t error;
 
     LTRACEF("dev %p\n", dev);
@@ -506,20 +514,29 @@ status_t ext4_mount(struct tegrabl_bdev *dev, uint64_t start_sector, fscookie **
     }
     ext2->dev = dev;
 
+    buf = tegrabl_memalign(SZ_64K, sizeof(struct ext2fs_super_block));
+    if (buf == NULL) {
+        TRACEF("Failed to allocate memory\n");
+        err = ERR_NO_MEMORY;
+        goto err;
+    }
+    memset(buf, 0, sizeof(struct ext2fs_super_block));
+
     fs_offset = (start_sector * TEGRABL_BLOCKDEV_BLOCK_SIZE(dev));
-    error = tegrabl_blockdev_read(dev, &ext2->super_blk, fs_offset + 1024, sizeof(struct ext2fs_super_block));
+    error = tegrabl_blockdev_read(dev, buf, fs_offset + 1024, sizeof(struct ext2fs_super_block));
     if (error != TEGRABL_NO_ERROR) {
         TRACEF("Failed to read superblock\n");
         err = ERR_GENERIC;
         goto err;
     }
+    memcpy(&ext2->super_blk, buf, sizeof(struct ext2fs_super_block));
 
     ext2_endian_swap_superblock(&ext2->super_blk);
 
     /* see if the superblock is good */
     if (ext2->super_blk.e2fs_magic != E4FS_MAGIC) {
         err = -1;
-        return err;
+        goto err;
     }
 
     /* calculate group count, rounded up */
@@ -542,7 +559,7 @@ status_t ext4_mount(struct tegrabl_bdev *dev, uint64_t start_sector, fscookie **
     if (ext2->super_blk.e2fs_rev > E2FS_REV1) {
         TRACEF("Unsupported revision level\n");
         err = -2;
-        return err;
+        goto err;
     }
 
     /* make sure it doesn't have any ro features we don't support */
@@ -556,7 +573,7 @@ status_t ext4_mount(struct tegrabl_bdev *dev, uint64_t start_sector, fscookie **
               EXT2F_ROCOMPAT_METADATA_CKSUM)) {
         TRACEF("Unsupported ro features, 0x%08x\n", ext2->super_blk.e2fs_features_rocompat);
         err = -3;
-        return err;
+        goto err;
     }
 
     /* read in all the group descriptors */
@@ -565,7 +582,8 @@ status_t ext4_mount(struct tegrabl_bdev *dev, uint64_t start_sector, fscookie **
     } else {
         gd_size = E2FS_GD_SIZE;
     }
-    ext2->grp_desc = malloc(gd_size * ext2->group_count);
+    total_gd_size = gd_size * ext2->group_count;
+    ext2->grp_desc = tegrabl_memalign(SZ_64K, total_gd_size);
     if (ext2->grp_desc == NULL) {
         TRACEF("Failed to allocate memory for group descriptor\n");
         err = ERR_NO_MEMORY;
@@ -575,7 +593,7 @@ status_t ext4_mount(struct tegrabl_bdev *dev, uint64_t start_sector, fscookie **
     error = tegrabl_blockdev_read(ext2->dev,
                                   ext2->grp_desc,
                                   fs_offset + ((E2FS_BLOCK_SIZE(ext2->super_blk) == 4096) ? 4096 : 2048),
-                                  gd_size * ext2->group_count);
+                                  total_gd_size);
     if (error != TEGRABL_NO_ERROR) {
         TRACEF("Failed to read group descriptors\n");
         err = ERR_GENERIC;
@@ -612,10 +630,10 @@ status_t ext4_mount(struct tegrabl_bdev *dev, uint64_t start_sector, fscookie **
 
     /* initialize the block cache */
     ext2->cache = bcache_create(ext2->dev, E2FS_BLOCK_SIZE(ext2->super_blk), 4, fs_offset);
-	if (ext2->cache == NULL) {
-		err = ERR_GENERIC;
-		goto err;
-	}
+    if (ext2->cache == NULL) {
+        err = ERR_GENERIC;
+        goto err;
+    }
 
     /* load the first inode */
     err = ext2_load_inode(ext2, EXT2_ROOTINO, &ext2->root_inode);
@@ -630,6 +648,7 @@ status_t ext4_mount(struct tegrabl_bdev *dev, uint64_t start_sector, fscookie **
 
 err:
     LTRACEF("exiting with err code %d\n", err);
+    free(buf);
     free(ext2);
 
     return err;

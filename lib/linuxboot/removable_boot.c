@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2019, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2019-2020, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -8,7 +8,7 @@
  * is strictly prohibited.
  */
 
-#if defined(CONFIG_ENABLE_USB_SD_BOOT)
+#if defined(CONFIG_ENABLE_USB_SD_BOOT) || defined(CONFIG_ENABLE_NVME_BOOT)
 
 #define MODULE  TEGRABL_ERR_LINUXBOOT
 
@@ -27,7 +27,7 @@
 #if defined(CONFIG_ENABLE_EXTLINUX_BOOT)
 #include <extlinux_boot.h>
 #endif
-#include <usb_sd_boot.h>
+#include <removable_boot.h>
 
 static tegrabl_error_t load_from_partition(struct tegrabl_fm_handle *fm_handle,
 										   void **boot_img_load_addr,
@@ -60,16 +60,20 @@ static tegrabl_error_t load_from_partition(struct tegrabl_fm_handle *fm_handle,
 	}
 
 	/* Validate both the binaries */
-#if defined(CONFIG_OS_IS_L4T)
-	err = tegrabl_validate_binary(TEGRABL_BINARY_KERNEL, BOOT_IMAGE_MAX_SIZE, *boot_img_load_addr);
+#if defined(CONFIG_ENABLE_SECURE_BOOT)
+	err = tegrabl_validate_binary(TEGRABL_BINARY_KERNEL, BOOT_IMAGE_MAX_SIZE, *boot_img_load_addr,
+								  &boot_img_size);
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
-	err = tegrabl_validate_binary(TEGRABL_BINARY_KERNEL_DTB, DTB_MAX_SIZE, *dtb_load_addr);
+	err = tegrabl_validate_binary(TEGRABL_BINARY_KERNEL_DTB, DTB_MAX_SIZE, *dtb_load_addr, NULL);
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
-#endif
+#else
+	/* When BCH is not available, then binary size cannot be known so use buffer size */
+	boot_img_size = BOOT_IMAGE_MAX_SIZE;
+#endif  /* CONFIG_ENABLE_SECURE_BOOT */
 
 	err = tegrabl_verify_boot_img_hdr(*boot_img_load_addr, boot_img_size);
 
@@ -77,36 +81,38 @@ fail:
 	return err;
 }
 
-tegrabl_error_t usb_sd_boot_load_kernel_and_dtb(uint8_t boot_type,
-												void **boot_img_load_addr,
-												void **dtb_load_addr,
-												void **ramdisk_load_addr,
-												uint32_t *kernel_size,
-												uint64_t *ramdisk_size)
+tegrabl_error_t removable_boot_load_kernel_and_dtb(uint8_t boot_type,
+												   uint8_t device_instance,
+												   void **boot_img_load_addr,
+												   void **dtb_load_addr,
+												   void **ramdisk_load_addr,
+												   uint32_t *kernel_size,
+												   uint64_t *ramdisk_size)
 {
 	char *boot_type_str = NULL;
 	uint8_t device_type = 0;
-	uint8_t device_instance = 0;
 	struct tegrabl_device_config_params device_config = {0};
 	struct tegrabl_bdev *bdev = NULL;
 	struct tegrabl_fm_handle *fm_handle = NULL;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	/* Get device type */
-	device_instance = 0;
 	if (boot_type == BOOT_FROM_SD) {
 		boot_type_str = "SD";
 		device_type = TEGRABL_STORAGE_SDCARD;
 	} else if (boot_type == BOOT_FROM_USB) {
 		boot_type_str = "USB";
 		device_type = TEGRABL_STORAGE_USB_MS;
+	} else if (boot_type == BOOT_FROM_NVME) {
+		boot_type_str = "NVME";
+		device_type = TEGRABL_STORAGE_NVME;
 	} else {
 		pr_error("Invalid boot type %u\n", boot_type);
 		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 		goto fail;
 	}
 
-	pr_info("########## %s boot ##########\n", boot_type_str);
+	pr_info("########## %s (%u) boot ##########\n", boot_type_str, device_instance);
 
 	if ((boot_img_load_addr == NULL) || (dtb_load_addr == NULL)) {
 		pr_error("Invalid args passed\n");
@@ -117,7 +123,7 @@ tegrabl_error_t usb_sd_boot_load_kernel_and_dtb(uint8_t boot_type,
 	/* Initialize storage device */
 	err = init_storage_device(&device_config, device_type, device_instance);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_error("Failed to initialize device %u-%u\n", device_type, device_instance);
+		pr_warn("Failed to initialize device %u-%u\n", device_type, device_instance);
 		goto fail;
 	}
 
@@ -147,6 +153,8 @@ tegrabl_error_t usb_sd_boot_load_kernel_and_dtb(uint8_t boot_type,
 		goto fail;  /* There is no fallback for ramdisk, so let caller handle the error */
 	}
 	pr_info("Fallback: Load binaries from partition\n");
+#else
+	goto fallback;
 #endif
 
 fallback:
@@ -170,8 +178,13 @@ fail:
 	}
 	if (bdev != NULL) {
 		tegrabl_blockdev_close(bdev);
+		if (boot_type == BOOT_FROM_NVME) {
+			/* A problem in bdev's ref_count prevents the bdev to close gracefully, close it forcefully */
+			pr_info("%s: force NVME bdev to close !!!\n", __func__);
+			bdev->close(bdev);
+		}
 	}
 	return err;
 }
 
-#endif  /* CONFIG_ENABLE_USB_SD_BOOT */
+#endif  /* CONFIG_ENABLE_USB_SD_BOOT || CONFIG_ENABLE_NVME_BOOT */

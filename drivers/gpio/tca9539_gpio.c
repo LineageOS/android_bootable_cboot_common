@@ -332,7 +332,7 @@ static tegrabl_error_t fetch_driver_phandle_from_dt(struct tca9539_chip *device,
 			err = tegrabl_dt_get_node_with_compatible(fdt, i2c_node, compatible_chips[i],
 													  &node_itr);
 			if (err != TEGRABL_NO_ERROR) {
-				pr_error("%s: failed to get node with compatible %s\n", __func__,
+				pr_warn("%s: failed to get node with compatible %s\n", __func__,
 						 compatible_chips[i]);
 				break;
 			}
