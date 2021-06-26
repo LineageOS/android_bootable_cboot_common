@@ -158,6 +158,7 @@ static tegrabl_error_t get_keys_from_dtb(void)
 	if (err != TEGRABL_NO_ERROR) {
 		pr_warn("Navigation down key not successfully initialised.\n");
 	}
+	err = TEGRABL_NO_ERROR;
 
 	total_keys = pin_count;
 
