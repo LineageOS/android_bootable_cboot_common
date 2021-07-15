@@ -333,13 +333,8 @@ static tegrabl_error_t sdmmc_rpmb_calculate_mac(sdmmc_rpmb_key_t *key,
 	memcpy(out_mac, digest, RPMB_KEY_OR_MAC_SIZE);
 
 fail:
-	if (buf != NULL) {
-		tegrabl_free(buf);
-	}
-
-	if (digest != NULL) {
-		tegrabl_free(digest);
-	}
+	tegrabl_dealloc(TEGRABL_HEAP_DMA, buf);
+	tegrabl_dealloc(TEGRABL_HEAP_DMA, digest);
 
 	if (error != TEGRABL_NO_ERROR) {
 		pr_debug("RPMB MAC calculation failed, error = %08X\n", error);
@@ -686,12 +681,9 @@ static tegrabl_error_t sdmmc_rpmb_test(tegrabl_bdev_t *dev,
 	}
 
 fail:
-	if (read_buf != NULL) {
-		tegrabl_free(read_buf);
-	}
-	if (write_buf != NULL) {
-		tegrabl_free(write_buf);
-	}
+	tegrabl_dealloc(TEGRABL_HEAP_DMA, read_buf);
+	tegrabl_dealloc(TEGRABL_HEAP_DMA, write_buf);
+
 	if (error != TEGRABL_NO_ERROR) {
 		pr_error("RPMB test failed, error = %08X\n", error);
 	} else {
@@ -780,9 +772,7 @@ tegrabl_error_t sdmmc_rpmb_program_key(tegrabl_bdev_t *bdev, void *key_blob,
 
 fail:
 	memset(&key, 0, sizeof(key));
-	if (rpmb_context != NULL) {
-		tegrabl_free(rpmb_context);
-	}
+	tegrabl_dealloc(TEGRABL_HEAP_DMA ,rpmb_context);
 	if (error != TEGRABL_NO_ERROR) {
 		pr_error("RPMB program key, error = %08X\n", error);
 	}

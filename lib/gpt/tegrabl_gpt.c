@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -161,6 +161,16 @@ static tegrabl_error_t tegrabl_gpt_read_validate(tegrabl_bdev_t *dev,
 	pr_trace("Num entries %d, Entry Size %d\n", hdr->num_entries,
 			 hdr->entry_size);
 
+	if (hdr->num_entries > TEGRABL_GPT_MAX_PARTITION_ENTRIES) {
+		error = TEGRABL_ERROR(TEGRABL_ERR_TOO_LARGE, 1);
+		goto fail;
+	}
+
+	if (hdr->entry_size > sizeof(struct tegrabl_gpt_entry)) {
+		error = TEGRABL_ERROR(TEGRABL_ERR_TOO_LARGE, 2);
+		goto fail;
+	}
+
 	table_size = (hdr->num_entries * hdr->entry_size);
 	entries =
 		(struct tegrabl_gpt_entry *)(buffer + TEGRABL_BLOCKDEV_BLOCK_SIZE(dev));
@@ -186,9 +196,7 @@ static tegrabl_error_t tegrabl_gpt_read_validate(tegrabl_bdev_t *dev,
 		*buf = buffer;
 	}
 
-	return error;
 fail:
-	tegrabl_free(buffer);
 	return error;
 }
 
@@ -387,6 +395,6 @@ tegrabl_error_t tegrabl_gpt_publish(tegrabl_bdev_t *dev,
 	*num_partitions = num_entries;
 
 fail:
-	tegrabl_free(buffer);
+	tegrabl_dealloc(TEGRABL_HEAP_DMA, buffer);
 	return error;
 }

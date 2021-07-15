@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2015-2021, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software and related documentation
@@ -177,6 +177,15 @@ static inline uint64_t tegrabl_read_nvg_channel_data(void)
 	asm volatile ("mrs %0, s3_0_c15_c1_3" : "=r"(reg) : : "memory", "cc");
 	return reg;
 }
+
+/**
+ * @brief Infinite loop.
+ */
+static inline void tegrabl_hang(void)
+{
+    asm volatile ("b ." : : : "memory", "cc");
+}
+
 
 #endif /* !defined(_ASSEMBLY_) */
 

@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015 - 2016, NVIDIA Corporation.  All Rights Reserved.
+# Copyright (c) 2015-2021, NVIDIA Corporation.  All Rights Reserved.
 #
 # NVIDIA Corporation and its licensors retain all intellectual property and
 # proprietary rights in and to this software and related documentation.  Any
@@ -14,7 +14,8 @@ MODULE := $(LOCAL_DIR)
 
 GLOBAL_INCLUDES += \
 	$(LOCAL_DIR)/../../include \
-	$(LOCAL_DIR)/../../include/lib
+	$(LOCAL_DIR)/../../include/lib \
+	$(LOCAL_DIR)/../../include/arch
 
 MODULE_SRCS += \
 	$(LOCAL_DIR)/tegrabl_malloc.c
