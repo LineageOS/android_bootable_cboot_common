@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2020, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2015-2021, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -53,35 +53,19 @@ void tegrabl_sort(struct tegrabl_carveout_info *p_carveout, uint32_t array[], in
 }
 
 #if defined(CONFIG_ENABLE_SECURE_BOOT)
-tegrabl_error_t tegrabl_validate_binary(uint32_t bin_type, uint32_t bin_max_size, void *load_addr,
-										uint32_t *bin_len)
+tegrabl_error_t tegrabl_validate_binary(uint32_t bin_type, char *bin_name, uint32_t bin_max_size,
+										void *load_addr, uint32_t *bin_len)
 {
-	char *bin_name;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
 
 	TEGRABL_UNUSED(bin_max_size);
 
-	switch (bin_type) {
-	case TEGRABL_BINARY_KERNEL:
-		bin_name = "kernel";
-		break;
-	case TEGRABL_BINARY_KERNEL_DTB:
-		bin_name = "kernel-dtb";
-		break;
-	case TEGRABL_BINARY_RAMDISK:
-		bin_name = "initrd";
-		break;
-	default:
-		pr_error("Invalid arg, bin type %u\n", bin_type);
-		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
-		goto fail;
-	}
-
 	pr_info("Validate %s ...\n", bin_name);
 
 	if (!tegrabl_do_ratchet_check(bin_type, load_addr)) {
+		err = TEGRABL_ERR_RATCHET;
 		goto fail;
 	}
 

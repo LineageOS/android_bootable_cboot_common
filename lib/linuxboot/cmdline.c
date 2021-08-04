@@ -270,7 +270,6 @@ static struct tegrabl_linuxboot_param common_params[] = {
 	{ "tzram", tegrabl_linuxboot_add_carveout,
 		(void *)((uintptr_t)TEGRABL_LINUXBOOT_CARVEOUT_TOS) },
 	{ "video", tegrabl_linuxboot_add_string, "tegrafb" },
-	{ "no_console_suspend", tegrabl_linuxboot_add_string, "1" },
 	{ "earlycon", tegrabl_linuxboot_add_earlycon, NULL},
 	{ "nvdumper_reserved", tegrabl_linuxboot_add_nvdumper_info, NULL },
 	{ "gpt", tegrabl_linuxboot_add_string, NULL },

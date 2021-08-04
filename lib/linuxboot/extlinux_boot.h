@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2019-2020, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2019-2021, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -36,13 +36,15 @@ struct conf {
  * @param boot_img_load_addr Ptr to the address where boot.img is loaded (output)
  * @param dtb_load_addr Ptr to the address where dtb is loaded (output)
  * @param kernel_size Ptr to the kernel size buffer (output)
+ * @param kernel_from_rootfs flag to indicate if kernel is loaded from rootfs (output)
  *
  * @return TEGRABL_NO_ERROR if success, specific error if fails
  */
 tegrabl_error_t extlinux_boot_load_kernel_and_dtb(struct tegrabl_fm_handle *fm_handle,
 												  void **boot_img_load_addr,
 												  void **dtb_load_addr,
-												  uint32_t *kernel_size);
+												  uint32_t *kernel_size,
+												  bool *kernel_from_rootfs);
 
 /**
  * @brief Load ramdisk through extlinux.conf

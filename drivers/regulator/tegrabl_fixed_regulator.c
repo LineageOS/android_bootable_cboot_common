@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -173,7 +173,7 @@ fail:
 static tegrabl_error_t fixed_regulator_probe(void)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
-	int32_t offset = 0;
+	int32_t offset;
 	int32_t root_depth = 0;
 	int32_t child_depth = 0;
 	int32_t node_depth = 0;
@@ -185,13 +185,15 @@ static tegrabl_error_t fixed_regulator_probe(void)
 	struct fixed_regulator_t *entry = NULL;
 	bool duplicate = false;
 
+	if (node_offset < 0)
+		offset = fdt_next_node(fdt, -1, NULL);
+	else
+		offset = node_offset;
 
-	if (!node_offset) {
+	if (offset < 0) {
 		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 		goto fail;
 	}
-
-	offset = node_offset;
 
 	root_depth = fdt_node_depth(fdt, offset);
 	/* parse nodes only at this depth */
@@ -205,6 +207,18 @@ static tegrabl_error_t fixed_regulator_probe(void)
 
 		if (!offset || (node_depth < child_depth)) {
 			break;
+		}
+
+		/*
+		 * For upstream device-tree there is no 'fixed-regulator'
+		 * node and so if this node is not found then just search
+		 * for any nodes with the 'regulator-fixed' compatible
+		 * string at the root level.
+		 */
+		if (node_offset < 0) {
+			if (fdt_node_check_compatible(fdt, offset,
+						      "regulator-fixed"))
+				continue;
 		}
 
 		phandle = fdt_get_phandle(fdt, offset);

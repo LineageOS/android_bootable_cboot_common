@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -35,7 +35,7 @@
 		((((a) & 0xffUL) << 24) | (((a) & 0xff00UL) << 8) | \
 		(((a) & 0xff0000UL) >> 8) | (((a) & 0xff000000UL) >> 24))
 #define BYTE_SWAP16(a)   \
-		((((a) & 0xffU) << 8) | (((a) & 0xff00U) >> 8))
+		(((((a) & 0xffUL) << 8)) | (((a) & 0xff00UL) >> 8))
 
 /*
  * @brief struct tegrabl_ufs_platform_params - UFS platform specific structure

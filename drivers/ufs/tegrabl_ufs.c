@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2020, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software and related documentation
@@ -1617,6 +1617,7 @@ tegrabl_ufs_set_descriptor(uint8_t *pufsdesc,
 	struct query_req_resp_upiu *pquery_resp_upiu;
 	uint32_t trd_index = 0;
 	uint32_t cmd_desc_index = 0;
+	uint32_t temp;
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 
 	error = tegrabl_ufs_get_tx_rx_descriptor(&trd_index);
@@ -1636,7 +1637,8 @@ tegrabl_ufs_set_descriptor(uint8_t *pufsdesc,
 		UPIU_QUERY_REQUEST_TRANSACTION;
 	pquery_req_upiu->basic_header.query_tm_function =
 		UPIU_QUERY_FUNC_STD_WRITE;
-	pquery_req_upiu->basic_header.data_seg_len_bige = BYTE_SWAP16(pufsdesc[0]);
+	temp = BYTE_SWAP16(pufsdesc[0]);
+	pquery_req_upiu->basic_header.data_seg_len_bige = (uint16_t)(temp);
 	pquery_req_upiu->vtsf.op_code = TSF_OPCODE_WRITE_DESC;
 
 	/* IDN i.e Device OR Configuration OR Unit descriptor .. */
@@ -1647,7 +1649,7 @@ tegrabl_ufs_set_descriptor(uint8_t *pufsdesc,
 	* of 255 bytes as device will return actual descriptor size if lesser.
 	*/
 
-	pquery_req_upiu->vtsf.vdesc_fields.length_bige = BYTE_SWAP16(pufsdesc[0]);
+	pquery_req_upiu->vtsf.vdesc_fields.length_bige = (uint16_t)(temp);
 	memcpy(&(pquery_req_upiu->data_segment[0]), pufsdesc, pufsdesc[0]);
 
 	error = tegrabl_ufs_create_trd(trd_index, cmd_desc_index,
@@ -1698,6 +1700,7 @@ tegrabl_ufs_get_descriptor(uint8_t *pufsdesc,
 	struct query_req_resp_upiu *pquery_resp_upiu;
 	uint32_t trd_index = 0;
 	uint32_t cmd_desc_index = 0;
+	uint32_t temp;
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 
 	error = tegrabl_ufs_get_tx_rx_descriptor(&trd_index);
@@ -1728,7 +1731,8 @@ tegrabl_ufs_get_descriptor(uint8_t *pufsdesc,
 	* of 255 bytes as device will return actual descriptor size if lesser.
 	*/
 
-	pquery_req_upiu->vtsf.vdesc_fields.length_bige = BYTE_SWAP16(255U);
+	temp = BYTE_SWAP16(255U);
+	pquery_req_upiu->vtsf.vdesc_fields.length_bige = (uint16_t)(temp);
 
 	error = tegrabl_ufs_create_trd(trd_index, cmd_desc_index,
 					DATA_DIR_NIL, 1);
@@ -2243,6 +2247,7 @@ tegrabl_error_t tegrabl_ufs_erase(struct tegrabl_bdev *dev, uint8_t lun_id, uint
 	uint32_t cmd_desc_index = 0;
 	uint32_t *buffer = NULL;
 	uint8_t provision_type;
+	uint32_t temp1, temp2;
 	dma_addr_t address;
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 
@@ -2304,8 +2309,10 @@ tegrabl_error_t tegrabl_ufs_erase(struct tegrabl_bdev *dev, uint8_t lun_id, uint
 		}
 		memset(buffer, 0, BLOCK_SIZE);
 		/* One Block Descriptor */
-		*((uint16_t *)buffer + 0) = BYTE_SWAP16(0x16U);
-		*((uint16_t *)buffer + 1) = BYTE_SWAP16(0x10U);
+		temp1 = BYTE_SWAP16(0x16U);
+		temp2 = BYTE_SWAP16(0x10U);
+		*((uint16_t *)buffer + 0) = (uint16_t)(temp1);
+		*((uint16_t *)buffer + 1) = (uint16_t)(temp2);
 		buffer[3] = BYTE_SWAP32(start_block);
 		buffer[4] = BYTE_SWAP32(blocks);
 		address = tegrabl_dma_map_buffer(TEGRABL_MODULE_UFS, 0,

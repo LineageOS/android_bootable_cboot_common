@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -31,7 +31,7 @@ extern "C"
 /* macro tegrabl eeprom device */
 typedef uint32_t tegrabl_eeprom_device_t;
 #define TEGRABL_EEPROM_CAM 0
-#define TEGRABL_EEPROM_CVM 1
+#define TEGRABL_EEPROM_MODULE 1
 #define TEGRABL_EEPROM_GENERIC 2
 #define TEGRABL_EEPROM_DEVICE_MAX 3
 
@@ -42,6 +42,13 @@ struct tegrabl_eeprom_ops_info {
 	const char *name;
 	tegrabl_error_t (*ops) (struct tegrabl_eeprom *, const void *in_data);
 };
+
+/**
+ * @brief Initializes the EEPROM manager.
+ *
+ * @return TEGRABL_NO_ERROR if any EEPROMs can be found
+ */
+tegrabl_error_t tegrabl_eeprom_manager_init(void);
 
 /**
  * @brief Gets EEPROM data with name provided. Will initialize manager first

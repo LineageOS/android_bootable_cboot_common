@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - 2019, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2015 - 2021, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -40,15 +40,16 @@ struct tegrabl_kernel_bootctrl {
 	uint32_t version;
 	uint32_t crc32;
 };
+
+extern struct tegrabl_kernel_bootctrl dummy_kernel_bootctrl;
+extern void tegrabl_get_kernel_bootctrl(
+		struct tegrabl_kernel_bootctrl *control);
 #endif
 
 struct tegrabl_kernel_bin {
 	tegrabl_binary_type_t bin_type;
 	bool load_from_storage;
 	struct tegrabl_binary_info binary;
-#if defined(CONFIG_ENABLE_L4T_RECOVERY)
-	struct tegrabl_kernel_bootctrl bootctrl;
-#endif
 };
 
 struct tegrabl_kernel_load_callbacks {

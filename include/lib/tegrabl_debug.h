@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All Rights Reserved.
+ * Copyright (c) 2015-2021, NVIDIA CORPORATION.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -113,7 +113,7 @@ typedef uint32_t tegrabl_loglevel_t;
 
 #define pr_error(fmt, ...)		tegrabl_log_printf(TEGRABL_LOG_ERROR, "E> " fmt, ## __VA_ARGS__)
 
-#define pr_warn(fmt, ...)		tegrabl_log_printf(TEGRABL_LOG_INFO, "W> " fmt, ## __VA_ARGS__)
+#define pr_warn(fmt, ...)		tegrabl_log_printf(TEGRABL_LOG_WARN, "W> " fmt, ## __VA_ARGS__)
 
 #define pr_info(fmt, ...)		tegrabl_log_printf(TEGRABL_LOG_INFO, "I> " fmt, ## __VA_ARGS__)
 

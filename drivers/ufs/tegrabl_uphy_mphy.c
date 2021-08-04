@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2020 NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software and related documentation
@@ -125,7 +125,7 @@ tegrabl_error_t tegrabl_ufs_link_mphy_setup(void)
 	/*Update HS_G1 Sync Length MPHY_RX_APB_CAPABILITY_88_8B_0*/
 	reg_data = NV_READ32(NV_ADDRESS_MAP_MPHY_L0_BASE +
 			MPHY_RX_APB_CAPABILITY_88_8B_0);
-	reg_data &= ~RX_HS_G1_SYNC_LENGTH_CAPABILITY(~0);
+	reg_data &= ~RX_HS_G1_SYNC_LENGTH_CAPABILITY(~0UL);
 	reg_data |= RX_HS_G1_SYNC_LENGTH_CAPABILITY(RX_HS_SYNC_LENGTH);
 
 	NV_WRITE32(NV_ADDRESS_MAP_MPHY_L0_BASE +

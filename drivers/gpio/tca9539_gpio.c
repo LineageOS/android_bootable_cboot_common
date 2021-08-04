@@ -1,7 +1,7 @@
 /*
  * TCA9539 16-bit I2C I/O Expander Driver
  *
- * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -188,6 +188,8 @@ static tegrabl_error_t tca9539_gpio_write(uint32_t gpio_num,
 	ret = tegrabl_i2c_dev_write(dev->hi2cdev, &val, reg, sizeof(val));
 	if (ret != TEGRABL_NO_ERROR) {
 		pr_error("%s: failed to write 0x%02x\n", __func__, reg);
+	} else {
+		dev->cache.output[gpio_num / TCA9539_BANK_SIZE] = val;
 	}
 
 	return ret;
@@ -236,6 +238,8 @@ static tegrabl_error_t tca9539_gpio_config(uint32_t gpio_num,
 	ret = tegrabl_i2c_dev_write(dev->hi2cdev, &val, reg, sizeof(val));
 	if (ret != TEGRABL_NO_ERROR) {
 		pr_error("%s: failed to write 0x%02x\n", __func__, reg);
+	} else {
+		dev->cache.config[gpio_num / TCA9539_BANK_SIZE] = val;
 	}
 
 	return ret;
@@ -394,7 +398,6 @@ tegrabl_error_t tegrabl_tca9539_init(void)
 		driver->name = TCA9539_GPIO_DRIVER_NAME;
 		driver->phandle = -1;
 		driver->ops = &ops;
-
 #if defined(CONFIG_ENABLE_GPIO_DT_BASED)
 		/* fetch driver phandle from dt, error in this is not fatal */
 		ret = fetch_driver_phandle_from_dt(device, driver);

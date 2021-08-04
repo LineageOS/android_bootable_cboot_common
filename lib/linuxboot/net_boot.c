@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -282,7 +282,11 @@ static tegrabl_error_t net_boot_stack_init(void)
 	ip_addr = (uint8_t *)(&(netif.ip_addr.addr));
 	pr_info("Our IP: %d.%d.%d.%d\n", ip_addr[0], ip_addr[1], ip_addr[2], ip_addr[3]);
 
+	return err;
+
 fail:
+	tegrabl_eqos_deinit();
+	netif_remove(&netif);
 	return err;
 }
 
@@ -391,12 +395,13 @@ tegrabl_error_t net_boot_load_kernel_and_dtb(void **boot_img_load_addr, void **d
 
 	/* Validate downloaded binaries */
 #if defined(CONFIG_ENABLE_SECURE_BOOT)
-	err = tegrabl_validate_binary(TEGRABL_BINARY_KERNEL, BOOT_IMAGE_MAX_SIZE, *boot_img_load_addr,
+	err = tegrabl_validate_binary(TEGRABL_BINARY_KERNEL, "kernel", BOOT_IMAGE_MAX_SIZE, *boot_img_load_addr,
 								  &boot_img_size);
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
 	}
-	err = tegrabl_validate_binary(TEGRABL_BINARY_KERNEL_DTB, DTB_MAX_SIZE, *dtb_load_addr, NULL);
+	err = tegrabl_validate_binary(TEGRABL_BINARY_KERNEL_DTB, "kernel-dtb", DTB_MAX_SIZE, *dtb_load_addr,
+								  NULL);
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
 	}

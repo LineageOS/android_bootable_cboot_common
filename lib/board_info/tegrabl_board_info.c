@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2021, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -85,6 +85,10 @@ static void tegrabl_board_info_init(void)
 	eeprom = board_has_eeprom(TEGRABL_DT_BL);
 	pr_debug("board has eeprom:%d\n", eeprom);
 #if defined(CONFIG_ENABLE_EEPROM)
+	if (!eeprom) {
+		eeprom = eeprom_detect();
+	}
+
 	if (eeprom) {
 		ops = eeprom_get_ops();	/* Retrieve info from EEPROM */
 	}

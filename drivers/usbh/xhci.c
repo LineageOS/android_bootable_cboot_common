@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2018-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -548,7 +548,7 @@ static tegrabl_error_t xusbh_get_slot_id(struct xusb_host_context *ctx)
 
 	xusbh_xhci_writel(DB(0), 0);
 	pr_debug("Ding Dong!  @%08x  0x%x\n", DB(0), xusbh_xhci_readl(DB(0)));
-	err = xusbh_wait_irq(ctx, 100);
+	err = xusbh_wait_irq(ctx, 300);
 	set_enq_ptr(&ctx->cmd_ring);
 	return err;
 }
@@ -730,7 +730,7 @@ static tegrabl_error_t xhci_ring_doorbell_wait(struct xusb_host_context *ctx,
 	xusbh_xhci_writel(DB(ctx->slot_id), DB_VALUE(ep_index, 0));
 	pr_debug("Ding Dong!!!  Ring EP%d doorbell (%x)\n", ep_index, xusbh_xhci_readl(DB(ctx->slot_id)));
 
-	err = xusbh_wait_irq(ctx, 1000);
+	err = xusbh_wait_irq(ctx, 3000);
 	return err;
 }
 
@@ -924,7 +924,7 @@ static tegrabl_error_t xhci_address_device(struct xusb_host_context *ctx, bool b
 
 	xusbh_xhci_writel(DB(0), 0);
 	pr_debug("Ding Dong!  @%08x  0x%x\n", DB(0), xusbh_xhci_readl(DB(0)));
-	err = xusbh_wait_irq(ctx, 100);
+	err = xusbh_wait_irq(ctx, 300);
 /*
 	xhci_print_slot_ctx(ctx, 0);
 	xhci_print_ep_ctx(ctx, 0, 3, 0);
@@ -990,7 +990,7 @@ static tegrabl_error_t xhci_endpoint_config(
 
 	xusbh_xhci_writel(DB(0), 0);
 	pr_debug("Ding Dong!  @%08x  0x%x\n", DB(0), xusbh_xhci_readl(DB(0)));
-	err = xusbh_wait_irq(ctx, 100);
+	err = xusbh_wait_irq(ctx, 300);
 	tegrabl_dma_unmap_buffer(TEGRABL_MODULE_XUSB_HOST, 0, (void *)ctx->curr_dev_priv->dev_context, sizeof(struct EP) * 10,
 							 TEGRABL_DMA_FROM_DEVICE);
 /*
@@ -1774,7 +1774,6 @@ tegrabl_error_t tegrabl_xhci_xfer_data(struct xusb_host_context *ctx,
 		}
 		trb->data_buffer_lo = U64_TO_U32_LO(dma);
 		trb->data_buffer_hi = U64_TO_U32_HI(dma);
-		dma += transfer_size;
 		trb->trb_tfr_len = transfer_size;
 		trb->td_size = (total_packets - ((size + transfer_size) / ctx->curr_dev_priv->enum_dev.ep[dir].packet_size));
 		if (count != (need_trbs - 1)) {

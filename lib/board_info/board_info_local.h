@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -36,5 +36,12 @@ struct board_info_ops *eeprom_get_ops(void);
  * @return true if it is valid else false
  */
 bool is_valid_mac_addr(uint8_t *mac_addr);
+
+/*
+ * Check if the board contains any EEPROMs.
+ *
+ * return true if an EEPROM has been detected, false otherwise
+ */
+bool eeprom_detect(void);
 
 #endif

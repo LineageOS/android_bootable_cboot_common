@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -318,9 +318,10 @@ typedef uint32_t tegrabl_err_reason_t;
 #define TEGRABL_ERR_CBO 0x7DU
 #define TEGRABL_ERR_SHELL 0x7EU
 #define TEGRABL_ERR_PCIE 0x7FU
+#define TEGRABL_ERR_NVME 0x80U
 
 /**** This should be last ****/
-#define TEGRABL_ERR_MODULE_END 0x80U
+#define TEGRABL_ERR_MODULE_END 0x81U
 #define TEGRABL_ERR_MODULE_MAX 0xffU
 
 typedef uint32_t tegrabl_err_module_t;

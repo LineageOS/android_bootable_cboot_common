@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2015-2021, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -33,7 +33,7 @@ static bool eeprom_manager_initialized;
 static struct tegrabl_eeprom eeproms[TEGRABL_EEPROM_MAX_NUM];
 
 #define ALIAS_NAME_LEN 50
-#define EEPROM_NAME_LEN 5
+#define EEPROM_NAME_LEN 10
 #define BUS_NODE_NAME 100
 
 #if defined(CONFIG_ENABLE_GPIO)
@@ -139,7 +139,7 @@ static struct tegrabl_eeprom_ops_info eeprom_ops[TEGRABL_EEPROM_DEVICE_MAX] = {
 	},
 #endif
 	{
-		.name = "cvm",
+		.name = "module",
 		.ops = eeprom_read,
 	},
 	{
@@ -339,15 +339,8 @@ static tegrabl_error_t tegrabl_read_muxed_eeprom(uint8_t old_count,
 	return TEGRABL_NO_ERROR;
 }
 
-static tegrabl_error_t tegrabl_eeprom_manager_init(void)
+static tegrabl_error_t tegrabl_eeprom_manager_init_legacy(void)
 {
-
-
-	if (eeprom_manager_initialized) {
-		/* return early */
-		return TEGRABL_NO_ERROR;
-	}
-
 	void *fdt = NULL;
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 
@@ -379,7 +372,7 @@ static tegrabl_error_t tegrabl_eeprom_manager_init(void)
 		 * should return TEGRABL_ERROR(TEGRABL_ERR_NOT_FOUND, 0);
 		 */
 		pr_info("Loading CVM eeprom only\n");
-		eeproms[count].name = "cvm";
+		eeproms[count].name = "module";
 		eeproms[count].size = EEPROM_SZ;
 		eeproms[count].instance = TEGRABL_INSTANCE_I2C8;
 		eeproms[count].crc_valid = true;
@@ -401,8 +394,7 @@ static tegrabl_error_t tegrabl_eeprom_manager_init(void)
 
 		eeproms[count].data_valid = true;
 		count++;
-		eeprom_manager_initialized = true;
-		return error;
+		return TEGRABL_NO_ERROR;
 	}
 
 	/* Get the data size */
@@ -442,6 +434,11 @@ static tegrabl_error_t tegrabl_eeprom_manager_init(void)
 					pr_error("%s: Malloc for eeprom name failed\n", __func__);
 					return TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
 				}
+
+				/* for backwards-compatibility with old device trees */
+				if (strcmp(node_value, "cvm") == 0)
+					node_value = "module";
+
 				tegrabl_snprintf(eeproms[count].name, EEPROM_NAME_LEN, "%s",
 								 (char *)node_value);
 			} else {
@@ -492,6 +489,155 @@ static tegrabl_error_t tegrabl_eeprom_manager_init(void)
 			count = new_count;
 		}
 	}
+
+	return TEGRABL_NO_ERROR;
+}
+
+tegrabl_error_t tegrabl_eeprom_manager_init(void)
+{
+	int parent, len, err, node = -1;
+	uint32_t address, size;
+	tegrabl_error_t error;
+	const char *name;
+	char path[1024];
+	uintptr_t base;
+	void *fdt;
+
+	if (eeprom_manager_initialized) {
+		/* return early */
+		return TEGRABL_NO_ERROR;
+	}
+
+	error = tegrabl_dt_get_fdt_handle(TEGRABL_DT_BL, &fdt);
+	if (error != TEGRABL_NO_ERROR) {
+		return error;
+	}
+
+	/* reset the global count */
+	count = 0;
+
+	while (count < TEGRABL_EEPROM_MAX_NUM) {
+		node = fdt_next_node(fdt, node, NULL);
+		if (node < 0) {
+			if (node == -FDT_ERR_NOTFOUND)
+				break;
+
+			return node;
+		}
+
+		name = fdt_get_name(fdt, node, &len);
+		if (!name) {
+			pr_error("failed to get name for node %d\n", node);
+			continue;
+		}
+
+		if (strncmp(name, "eeprom", 6) != 0) {
+			continue;
+		}
+
+		pr_debug("  @%08x: %s (%d)\n", node, name, len);
+
+		err = fdt_get_path(fdt, node, path, sizeof(path));
+		if (err < 0) {
+			pr_error("failed to get path for node %d: %d\n", node, err);
+			continue;
+		}
+
+		pr_debug("    path: %s (%d)\n", path, err);
+
+		error = tegrabl_dt_get_prop_string(fdt, node, "label", &name);
+		if (error != TEGRABL_NO_ERROR) {
+			pr_error("failed to read label property for node %d: %d\n", node, error);
+			continue;
+		}
+
+		pr_debug("    label: %s\n", name);
+
+		error = tegrabl_dt_get_prop_u32(fdt, node, "reg", &address);
+		if (error != TEGRABL_NO_ERROR) {
+			pr_error("failed to read reg property for node %d: %d\n", node, error);
+			continue;
+		}
+
+		error = tegrabl_dt_get_prop_u32(fdt, node, "size", &size);
+		if (error != TEGRABL_NO_ERROR) {
+			pr_error("failed to read size property for node %d: %d\n", node, error);
+			continue;
+		}
+
+		pr_debug("    address: %02x\n", address);
+		pr_debug("    size: %u\n", size);
+
+		parent = fdt_parent_offset(fdt, node);
+		if (parent < 0) {
+			pr_error("failed to get parent for node %s: %d\n", name, parent);
+			continue;
+		}
+
+		error = tegrabl_dt_read_reg_by_index(fdt, parent, 0, &base, NULL);
+		if (error != TEGRABL_NO_ERROR) {
+			pr_error("failed to get registers for %s: %d\n", name, error);
+			continue;
+		}
+
+		pr_debug("    i2c: @%lx\n", base);
+
+		eeproms[count].size = MAX(size, EEPROM_SZ);
+		eeproms[count].name = strdup(name);
+
+		eeproms[count].data = tegrabl_malloc(eeproms[count].size);
+		if (!eeproms[count].data) {
+			pr_error("failed to allocate memory for EEPROM data\n");
+			continue;
+		}
+
+		error = tegrabl_i2c_lookup(base, &eeproms[count].instance);
+		if (error != TEGRABL_NO_ERROR) {
+			pr_error("no I2C instance found for base %lx\n", base);
+			continue;
+		}
+
+		eeproms[count].crc_valid = false;
+		eeproms[count].data_valid = false;
+		eeproms[count].slave_addr = address << 1;
+
+		error = eeprom_general_read(&eeproms[count], &node);
+		if (error != TEGRABL_NO_ERROR) {
+			tegrabl_free(eeproms[count].data);
+			continue;
+		}
+
+		if (!eeproms[count].data_valid) {
+			tegrabl_free(eeproms[count].data);
+			continue;
+		}
+
+		eeproms[count].bus_node_name = tegrabl_malloc(BUS_NODE_NAME);
+		if (!eeproms[count].bus_node_name) {
+			pr_error("failed to allocate memory for EEPROM bus node name\n");
+			tegrabl_free(eeproms[count].data);
+			continue;
+		}
+
+		err = fdt_get_path(fdt, parent, eeproms[count].bus_node_name, BUS_NODE_NAME);
+		if (err < 0) {
+			tegrabl_free(eeproms[count].data);
+			continue;
+		}
+
+		pr_info("EEPROM: %s: %s (%u bytes)\n", path, name, size);
+
+		count++;
+	}
+
+	if (count == 0) {
+		error = tegrabl_eeprom_manager_init_legacy();
+		if (error != TEGRABL_NO_ERROR) {
+			pr_error("failed to initialize legacy EEPROM support\n");
+			return error;
+		}
+	}
+
 	eeprom_manager_initialized = true;
 	return TEGRABL_NO_ERROR;
 }
@@ -554,6 +700,7 @@ tegrabl_error_t tegrabl_eeprom_manager_get_eeprom_by_name(const char *name,
 		if (eeproms[index].name == NULL) {
 			continue;
 		}
+
 		if (!strcmp(eeproms[index].name, (const char *)name)) {
 			error = tegrabl_eeprom_manager_get_eeprom_by_id(index, eeprom);
 			return error;

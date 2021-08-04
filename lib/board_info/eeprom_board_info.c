@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2021, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -30,7 +30,7 @@ static tegrabl_error_t eeprom_get_serial_no(void *param)
 
 	TEGRABL_ASSERT(SNO_SIZE >= sizeof(eeprom->serial_no));
 
-	err = tegrabl_eeprom_manager_get_eeprom_by_name("cvm", &cvm_eeprom);
+	err = tegrabl_eeprom_manager_get_eeprom_by_name("module", &cvm_eeprom);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_error("Error %u: Failed to read CVM EEPROM\n", err);
 		return err;
@@ -106,7 +106,7 @@ static tegrabl_error_t eeprom_get_mac_addr(void *param)
 	char *string = (char *)mac_addr_info->mac_string;
 	uint8_t *bytes = (uint8_t *)mac_addr_info->mac_byte_array;
 
-	err = tegrabl_eeprom_manager_get_eeprom_by_name("cvm", &cvm_eeprom);
+	err = tegrabl_eeprom_manager_get_eeprom_by_name("module", &cvm_eeprom);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_error("Error %u: Failed to get CVM EEPROM contents\n", err);
 		pr_error("Booting w/o MAC ddresses for WIFI, Bluetooth & Ethernet\n");
@@ -358,4 +358,9 @@ static struct board_info_ops eeprom_ops = {
 struct board_info_ops *eeprom_get_ops(void)
 {
 	return &eeprom_ops;
+}
+
+bool eeprom_detect(void)
+{
+	return tegrabl_eeprom_manager_init() == TEGRABL_NO_ERROR;
 }

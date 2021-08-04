@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2020, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2016-2021, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -29,15 +29,21 @@
 #define	BOOT_CHAIN_VERSION_REDUNDANCY 3U
 	/* add rootfs AB info, max BL retry count to SMD */
 #define BOOT_CHAIN_VERSION_ROOTFS_AB 4U
+	/* add rootfs AB max retry count, unify RF/BL AB */
+#define BOOT_CHAIN_VERSION_UNIFY_RF_BL_AB 5U
 	/* current version */
-#define	BOOT_CHAIN_VERSION BOOT_CHAIN_VERSION_ROOTFS_AB
+#define	BOOT_CHAIN_VERSION BOOT_CHAIN_VERSION_UNIFY_RF_BL_AB
+
+#define BOOT_CHAIN_VERSION_MASK 0xFFU
+#define BOOT_CHAIN_VERSION_GET(version) \
+			((version) & BOOT_CHAIN_VERSION_MASK)
 
 /* SMD enhancement features (upper 8 bits of smd version field) */
-#define BOOT_CHAIN_VERSION_MASK 0xFFU
 #define BOOTCTRL_FEATURE_MASK (0xFFUL << 8)
 #define BOOTCTRL_REDUNDANCY_ENABLE (0x01UL << 8)
 #define BOOTCTRL_REDUNDANCY_USER (0x01UL << 9)
 #define BOOTCTRL_ROOTFS_AB (0x01UL << 10)
+#define BOOTCTRL_UNIFY_RF_BL_AB (0x01UL << 13)
 
 #define BOOTCTRL_SUPPORT_REDUNDANCY(version) \
 			((version) & BOOTCTRL_REDUNDANCY_ENABLE)
@@ -45,6 +51,15 @@
 			((version) & BOOTCTRL_REDUNDANCY_USER)
 #define BOOTCTRL_SUPPORT_ROOTFS_AB(version) \
 			((version) & BOOTCTRL_ROOTFS_AB)
+#define BOOTCTRL_SUPPORT_UNIFIED_AB(version) \
+			((version) &  BOOTCTRL_UNIFY_RF_BL_AB)
+#define BOOTCTRL_FEATURE_UNIFIED_AB(version) \
+			(BOOT_CHAIN_VERSION_GET(version) >= \
+			 BOOT_CHAIN_VERSION_UNIFY_RF_BL_AB)
+#define BOOTCTRL_IS_UNIFIED_AB_ENABLED(version) \
+			((BOOTCTRL_SUPPORT_UNIFIED_AB(version)) && \
+			 (BOOTCTRL_SUPPORT_ROOTFS_AB(version)) && \
+			 (BOOTCTRL_FEATURE_UNIFIED_AB(version)))
 
 #define SLOT_RETRY_COUNT_DEFAULT 7U
 #define SLOT_PRIORITY_DEFAULT 15U
@@ -65,13 +80,17 @@ typedef uint32_t boot_slot_id_t;
 #define ROOTFS_A 0U
 #define ROOTFS_B 1U
 #define ROOTFS_INVALID 3U
-#define MAX_ROOTFS_AB_RETRY_COUNT 3U
+#define ROOTFS_RETRY_COUNT_DEFAULT 3U
+#define ROOTFS_AB_ROTATE_COUNT 4U
 #define MAX_LOGS 16U
 
 #define ROOTFS_RETRY_COUNT_SHIFT              0
 #define ROOTFS_RETRY_COUNT_MASK               (3 << ROOTFS_RETRY_COUNT_SHIFT)
 #define ROOTFS_CURRENT_SHIFT                  2
 #define ROOTFS_CURRENT_MASK                   (3 << ROOTFS_CURRENT_SHIFT)
+
+#define ROOTFS_MAX_RETRY_COUNT_SHIFT          0
+#define ROOTFS_MAX_RETRY_COUNT_MASK           (3 << ROOTFS_MAX_RETRY_COUNT_SHIFT)
 
 #define ROOTFS_STATUS_NORMAL                  0
 #define ROOTFS_STATUS_IN_PROGRESS             1
@@ -94,6 +113,12 @@ typedef uint32_t boot_slot_id_t;
 #define SET_ROOTFS_RETRY_COUNT(cnt, rf_sel) \
 	(((rf_sel) & ~ROOTFS_RETRY_COUNT_MASK) | \
 	 ((cnt) << ROOTFS_RETRY_COUNT_SHIFT))
+
+#define SET_MAX_ROOTFS_RETRY_COUNT(cnt, rf_misc) \
+	(((rf_misc) & ~ROOTFS_MAX_RETRY_COUNT_MASK) | \
+	 ((cnt) << ROOTFS_MAX_RETRY_COUNT_SHIFT))
+#define GET_MAX_ROOTFS_RETRY_COUNT(rf_misc) \
+	(((rf_misc) & ROOTFS_MAX_RETRY_COUNT_MASK) >> ROOTFS_MAX_RETRY_COUNT_SHIFT)
 
 #define ROOTFS_SELECT(smd_v2) \
 	((smd_v2)->smd_ext.features.rootfs_select)
@@ -147,6 +172,39 @@ typedef uint32_t boot_slot_id_t;
 
 #define FROM_SMD_TO_REG 0U
 #define FROM_REG_TO_SMD 1U
+
+/*
+ * ROOTFS A/B Scratch Register
+ * 00:15 magic 'FACE'
+ * 16:19 rotate count
+ * 20:21 rootfs A/B retry count
+ * 22:31 reserved
+ */
+#define ROOTFS_AB_REG_MAGIC_MASK 0x0000FFFFU
+#define ROOTFS_AB_REG_MAGIC 0xFACEUL	/* 'FACE' */
+
+#define ROOTFS_AB_REG_MAGIC_SET(reg) \
+	(((reg) & ~ROOTFS_AB_REG_MAGIC_MASK) | ROOTFS_AB_REG_MAGIC)
+#define ROOTFS_AB_REG_MAGIC_GET(reg) ((reg) & ROOTFS_AB_REG_MAGIC_MASK)
+
+#define ROOTFS_AB_REG_ROTATE_SHIFT 16
+#define ROOTFS_AB_REG_ROTATE_MASK (0x0FUL << ROOTFS_AB_REG_ROTATE_SHIFT)
+
+#define ROOTFS_AB_REG_ROTATE_COUNT_SET(count, reg) \
+	(((reg) & ~ROOTFS_AB_REG_ROTATE_MASK) | \
+	 (((count) & 0x0FUL) << ROOTFS_AB_REG_ROTATE_SHIFT))
+#define ROOTFS_AB_REG_ROTATE_COUNT_GET(reg) \
+	(((reg) & ROOTFS_AB_REG_ROTATE_MASK) >> ROOTFS_AB_REG_ROTATE_SHIFT)
+
+#define ROOTFS_AB_REG_RETRY_SHIFT 20
+#define ROOTFS_AB_REG_RETRY_MASK (0x03UL << ROOTFS_AB_REG_RETRY_SHIFT)
+
+#define ROOTFS_AB_REG_RETRY_COUNT_SET(count, reg) \
+	(((reg) & ~ROOTFS_AB_REG_RETRY_MASK) | \
+	(((count) & 0x03UL) << ROOTFS_AB_REG_RETRY_SHIFT))
+#define ROOTFS_AB_REG_RETRY_COUNT_GET(reg) \
+	(((reg) & ROOTFS_AB_REG_RETRY_MASK) >> ROOTFS_AB_REG_RETRY_SHIFT)
+
 
 TEGRABL_PACKED(
 struct boot_slot_info {
@@ -241,7 +299,20 @@ struct slot_meta_data_ext {
 		 * range [4:7]: RESERVED
 		 */
 		uint8_t rootfs_update_mode[MAX_SLOTS];
-		uint8_t reserved[3];
+
+		/*
+		 * rootfs misc info:
+		 * range [0:1]: max rootfs A/B retry count:
+		 * 00: Invalid
+		 * 01: 1
+		 * 10: 2
+		 * 11: 3
+		 *
+		 * range [2:7]: RESERVED
+		 */
+		uint8_t rootfs_misc_info;
+
+		uint8_t reserved[2];
 	} features;
 
 	uint8_t max_bl_retry_count;
@@ -306,6 +377,17 @@ tegrabl_error_t tegrabl_a_b_get_active_slot(void *smd, uint32_t *active_slot);
 void tegrabl_a_b_set_retry_count_reg(uint32_t slot, uint8_t retry_count);
 
 /**
+ * @brief Save rootfs retry_count to smd buffer
+ *
+ * @param smd the memory address of smd buffer.
+ * @param rootfs_retry_count rootfs retry count to be set to smd
+ *
+ * @return TEGRABL_NO_ERROR if successful, otherwise an appropriate
+ *		   error value.
+ */
+tegrabl_error_t tegrabl_a_b_set_rootfs_retry_count(void *smd,
+						    uint8_t rootfs_retry_count);
+/**
  * @brief Copy retry count between SMD buffer and SR
  *
  * @param smd smd load address
@@ -333,6 +415,14 @@ void tegrabl_a_b_save_boot_slot_reg(void *smd, uint32_t slot);
  *		   error value.
  */
 tegrabl_error_t tegrabl_a_b_init_boot_slot_reg(void *smd);
+
+/**
+ * @brief Init rootfs slot reg if invalid
+ *
+ * @return TEGRABL_NO_ERROR if successful, otherwise an appropriate
+ *		   error value.
+ */
+tegrabl_error_t tegrabl_a_b_init_rootfs_slot_reg(void *smd);
 
 /**
  * @brief Update retry count if successful state is not true

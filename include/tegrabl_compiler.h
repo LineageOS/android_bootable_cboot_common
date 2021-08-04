@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software and related documentation
@@ -41,7 +41,7 @@
 #define clz							__builtin_clz
 #endif
 
-#if !defined(__cplusplus)
+#if !defined(__cplusplus) && !defined(NV_NO_STATIC_ASSERT)
 #define TEGRABL_COMPILE_ASSERT(expr, message) _Static_assert((expr), message)
 #endif
 

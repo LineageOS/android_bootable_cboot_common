@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -439,6 +439,23 @@ fail:
 	return error;
 }
 
+tegrabl_error_t tegrabl_i2c_lookup(uintptr_t base, tegrabl_instance_i2c_t *instance)
+{
+	struct i2c_soc_info *info;
+	uint32_t num = 0, i;
+
+	i2c_get_soc_info(&info, &num);
+
+	for (i = 0; i < num; i++) {
+		if (info[i].base_addr == base) {
+			*instance = i;
+			return TEGRABL_NO_ERROR;
+		}
+	}
+
+	return TEGRABL_ERR_NOT_FOUND;
+}
+
 struct tegrabl_i2c *tegrabl_i2c_open(tegrabl_instance_i2c_t instance)
 {
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
@@ -602,8 +619,7 @@ tegrabl_error_t tegrabl_i2c_read(struct tegrabl_i2c *hi2c, uint16_t slave_addr,
 			goto fail;
 		}
 
-		data = 0;
-		bytes = MIN(len, sizeof(uint32_t));
+		bytes = MIN(len - i, sizeof(uint32_t));
 		data = i2c_readl(hi2c, I2C_I2C_RX_FIFO_0);
 		memcpy(&buffer[i], &data, bytes);
 		i += bytes;

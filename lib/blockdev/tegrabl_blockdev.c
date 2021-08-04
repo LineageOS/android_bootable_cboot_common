@@ -22,7 +22,7 @@
  */
 
 /*
- * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -367,12 +367,14 @@ static tegrabl_error_t bdev_dec_ref(tegrabl_bdev_t *dev)
 	pr_debug("%d: oldval = %d\n", dev->device_id, oldval);
 	if (oldval == 1UL) {
 		/* last ref, remove it */
-		if (list_in_list(&dev->node)) {
+		if (!list_in_list(&dev->node)) {
+			/* if the dev is not in the list, exit as error */
 			error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 4);
 			goto fail;
 		}
 
 		pr_debug("last ref, removing (%d)\n", dev->device_id);
+		list_delete(&dev->node);
 
 		/* call the close hook if it exists */
 		if (dev->close != NULL)
@@ -881,6 +883,7 @@ const char *tegrabl_blockdev_get_name(tegrabl_storage_type_t type)
 		[TEGRABL_STORAGE_UFS] = "UFS",
 		[TEGRABL_STORAGE_UFS_USER] = "UFS_USER",
 		[TEGRABL_STORAGE_UFS_RPMB] = "UFS_RPMB",
+		[TEGRABL_STORAGE_NVME] = "NVME",
 	};
 
 	TEGRABL_COMPILE_ASSERT(ARRAY_SIZE(storage_name) == TEGRABL_STORAGE_MAX, "missing storage-type in array");

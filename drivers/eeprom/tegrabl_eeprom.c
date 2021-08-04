@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -113,7 +113,7 @@ tegrabl_error_t tegrabl_eeprom_read(struct tegrabl_eeprom *eeprom)
 	 * Only applicable to CVM as it stores NVCB (nvidia configuration block)
 	 * and we are only concern about the version of that EEPROM and its layout
 	 */
-	if ((eeprom->name != NULL) && (strcmp(eeprom->name, "cvm") == 0)) {
+	if ((eeprom->name != NULL) && (strcmp(eeprom->name, "module") == 0)) {
 		error = verify_cvm_eeprom_version(eeprom);
 		if (error != TEGRABL_NO_ERROR) {
 			goto fail;

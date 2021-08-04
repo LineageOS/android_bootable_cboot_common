@@ -277,7 +277,7 @@ static tegrabl_error_t create_pm_ids_for_cvm(void *fdt, int pm_node,
 
 	for (i = 0; i < id_info->count; ++i) {
 		/* Search for cvm */
-		if (0 != strcmp(id_info->part[i].name, "cvm")) {
+		if (0 != strcmp(id_info->part[i].name, "module")) {
 			continue;
 		}
 

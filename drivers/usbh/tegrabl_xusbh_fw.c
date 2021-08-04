@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2019 NVIDIA Corporation.  All rights reserved.
+/* Copyright (c) 2018-2021 NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software and related documentation
@@ -28,6 +28,9 @@
 #include <tegrabl_a_b_boot_control.h>
 #include <tegrabl_utils.h>
 #include <xhci_priv.h>
+
+#include <tegrabl_linuxboot_utils.h>
+#include <tegrabl_binary_types.h>
 
 #define DRAM_MAP_FW_START   0x80040000LLU
 #define DRAM_MAP_FW_SIZE    0x20000
@@ -193,6 +196,8 @@ tegrabl_error_t xusbh_load_firmware(void)
 	uint32_t code_tag_blocks;
 	uint32_t code_size_blocks;
 	uint32_t timeout;
+	uint32_t part_size;
+	char *buffer;
 
 	/* ARU reset..this is done in kernel code */
 	NV_WRITE32(NV_ADDRESS_MAP_XUSB_HOST_CFG_BASE + 0x42c, 0x1);
@@ -231,6 +236,30 @@ tegrabl_error_t xusbh_load_firmware(void)
 		goto done;
 	}
 
+	part_size = (uint32_t)part.partition_info->total_size;
+	buffer = (char *)tegrabl_alloc_align(TEGRABL_HEAP_DMA, 8, part_size);
+	if (buffer == NULL) {
+		pr_error("failed to allocate memory for xusb-fw partition\n");
+		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
+		goto done;
+	}
+
+	err = tegrabl_partition_read(&part, buffer, part_size);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("Error reading xusb-fw partition\n");
+		goto done;
+	}
+
+#if defined(CONFIG_ENABLE_SECURE_BOOT)
+	{
+		err = tegrabl_validate_binary(TEGRABL_BINARY_XUSB, "XUSB-FW", part_size, buffer, NULL);
+		if (err != TEGRABL_NO_ERROR) {
+			pr_error("Failed to validate %s binary (err=%d)\n", "XUSB-FW", err);
+			goto done;
+		}
+	}
+#endif
+
 	/* Read FW header */
 	if ((sizeof(struct tegra_xhci_fw_cfgtbl) % MAX_STORAGE_BLOCK_SIZE) != 0) {
 		header_alloc_size = sizeof(struct tegra_xhci_fw_cfgtbl) -
@@ -246,11 +275,7 @@ tegrabl_error_t xusbh_load_firmware(void)
 		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
 		goto done;
 	}
-	err = tegrabl_partition_read(&part, fw_header, sizeof(struct tegra_xhci_fw_cfgtbl));
-	if (err != TEGRABL_NO_ERROR) {
-		pr_error("Error reading xusb fw header\n");
-		goto done;
-	}
+	memcpy(fw_header, buffer, sizeof(struct tegra_xhci_fw_cfgtbl));
 
 	/* Read firmware */
 	if ((fw_header->fwimg_len % MAX_STORAGE_BLOCK_SIZE) != 0) {
@@ -259,22 +284,17 @@ tegrabl_error_t xusbh_load_firmware(void)
 	} else {
 		fw_alloc_size = fw_header->fwimg_len;
 	}
+
 	fw_data = (uint8_t *)tegrabl_alloc_align(TEGRABL_HEAP_DMA, 256, fw_alloc_size);
 	if (fw_data == NULL) {
 		pr_error("failed to allocate memory for xusb-fw data\n");
 		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
 		goto done;
 	}
+	memcpy(fw_data, buffer, fw_header->fwimg_len);
 
-	err = tegrabl_partition_seek(&part, 0, TEGRABL_PARTITION_SEEK_SET);
-	if (err != TEGRABL_NO_ERROR) {
-		goto done;
-	}
-	err = tegrabl_partition_read(&part, fw_data, fw_header->fwimg_len);
-	if (err != TEGRABL_NO_ERROR) {
-		pr_error("Error reading xusb fw data\n");
-		goto done;
-	}
+	/* No need to use buffer, free it */
+	free(buffer);
 
 #if ENABLE_FW_LOG
 	struct tegra_xhci_fw_cfgtbl *fw_cfgtbl;

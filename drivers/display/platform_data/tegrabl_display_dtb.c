@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -325,7 +325,7 @@ static tegrabl_error_t tegrabl_display_get_pdata(void *fdt, struct offset *off, 
 			goto fail_parse;
 		}
 
-		err = parse_prod_settings(fdt, prod_offset, &(pdata_l->hdmi_dtb.prod_list), tmds_config_modes,
+		err = parse_hdmi_prod_settings(fdt, prod_offset, &(pdata_l->hdmi_dtb.prod_list), tmds_config_modes,
 								  num_tmds_config_modes);
 		if (err != TEGRABL_NO_ERROR) {
 			goto fail_parse;

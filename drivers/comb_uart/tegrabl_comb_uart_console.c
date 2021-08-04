@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -42,6 +42,7 @@ tegrabl_error_t tegrabl_comb_uart_console_getchar(struct tegrabl_console *hcnsl,
 tegrabl_error_t tegrabl_comb_uart_console_puts(struct tegrabl_console *hcnsl, char *str)
 {
 	uint32_t len = strlen(str);
+	const char *str_temp;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	if (hcnsl == NULL) {
@@ -58,7 +59,8 @@ tegrabl_error_t tegrabl_comb_uart_console_puts(struct tegrabl_console *hcnsl, ch
 		if (err != TEGRABL_NO_ERROR) {
 			goto fail;
 		}
-		err = tegrabl_comb_uart_tx("\r\n", 2, 0xffffffffULL);
+		str_temp = "\r\n";
+		err = tegrabl_comb_uart_tx(str_temp, 2, 0xffffffffULL);
 	} else {
 		err = tegrabl_comb_uart_tx(str, len, 0xffffffffULL);
 	}

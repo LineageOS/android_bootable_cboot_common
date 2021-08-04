@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2019-2020, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2019-2021, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -42,6 +42,15 @@ static time_t user_input_wait_timeout_ms;
 static bool extlinux_boot_is_success;
 static char *g_ramdisk_path;
 static char *g_boot_args;
+
+static tegrabl_error_t load_binary_with_sig(struct tegrabl_fm_handle *fm_handle,
+											uint32_t bin_type,
+											char *bin_type_name,
+											uint32_t bin_max_size,
+											char *bin_path,
+											void *bin_load_addr,
+											uint32_t *load_size,
+											bool *loaded_from_rootfs);
 
 static char *skip_leading_whitespace(char * const str)
 {
@@ -119,6 +128,7 @@ static tegrabl_error_t parse_conf_file(void *conf_load_addr, struct conf *extlin
 
 	if (token == NULL) {
 		pr_error("Nothing to parse in conf file\n");
+		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 		goto fail;
 	}
 
@@ -198,6 +208,12 @@ static tegrabl_error_t parse_conf_file(void *conf_load_addr, struct conf *extlin
 		user_input_wait_timeout_ms = 0UL;
 	}
 
+	if (entry == -1) {
+		pr_error("No valid entry found in extlinux.conf!\n");
+		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		goto fail;
+	}
+
 	extlinux_conf->num_boot_entries = entry + 1;
 
 	for (entry = 0; (uint32_t)entry < extlinux_conf->num_boot_entries; entry++) {
@@ -234,8 +250,9 @@ static tegrabl_error_t load_and_parse_conf_file(struct tegrabl_fm_handle *fm_han
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
 
-	/* Allocate space for extlinux.conf file */
-	conf_load_addr = tegrabl_malloc(EXTLINUX_CONF_MAX_SIZE);
+	/* Allocate space for extlinux.conf file and its sig file */
+	file_size = EXTLINUX_CONF_MAX_SIZE + tegrabl_sigheader_size();
+	conf_load_addr = tegrabl_alloc_align(TEGRABL_HEAP_DMA, SZ_64K, file_size);
 	if (conf_load_addr == NULL) {
 		pr_error("Failed to allocate memory\n");
 		err = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
@@ -244,14 +261,33 @@ static tegrabl_error_t load_and_parse_conf_file(struct tegrabl_fm_handle *fm_han
 
 	/* Read the extlinux.conf file */
 	pr_info("Loading extlinux.conf ...\n");
-	file_size = EXTLINUX_CONF_MAX_SIZE;
-	err = tegrabl_fm_read(fm_handle, EXTLINUX_CONF_PATH, NULL, conf_load_addr, &file_size, NULL);
+
+	/* Note: Passing TEGRABL_BINARY_INVALID as bin_type in load_binary_with_sig().
+	 *   This is to indicate that the binary type to load is not available
+	 *   in partition so it cannot fallback to partition if the loading fails.
+	 */
+	err = load_binary_with_sig(fm_handle,
+							   TEGRABL_BINARY_INVALID,
+							   "extlinux.conf",
+							   file_size,
+							   EXTLINUX_CONF_PATH,
+							   conf_load_addr,
+							   &file_size,
+							   NULL);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_error("Failed to find/load %s\n", EXTLINUX_CONF_PATH);
 		goto fail;
 	}
 
+	if (file_size > EXTLINUX_CONF_MAX_SIZE) {
+		pr_error("%s: file_size (%u) > %lu\n", __func__, file_size, EXTLINUX_CONF_MAX_SIZE);
+		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		goto fail;
+	}
+
 	/* Parse extlinux.conf file */
+	/* null terminated extlinux.conf */
+	*(char *)(conf_load_addr + file_size) = '\0';
 	err = parse_conf_file(conf_load_addr, extlinux_conf);
 
 fail:
@@ -330,55 +366,91 @@ fail:
 
 static tegrabl_error_t load_binary_with_sig(struct tegrabl_fm_handle *fm_handle,
 											uint32_t bin_type,
+											char *bin_type_name,
 											uint32_t bin_max_size,
 											char *bin_path,
 											void *bin_load_addr,
-											uint32_t *load_size)
+											uint32_t *load_size,
+											bool *loaded_from_rootfs)
 {
 	uint32_t sigheader_size = 0;
 	uint32_t file_size;
-	uint32_t orig_file_size;
 	void *load_addr;
-	char *bin_type_name;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 #if defined(CONFIG_ENABLE_SECURE_BOOT)
 	char sig_file_path[FS_MAX_PATH_LEN];
 	uint32_t sig_file_size;
 	bool fail_flag = false;
+	uint32_t orig_file_size;
 #endif
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
 
 	switch (bin_type) {
 	case TEGRABL_BINARY_KERNEL:
-		bin_type_name = "kernel";
-		break;
 	case TEGRABL_BINARY_KERNEL_DTB:
-		bin_type_name = "kernel-dtb";
-		break;
-	case TEGRABL_BINARY_RAMDISK:
-		bin_type_name = "initrd";
+	case TEGRABL_BINARY_INVALID:
+		/* Note: use of bin_type of TEGRABL_BINARY_INVALID is to indicate
+		 * the binary does not exist in partition; so if the loading of
+		 * this kind of binary fails, we should not fallback to partition.
+		 */
 		break;
 	default:
-		pr_error("Invalid bin_type (%d)\n", bin_type);
-		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
+		pr_error("Unsupported bin_type (%d)\n", bin_type);
+		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_SUPPORTED, 0);
 		goto exit;
 	}
 
+	if (loaded_from_rootfs) {
+		*loaded_from_rootfs = false;
+	}
+
 	if (bin_path) {
+		/* USB transactions require load address to be 64 KB aligned.
+		 * make sure bin_load_addr is aligned at 64 KB.
+		 */
+		if ((uintptr_t)bin_load_addr % SZ_64K) {
+			pr_error("%s: failed; load address is not aligned at 0x%lx.\n", __func__, SZ_64K);
+			err = TEGRABL_ERR_INVALID;
+			goto exit;
+		}
+
+		file_size = bin_max_size;
+		pr_info("Loading %s binary from rootfs ...\n", bin_type_name);
+		err = tegrabl_fm_read(fm_handle,
+							  bin_path,
+							  NULL,
+							  bin_load_addr,
+							  &file_size,
+							  NULL);
+		if (err != TEGRABL_NO_ERROR) {
+			pr_warn("Failed to load %s binary from rootfs (err=%d)\n", bin_type_name, err);
+			if (bin_type == TEGRABL_BINARY_INVALID) {
+				err = TEGRABL_ERROR(TEGRABL_ERR_READ_FAILED, 0);
+				goto exit;
+			}
+			/* continue to load binary from partition */
+			goto load_from_partition;
+		}
+
+		*load_size = file_size;
+
 #if defined(CONFIG_ENABLE_SECURE_BOOT)
-		/* load sig file */
+		/* Move the data read from bin_path to the location after sig file */
+		sig_file_size = sigheader_size = tegrabl_sigheader_size();
+		memmove(bin_load_addr + sigheader_size, bin_load_addr, file_size);
+
+		/* prepare sig_file_path */
 		memset(sig_file_path, '\0', sizeof(sig_file_path));
 		tegrabl_snprintf(sig_file_path, sizeof(sig_file_path), "%s.sig", bin_path);
-		pr_info("Loading %s sig file from rootfs ...\n", bin_type_name);
 
-		sig_file_size = sigheader_size = tegrabl_sigheader_size();
-		load_addr = bin_load_addr;
+		/* load sig file */
+		pr_info("Loading %s sig file from rootfs ...\n", bin_type_name);
 		err = tegrabl_fm_read(fm_handle,
 							  sig_file_path,
 							  NULL,	/* no fallback to partition; must read from fs */
-							  load_addr,
+							  bin_load_addr,
 							  &sig_file_size,
 							  NULL);
 		if (err != TEGRABL_NO_ERROR) {
@@ -396,31 +468,12 @@ static tegrabl_error_t load_binary_with_sig(struct tegrabl_fm_handle *fm_handle,
 		 * sig + binary will fail.
 		 */
 		if (fail_flag) {
-			memset(load_addr, 0, sigheader_size);
+			memset(bin_load_addr, 0, sigheader_size);
 		}
 
 		/* retrieve the original binary file size which is at the offset 0x8 of sig file */
-		orig_file_size = (*(uint32_t *)(load_addr + SIG_FILE_SIZE_OFFSET));
+		orig_file_size = (*(uint32_t *)(bin_load_addr + SIG_FILE_SIZE_OFFSET));
 		pr_debug("%s: orig_file_size=%u\n", bin_type_name, orig_file_size);
-#endif
-
-		/* USB transactions require load address to be 64 KB aligned */
-		load_addr = (void *)ROUND_UP((uintptr_t)(bin_load_addr + sigheader_size), SZ_64K);
-		file_size = bin_max_size - (load_addr - bin_load_addr);
-		pr_info("Loading %s binary from rootfs ...\n", bin_type_name);
-		err = tegrabl_fm_read(fm_handle,
-							  bin_path,
-							  NULL,
-							  load_addr,
-							  &file_size,
-							  NULL);
-		if (err != TEGRABL_NO_ERROR) {
-			pr_warn("Failed to load %s binary from rootfs (err=%d)\n", bin_type_name, err);
-			/* continue to load binary from partition */
-			goto load_from_partition;
-		}
-
-		*load_size = file_size;
 
 		/* If orig_file_size retrieved from sig file is not 0 and is less than the file size read,
 		 * then overload the to-be-returned load_size with orig_file_size.
@@ -432,36 +485,39 @@ static tegrabl_error_t load_binary_with_sig(struct tegrabl_fm_handle *fm_handle,
 			pr_info("overload load_size to %u (from %u)\n", orig_file_size, file_size);
 		}
 
-		/* Place binary right after binary's signature.
-		 * Note: always offset to a fixed tegrabl_sigheader_size(),
-		 * in case that signature file is corrupted.
-		 */
-		if (load_addr != (bin_load_addr + sigheader_size)) {
-			memmove(bin_load_addr + sigheader_size, load_addr, file_size);
-		}
-
-#if defined(CONFIG_ENABLE_SECURE_BOOT)
-		err = tegrabl_validate_binary(bin_type, bin_max_size, bin_load_addr, NULL);
+		err = tegrabl_validate_binary(bin_type, bin_type_name, bin_max_size, bin_load_addr, NULL);
 		if ((err != TEGRABL_NO_ERROR) || fail_flag) {
 			/* Validation failed or sig file was not read correctly */
-			pr_warn("Failed to validate %s binary (err=%d, fail=%d)\n", bin_type_name, err, fail_flag);
+			pr_warn("Failed to validate %s binary from rootfs (err=%d, fail=%d)\n",
+					bin_type_name, err, fail_flag);
 
 			/* If the security_mode fuse is burned, then abort loading binary from rootfs;
 			 * and continue to load binary from partition.
 			 */
 			if (fuse_is_odm_production_mode()) {
 				pr_error("Security fuse is burned, abort loading binary from rootfs\n");
+				if (bin_type == TEGRABL_BINARY_INVALID) {
+					err = TEGRABL_ERROR(TEGRABL_ERR_VERIFY_FAILED, 0);
+					goto exit;
+				}
 				/* continue to load binary from partition */
 				goto load_from_partition;
 			} else {
 				/* security_mode fuse is not burned, ignore validation failure */
 				pr_warn("Security fuse not burned, ignore validation failure\n");
+				pr_info("restore load_size to %u\n", file_size);
+				*load_size = file_size;
+
 				pr_debug("Memmove from %p to %p\n", (bin_load_addr + sigheader_size), bin_load_addr);
 				memmove(bin_load_addr, bin_load_addr + sigheader_size, *load_size);
 				err = TEGRABL_NO_ERROR;
 			}
 		}
 #endif
+
+		if (loaded_from_rootfs) {
+			*loaded_from_rootfs = true;
+		}
 		goto exit;
 	} else {
 		pr_info("No %s binary path\n", bin_type_name);
@@ -471,6 +527,7 @@ load_from_partition:
 	/* Come here when either there is no bin_path, or fails to load from fs:
 	 * will load binary from partition.
 	 */
+	pr_info("Continue to load from partition ...\n");
 	load_addr = bin_load_addr;
 	file_size = bin_max_size;
 	err = tegrabl_load_binary(bin_type, &load_addr, &file_size);
@@ -488,20 +545,9 @@ load_from_partition:
 	*load_size = file_size;
 
 #if defined(CONFIG_ENABLE_SECURE_BOOT)
-	err = tegrabl_validate_binary(bin_type, bin_max_size, bin_load_addr, &file_size);
+	err = tegrabl_validate_binary(bin_type, bin_type_name, bin_max_size, bin_load_addr, &file_size);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_warn("Failed to validate %s binary (err=%d)\n", bin_type_name, err);
-
-		/* if the security_mode fuse is burned, then fail the loading of binary */
-		if (fuse_is_odm_production_mode()) {
-			pr_error("Security fuse is burned, fail to load binary\n");
-			goto exit;
-		}
-		/* security_mode fuse is not burned, ignore validation failure */
-		pr_warn("Security fuse not burned, ignore validation failure\n");
-		pr_debug("Memmove from %p to %p\n", (bin_load_addr + sigheader_size), bin_load_addr);
-		memmove(bin_load_addr, bin_load_addr + sigheader_size, *load_size);
-		err = TEGRABL_NO_ERROR;
+		pr_error("Failed to validate %s binary from partition (err=%d)\n", bin_type_name, err);
 	}
 #else
 	if (bin_type == TEGRABL_BINARY_KERNEL) {
@@ -520,27 +566,41 @@ exit:
 tegrabl_error_t extlinux_boot_load_kernel_and_dtb(struct tegrabl_fm_handle *fm_handle,
 												  void **boot_img_load_addr,
 												  void **dtb_load_addr,
-												  uint32_t *kernel_size)
+												  uint32_t *kernel_size,
+												  bool *kernel_from_rootfs)
 {
-	char *linux_path;
+	char *linux_path = NULL;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	uint32_t entry;
+#if defined(CONFIG_DT_SUPPORT)
+	uint32_t dtb_size;
+	char *dtb_path = NULL;
+#endif
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
 
 	if ((fm_handle == NULL) || (fm_handle->mount_path == NULL)) {
-		pr_error("Invalid fm_handle (%p) or mount path passed\n", fm_handle);
-		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
-		goto fail;
+		pr_warn("Invalid fm_handle (%p) or mount path passed\n", fm_handle);
+		pr_warn("Continue to load from partition\n");
+	} else {
+		/* Load and parse extlinux.conf */
+		err = get_boot_details(fm_handle, &extlinux_conf, &boot_entry);
+		if (err == TEGRABL_NO_ERROR) {
+			/* Setup following variables only when extlinux.conf is loaded succesfully.
+			 * Note these variables are default to NULL.
+			 * That means if extlinux.conf is not loaded correctly (read error, or verification error),
+			 *   - kernel and kernel-dtb will be loaded from partition;
+			 *   - ramdisk won't be loaded from rootfs;
+			 *   - g_boot_args won't be used because extlinux_boot_set_status(true) won't be called.
+			 */
+			linux_path = extlinux_conf.section[boot_entry]->linux_path;
+#if defined(CONFIG_DT_SUPPORT)
+			dtb_path = extlinux_conf.section[boot_entry]->dtb_path;
+#endif
+			g_ramdisk_path = extlinux_conf.section[boot_entry]->initrd_path;
+			g_boot_args = extlinux_conf.section[boot_entry]->boot_args;
+		}
 	}
-
-	/* Load and parse extlinux.conf */
-	err = get_boot_details(fm_handle, &extlinux_conf, &boot_entry);
-	if (err != TEGRABL_NO_ERROR) {
-		goto fail;
-	}
-	g_ramdisk_path = extlinux_conf.section[boot_entry]->initrd_path;
-	g_boot_args = extlinux_conf.section[boot_entry]->boot_args;
 
 	/* Get load address of kernel and dtb */
 	err = tegrabl_get_boot_img_load_addr(boot_img_load_addr);
@@ -550,34 +610,35 @@ tegrabl_error_t extlinux_boot_load_kernel_and_dtb(struct tegrabl_fm_handle *fm_h
 	}
 	*dtb_load_addr = (void *)tegrabl_get_dtb_load_addr();
 
-	linux_path = extlinux_conf.section[boot_entry]->linux_path;
+	pr_info("Loading kernel ...\n");
 	err = load_binary_with_sig(fm_handle,
 							   TEGRABL_BINARY_KERNEL,
+							   "kernel",
 							   BOOT_IMAGE_MAX_SIZE,
 							   linux_path,
 							   *boot_img_load_addr,
-							   kernel_size);
+							   kernel_size,
+							   kernel_from_rootfs);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_error("Failed to load kernel, abort booting.\n");
 		goto fail;
 	}
 
 #if defined(CONFIG_DT_SUPPORT)
-	uint32_t dtb_size;
-	char *dtb_path = NULL;
-
 	err = tegrabl_dt_get_fdt_handle(TEGRABL_DT_KERNEL, dtb_load_addr);
 	if ((err == TEGRABL_NO_ERROR) && (*dtb_load_addr !=  NULL)) {
 		goto fail;
 	}
 
-	dtb_path = extlinux_conf.section[boot_entry]->dtb_path;
+	pr_info("Loading kernel-dtb ...\n");
 	err = load_binary_with_sig(fm_handle,
 							   TEGRABL_BINARY_KERNEL_DTB,
+							   "kernel-dtb",
 							   DTB_MAX_SIZE,
 							   dtb_path,
 							   *dtb_load_addr,
-							   &dtb_size);
+							   &dtb_size,
+							   NULL);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_error("Failed to load kernel-dtb, abort booting.\n");
 		goto fail;
@@ -614,12 +675,18 @@ tegrabl_error_t extlinux_boot_load_ramdisk(struct tegrabl_fm_handle *fm_handle,
 	pr_info("Loading ramdisk from rootfs ...\n");
 	*ramdisk_load_addr = (void *)tegrabl_get_ramdisk_load_addr();
 
+	/* Note: Passing TEGRABL_BINARY_INVALID as bin_type in load_binary_with_sig().
+	 *   This is to indicate that the binary type to load is not available
+	 *   in partition so it cannot fallback to partition if the loading fails.
+	 */
 	err = load_binary_with_sig(fm_handle,
-							TEGRABL_BINARY_RAMDISK,
+							TEGRABL_BINARY_INVALID,
+							"ramdisk",
 							RAMDISK_MAX_SIZE,
 							g_ramdisk_path,
 							*ramdisk_load_addr,
-							&file_size);
+							&file_size,
+							NULL);
 
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;

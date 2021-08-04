@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2020, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2016-2021, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -20,13 +20,21 @@
 #include <tegrabl_soc_misc.h>
 #include <tegrabl_malloc.h>
 #include <tegrabl_partition_manager.h>
+#include <arscratch.h>
 
 typedef uint32_t smd_bin_copy_t;
 #define SMD_COPY_PRIMARY 0U
 #define SMD_COPY_SECONDARY 1U
 #define MAX_SMD_COPY 2U
 
+static uint32_t current_smd;
+#define SMD_INVALID MAX_SMD_COPY
+
 static void *smd_loadaddress;
+static void *smd_backup;
+
+static tegrabl_error_t
+tegrabl_a_b_get_rootfs_retry_count(void *smd, uint8_t *rootfs_retry_count);
 
 #if defined(CONFIG_ENABLE_DEBUG)
 static void boot_chain_dump_slot_info(void *load_address)
@@ -69,13 +77,13 @@ void tegrabl_a_b_init(void *smd)
 	smd_info->slot_info[0].priority = 15;
 	smd_info->slot_info[0].retry_count = 7;
 	smd_info->slot_info[0].boot_successful = 1;
-	(void) memcpy(smd_info->slot_info[0].suffix, BOOT_CHAIN_SUFFIX_A,
+	(void) memcpy(smd_info->slot_info[0].suffix, (const char *)(BOOT_CHAIN_SUFFIX_A),
 			BOOT_CHAIN_SUFFIX_LEN);
 
 	smd_info->slot_info[1].priority = 0;
 	smd_info->slot_info[1].retry_count = 0;
 	smd_info->slot_info[1].boot_successful = 0;
-	(void) memcpy(smd_info->slot_info[1].suffix, BOOT_CHAIN_SUFFIX_B,
+	(void) memcpy(smd_info->slot_info[1].suffix, (const char *)(BOOT_CHAIN_SUFFIX_B),
 			BOOT_CHAIN_SUFFIX_LEN);
 
 	smd_info->magic = BOOT_CHAIN_MAGIC;
@@ -123,6 +131,47 @@ tegrabl_error_t tegrabl_a_b_init_boot_slot_reg(void *smd)
 	}
 
 	tegrabl_a_b_save_boot_slot_reg(smd, slot);
+
+done:
+	return err;
+}
+
+tegrabl_error_t tegrabl_a_b_init_rootfs_slot_reg(void *smd)
+{
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	uint32_t rf_reg;
+	uint8_t retry_count = 0;
+	uint16_t version;
+
+	/* RF_SR is used when support redundancy user or rootfs A/B */
+	version = tegrabl_a_b_get_version(smd);
+	if (BOOTCTRL_SUPPORT_REDUNDANCY_USER(version) == 0U &&
+		BOOTCTRL_SUPPORT_ROOTFS_AB(version) == 0U) {
+		goto done;
+	}
+
+	rf_reg = tegrabl_get_rootfs_slot_reg();
+
+	/* In case not power on reset, rf scratch register may have been already
+	 * initialized in previous boot, hence skip */
+	if (ROOTFS_AB_REG_MAGIC_GET(rf_reg) == ROOTFS_AB_REG_MAGIC) {
+		goto done;
+	}
+
+	/* If rf reg magic is invalid, init rf reg with rotate_count = 0 */
+	rf_reg = 0;
+	/* Set reg magic */
+	rf_reg = ROOTFS_AB_REG_MAGIC_SET(rf_reg);
+
+	/* Copy rootfs retry_count if rootfs A/B without unified A/B. */
+	if (BOOTCTRL_SUPPORT_ROOTFS_AB(version) &&
+		BOOTCTRL_SUPPORT_UNIFIED_AB(version) == 0U) {
+		/* Copy SMD rootfs retry_count to RF_SR */
+		tegrabl_a_b_get_rootfs_retry_count(smd, &retry_count);
+		rf_reg = ROOTFS_AB_REG_RETRY_COUNT_SET(retry_count, rf_reg);
+	}
+
+	tegrabl_set_rootfs_slot_reg(rf_reg);
 
 done:
 	return err;
@@ -571,7 +620,7 @@ static int tegrabl_get_max_retry_count(void *smd)
 	/* Set the maximum slot retry count to default if smd
 	 * extension is not support
 	 */
-	if ((version & BOOT_CHAIN_VERSION_MASK) < BOOT_CHAIN_VERSION_ROOTFS_AB) {
+	if (BOOT_CHAIN_VERSION_GET(version) < BOOT_CHAIN_VERSION_ROOTFS_AB) {
 		max_bl_retry_count = SLOT_RETRY_COUNT_DEFAULT;
 	} else {
 		smd_v2 = (struct slot_meta_data_v2 *)smd;
@@ -585,6 +634,24 @@ static int tegrabl_get_max_retry_count(void *smd)
 	}
 
 	return max_bl_retry_count;
+}
+
+static uint8_t get_max_rotate_count(void *smd)
+{
+	uint8_t max_bl_retry_count;
+	uint8_t max_rotate_count = ROOTFS_AB_ROTATE_COUNT;
+
+	max_bl_retry_count = tegrabl_get_max_retry_count(smd);
+
+	/*
+	 * If max_bl_retry_count is 1, then max rotate_count shoud be 2;
+	 * if max_bl_retry_count is larger than 1, then max rotate_count is 4.
+	 */
+	if (max_bl_retry_count * 2 < ROOTFS_AB_ROTATE_COUNT) {
+		max_rotate_count = max_bl_retry_count * 2;
+	}
+
+	return max_rotate_count;
 }
 
 tegrabl_error_t tegrabl_a_b_set_active_slot(void *smd_addr, uint32_t slot_id)
@@ -634,6 +701,7 @@ tegrabl_error_t tegrabl_a_b_get_current_rootfs_id(void *smd, uint8_t *rootfs_id)
 	struct slot_meta_data_v2 *smd_v2;
 	uint8_t rootfs_select;
 	uint16_t version;
+	uint32_t bl_slot;
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 
 	if (rootfs_id == NULL) {
@@ -653,6 +721,20 @@ tegrabl_error_t tegrabl_a_b_get_current_rootfs_id(void *smd, uint8_t *rootfs_id)
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 	}
 
+	/*
+	 * "Unified bl&rf a/b" is supported from version
+	 * BOOT_CHAIN_VERSION_UNIFY_RF_BL_AB. If supported and enabled,
+	 * use bootloader active slot for rootfs.
+	 */
+	if (BOOTCTRL_IS_UNIFIED_AB_ENABLED(version)) {
+		error = tegrabl_a_b_get_active_slot(smd, &bl_slot);
+		if (error != TEGRABL_NO_ERROR) {
+			return error;
+		}
+
+		*rootfs_id = (uint8_t)bl_slot;
+		return error;
+	}
 	smd_v2 = (struct slot_meta_data_v2 *)smd;
 	rootfs_select = ROOTFS_SELECT(smd_v2);
 	*rootfs_id = GET_ROOTFS_ACTIVE(rootfs_select);
@@ -660,11 +742,41 @@ tegrabl_error_t tegrabl_a_b_get_current_rootfs_id(void *smd, uint8_t *rootfs_id)
 	return TEGRABL_NO_ERROR;
 }
 
+static int tegrabl_get_rootfs_max_retry_count(void *smd)
+{
+	struct slot_meta_data_v2 *smd_v2;
+	uint16_t version;
+	uint8_t max_rf_retry_count;
+	uint8_t rf_misc_info;
+
+	version = tegrabl_a_b_get_version(smd);
+	/* Set the maximum rootfs slot retry count to default if
+	 * rootfs max retry count is not support in smd
+	 */
+	if (BOOT_CHAIN_VERSION_GET(version) < BOOT_CHAIN_VERSION_UNIFY_RF_BL_AB) {
+		max_rf_retry_count = ROOTFS_RETRY_COUNT_DEFAULT;
+	} else {
+		smd_v2 = (struct slot_meta_data_v2 *)smd;
+		rf_misc_info = smd_v2->smd_ext.features.rootfs_misc_info;
+		max_rf_retry_count = GET_MAX_ROOTFS_RETRY_COUNT(rf_misc_info);
+	}
+
+	if ((max_rf_retry_count > ROOTFS_RETRY_COUNT_DEFAULT) ||
+		(max_rf_retry_count == 0)) {
+		max_rf_retry_count = ROOTFS_RETRY_COUNT_DEFAULT;
+		pr_error("Invalid max rootfs retry count, set to the default value(%d)\n",
+				 max_rf_retry_count);
+	}
+
+	return max_rf_retry_count;
+}
+
 static tegrabl_error_t
 tegrabl_a_b_set_active_rootfs(void *smd, uint8_t rootfs_id)
 {
 	struct slot_meta_data_v2 *smd_v2;
 	uint8_t *rootfs_select;
+	uint8_t val;
 
 	if (smd == NULL) {
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
@@ -677,9 +789,11 @@ tegrabl_a_b_set_active_rootfs(void *smd, uint8_t rootfs_id)
 
 	smd_v2 = (struct slot_meta_data_v2 *)smd;
 	rootfs_select = &(ROOTFS_SELECT(smd_v2));
-	*rootfs_select = SET_ROOTFS_ACTIVE(rootfs_id, *rootfs_select);
-	*rootfs_select = SET_ROOTFS_RETRY_COUNT(MAX_ROOTFS_AB_RETRY_COUNT,
-						*rootfs_select);
+	val = SET_ROOTFS_ACTIVE(rootfs_id, *rootfs_select);
+	*rootfs_select = val;
+	val = SET_ROOTFS_RETRY_COUNT(tegrabl_get_rootfs_max_retry_count(smd),
+			*rootfs_select);
+	*rootfs_select = val;
 
 	return TEGRABL_NO_ERROR;
 }
@@ -701,24 +815,25 @@ tegrabl_a_b_get_rootfs_retry_count(void *smd, uint8_t *rootfs_retry_count)
 	return TEGRABL_NO_ERROR;
 }
 
-static tegrabl_error_t
+tegrabl_error_t
 tegrabl_a_b_set_rootfs_retry_count(void *smd, uint8_t rootfs_retry_count)
 {
 	struct slot_meta_data_v2 *smd_v2;
 	uint8_t *rootfs_select;
+	uint8_t val;
 
 	if (smd == NULL) {
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 	}
 
-	if (rootfs_retry_count > MAX_ROOTFS_AB_RETRY_COUNT) {
+	if (rootfs_retry_count > tegrabl_get_rootfs_max_retry_count(smd)) {
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 	}
 
 	smd_v2 = (struct slot_meta_data_v2 *)smd;
 	rootfs_select = &(ROOTFS_SELECT(smd_v2));
-	*rootfs_select = SET_ROOTFS_RETRY_COUNT(rootfs_retry_count,
-						*rootfs_select);
+	val = SET_ROOTFS_RETRY_COUNT(rootfs_retry_count, *rootfs_select);
+	*rootfs_select = val;
 
 	return TEGRABL_NO_ERROR;
 }
@@ -765,15 +880,33 @@ static tegrabl_error_t tegrabl_a_b_select_active_rootfs(void *smd)
 	struct slot_meta_data_v2 *smd_v2;
 	uint8_t rootfs_select, retry_count, rfs_id;
 	uint8_t rfs_status = ROOTFS_STATUS_NORMAL;
+	uint32_t rf_reg;
+	uint16_t version;
 
 	if (smd == NULL) {
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 	}
 
+	/*
+	 * Do not select active rootfs if rootfs A/B is disabled,
+	 * or unified A/B is enabled.
+	 */
+	version = tegrabl_a_b_get_version(smd);
+	if (BOOTCTRL_SUPPORT_ROOTFS_AB(version) == 0U ||
+		BOOTCTRL_IS_UNIFIED_AB_ENABLED(version) != 0U) {
+		goto done;
+	}
+
+	/*
+	 * Use retry_count in RF_SR, if rootfs retry_count is decreased to 0,
+	 * update the rootfs status and rfs_id in SMD buffer
+	 */
 	smd_v2 = (struct slot_meta_data_v2 *)smd;
 	rootfs_select = ROOTFS_SELECT(smd_v2);
-	retry_count = GET_ROOTFS_RETRY_COUNT(rootfs_select);
 	rfs_id = GET_ROOTFS_ACTIVE(rootfs_select);
+
+	rf_reg = tegrabl_get_rootfs_slot_reg();
+	retry_count = ROOTFS_AB_REG_RETRY_COUNT_GET(rf_reg);
 
 	if (retry_count == 0) {
 		/* Set current slot as BOOT_FAILED and retry count to 0 */
@@ -793,8 +926,12 @@ static tegrabl_error_t tegrabl_a_b_select_active_rootfs(void *smd)
 		}
 	}
 
-	/* Decrease rootfs retry_count, UE will restore it */
-	tegrabl_a_b_set_rootfs_retry_count(smd, retry_count - 1);
+	/*
+	 * Just decrease rootfs retry_count in RF_SR, UE will clear RF_SR,
+	 * if failed to reach UE, retry_count will be decreased by 1
+	 */
+	rf_reg = ROOTFS_AB_REG_RETRY_COUNT_SET(retry_count - 1, rf_reg);
+	tegrabl_set_rootfs_slot_reg(rf_reg);
 
 done:
 	return TEGRABL_NO_ERROR;
@@ -804,6 +941,54 @@ bool tegrabl_a_b_rootfs_is_all_unbootable(void *smd)
 {
 	tegrabl_error_t err;
 	uint8_t rootfs_id;
+	uint16_t version;
+	uint8_t rotate_count = 0;
+	uint8_t max_rotate_count;
+	uint32_t rf_reg;
+
+	if (smd == NULL) {
+		err = tegrabl_a_b_get_smd((void **)&smd);
+		if (err != TEGRABL_NO_ERROR) {
+			TEGRABL_SET_HIGHEST_MODULE(err);
+			return false;
+		}
+	}
+
+	version = tegrabl_a_b_get_version(smd);
+	/*
+	 * "Unified bl&rf a/b" is supported from version
+	 * BOOT_CHAIN_VERSION_UNIFY_RF_BL_AB. If supported and enabled,
+	 * use bootloader bootable status for rootfs.
+	 * Since bootloader is already running, check rotate_count for
+	 * u-boot/kernel. If rotate_count is no less than maximum value,
+	 * boot to recovery kernel, else boot to normal kernel.
+	 */
+	if (BOOTCTRL_IS_UNIFIED_AB_ENABLED(version) ||
+		BOOTCTRL_SUPPORT_REDUNDANCY_USER(version)) {
+		rf_reg = tegrabl_get_rootfs_slot_reg();
+		/*
+		 * The magic field of rootfs SR must match with ROOTFS_AB_REG_MAGIC,
+		 * since it has been initialized in tegrabl_a_b_init_rootfs_slot_reg()
+		 * if not match.
+		 */
+		TEGRABL_ASSERT(ROOTFS_AB_REG_MAGIC_GET(rf_reg) == ROOTFS_AB_REG_MAGIC);
+
+		/*
+		 * If rotate_count is no less than max_rotate_count,
+		 * clear the rotate_count in scratch register
+		 * and return true to boot to recovery kernel.
+		 */
+		rotate_count = ROOTFS_AB_REG_ROTATE_COUNT_GET(rf_reg);
+		max_rotate_count = get_max_rotate_count(smd);
+		if (rotate_count >= max_rotate_count) {
+			rotate_count = 0;
+			rf_reg = ROOTFS_AB_REG_ROTATE_COUNT_SET(rotate_count, rf_reg);
+			tegrabl_set_rootfs_slot_reg(rf_reg);
+
+			return true;
+		}
+		return false;
+	}
 
 	err = tegrabl_a_b_get_current_rootfs_id(smd, &rootfs_id);
 	if (err != TEGRABL_NO_ERROR) {
@@ -863,7 +1048,10 @@ static tegrabl_error_t load_smd_bin_copy(smd_bin_copy_t bin_copy)
 	uint32_t crc32;
 	uint32_t smd_v2_len = sizeof(struct slot_meta_data_v2);
 	uint32_t smd_len = sizeof(struct slot_meta_data);
+	uint32_t smd_ext_len = sizeof(struct slot_meta_data_ext);
 	uint16_t version;
+
+	current_smd = SMD_INVALID;
 
 	smd_part = (bin_copy == SMD_COPY_PRIMARY) ? "SMD" : "SMD_b";
 	error = tegrabl_partition_open(smd_part, &part);
@@ -889,9 +1077,16 @@ static tegrabl_error_t load_smd_bin_copy(smd_bin_copy_t bin_copy)
 	smd = (struct slot_meta_data *)smd_loadaddress;
 
 	version = tegrabl_a_b_get_version(smd);
-	if ((version & BOOT_CHAIN_VERSION_MASK) >=
-				BOOT_CHAIN_VERSION_CRC32) {
-		/* Check crc for SMD sanity */
+	if (BOOT_CHAIN_VERSION_GET(version) == BOOT_CHAIN_VERSION_ONE) {
+		/* VERSION_ONE: only check magic id for SMD sanity */
+		if (smd->magic != BOOT_CHAIN_MAGIC) {
+			error = TEGRABL_ERROR(TEGRABL_ERR_VERIFY_FAILED, 0);
+			pr_error("%s corrupt with incorrect magic id\n",
+				 smd_part);
+			goto done;
+		}
+	} else {
+		/* Other VERSIONs: always check crc for SMD sanity */
 		crc32 = tegrabl_utils_crc32(0, smd_loadaddress,
 					    smd_len - sizeof(crc32));
 		if (crc32 != smd->crc32) {
@@ -902,21 +1097,19 @@ static tegrabl_error_t load_smd_bin_copy(smd_bin_copy_t bin_copy)
 	}
 
 	/* Check crc for SMD extension sanity */
-	if ((version & BOOT_CHAIN_VERSION_MASK) >=
-				BOOT_CHAIN_VERSION_ROOTFS_AB) {
+	if (BOOT_CHAIN_VERSION_GET(version) >= BOOT_CHAIN_VERSION_ROOTFS_AB) {
 		smd_v2 = (struct slot_meta_data_v2 *)smd_loadaddress;
 		crc32 = tegrabl_utils_crc32(0, &smd_v2->smd_ext.crc32_len,
-					    smd_v2->smd_ext.crc32_len);
+					    smd_ext_len - sizeof(crc32));
 		if (crc32 != smd_v2->smd_ext.crc32) {
 			error = TEGRABL_ERROR(TEGRABL_ERR_VERIFY_FAILED, 0);
 			pr_error("%s corrupt with incorrect crc in extension\n",
 				 smd_part);
 			goto done;
 		}
-		if (BOOTCTRL_SUPPORT_ROOTFS_AB(version)) {
-			tegrabl_a_b_select_active_rootfs(smd);
-		}
 	}
+
+	current_smd = bin_copy;
 
 done:
 	return error;
@@ -942,22 +1135,54 @@ tegrabl_error_t tegrabl_a_b_get_smd(void **smd)
 		goto done;
 	}
 
+	smd_backup = tegrabl_malloc(smd_len);
+	if (smd_backup == NULL) {
+		error = TEGRABL_ERROR(TEGRABL_ERR_NO_MEMORY, 0);
+		tegrabl_free(smd_loadaddress);
+		smd_loadaddress = NULL;
+		goto done;
+	}
+
 	/* Load and verify SMD primary copy */
 	error = load_smd_bin_copy(SMD_COPY_PRIMARY);
 	if (error == TEGRABL_NO_ERROR) {
 		*smd = smd_loadaddress;
-		goto done;
+		goto init;
 	}
 
 	/* If SMD primary copy has corrupted, fallback to SMD secondary copy */
 	error = load_smd_bin_copy(SMD_COPY_SECONDARY);
 	if (error == TEGRABL_NO_ERROR) {
 		*smd = smd_loadaddress;
-		goto done;
+		goto init;
 	}
 
 	tegrabl_free(smd_loadaddress);
 	smd_loadaddress = NULL;
+
+	tegrabl_free(smd_backup);
+	smd_backup = NULL;
+	goto done;
+
+init:
+	/*
+	 * Backup current SMD buffer to smd_backup, compare the contents
+	 * of smd_backup and smd_loadaddress before leaving Cboot, if they
+	 * are different, flush SMD buffer to SMD partition.
+	 */
+	memcpy(smd_backup, smd_loadaddress, smd_len);
+
+	/*
+	 * Initialize the rootfs scratch register
+	 * if unified A/B or Redundancy user or rootfs A/B is enabled.
+	 */
+	tegrabl_a_b_init_rootfs_slot_reg(*smd);
+
+	/*
+	 * Select active rootfs if unified A/B is disabled,
+	 * and rootfs A/B is enabled.
+	 */
+	tegrabl_a_b_select_active_rootfs(*smd);
 
 done:
 	return error;
@@ -1016,6 +1241,7 @@ tegrabl_error_t tegrabl_a_b_flush_smd(void *smd)
 	struct slot_meta_data *bootctrl = (struct slot_meta_data *)smd;
 	struct slot_meta_data_v2 *smd_v2;
 	uint32_t smd_payload_len;
+	smd_bin_copy_t bin_copy;
 
 	if (smd == NULL) {
 		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
@@ -1027,19 +1253,27 @@ tegrabl_error_t tegrabl_a_b_flush_smd(void *smd)
 	bootctrl->crc32 = tegrabl_utils_crc32(0, smd, smd_payload_len);
 
 	/* Update crc for SMD extension sanity */
-	if ((tegrabl_a_b_get_version(smd) & BOOT_CHAIN_VERSION_MASK) >=
+	if (BOOT_CHAIN_VERSION_GET(tegrabl_a_b_get_version(smd)) >=
 				BOOT_CHAIN_VERSION_ROOTFS_AB) {
 		smd_v2 = (struct slot_meta_data_v2 *)smd;
+		smd_payload_len = sizeof(struct slot_meta_data_ext)
+				  - sizeof(uint32_t);
 		smd_v2->smd_ext.crc32 = tegrabl_utils_crc32(0,
 						&smd_v2->smd_ext.crc32_len,
-						smd_v2->smd_ext.crc32_len);
+						smd_payload_len);
 	}
 
-	/* Always flush both primary SMD and secondary SMD for backup, otherwise
-	 * secondary copy will be stale and may lead to unknown behavior */
-	error = flush_smd_bin_copy(smd, SMD_COPY_PRIMARY);
-
-	error = flush_smd_bin_copy(smd, SMD_COPY_SECONDARY);
+	/*
+	 * Always flush both primary SMD and secondary SMD.
+	 * However, must start with the non-current copy to prevent both
+	 * copies from corrupted.
+	 */
+	bin_copy = (current_smd == SMD_COPY_PRIMARY) ? SMD_COPY_SECONDARY : SMD_COPY_PRIMARY;
+	error = flush_smd_bin_copy(smd, bin_copy);
+	if (error != TEGRABL_NO_ERROR)
+		goto done;
+	bin_copy = (current_smd == SMD_COPY_PRIMARY) ? SMD_COPY_PRIMARY : SMD_COPY_SECONDARY;
+	error = flush_smd_bin_copy(smd, bin_copy);
 
 done:
 	return error;
@@ -1051,128 +1285,67 @@ done:
  *    save the latest retry count from SR to SMD.
  */
 static tegrabl_error_t check_non_user_redundancy_status(uint32_t reg,
-		struct slot_meta_data *smd, uint8_t *update_smd)
-{
-	tegrabl_error_t error;
-	uint8_t retry_count;
-	uint32_t smd_slot;
-	uint32_t current_slot;
-
-	*update_smd = 0;
-
-	/* Get initial retrying boot slot from SMD */
-	error = tegrabl_a_b_get_active_slot(smd, &smd_slot);
-	if (error != TEGRABL_NO_ERROR) {
-		goto done;
-	}
-
-	/* Get actual boot slot from SR */
-	current_slot = BOOT_CHAIN_REG_SLOT_NUM_GET(reg);
-
-	/* Skip updating SMD if there is no boot slot changing */
-	if (current_slot == smd_slot) {
-		goto done;
-	}
-
-	/*
-	 * Restore retry_count for REDUNDANCY BL only.
-	 * For REDUNDANCY_USER, it is UE to restore retry count when control
-	 * reaches kernel.
-	 */
-	retry_count = tegrabl_a_b_get_retry_count_reg(current_slot, reg);
-	++retry_count;
-	tegrabl_a_b_set_retry_count_reg(current_slot, retry_count);
-
-	*update_smd = 1;
-done:
-	return error;
-}
-
-static void rotate_slots_priority(struct slot_meta_data *smd,
-				uint32_t current_slot, uint8_t slot1_priority,
-				uint8_t slot2_priority)
-{
-	if (current_slot == 0) {
-		if (slot1_priority > slot2_priority) {
-			tegrabl_a_b_set_priority(smd, current_slot,
-					slot1_priority - 1);
-		} else {
-			if (slot2_priority < SLOT_PRIORITY_DEFAULT) {
-				tegrabl_a_b_set_priority(smd, !current_slot,
-						slot2_priority + 1);
-			} else {
-				/* handle maximum priority */
-				tegrabl_a_b_set_priority(smd, current_slot,
-						slot2_priority - 1);
-			}
-		}
-	} else {
-		/* current slot is 1 */
-		if (slot1_priority == (slot2_priority + 1)) {
-			/* set the gap by 2, ex curr:15, non-curr: 13 */
-			if (slot2_priority > 1) {
-				tegrabl_a_b_set_priority(smd, !current_slot,
-							slot2_priority - 1);
-			} else {
-				/* handle minimum priority */
-				tegrabl_a_b_set_priority(smd, current_slot,
-							slot1_priority + 1);
-			}
-		} else {
-			/* When the gap is already two, reverse priority */
-			tegrabl_a_b_set_priority(smd, !current_slot,
-						SLOT_PRIORITY_DEFAULT);
-			tegrabl_a_b_set_priority(smd, current_slot,
-						SLOT_PRIORITY_DEFAULT - 1);
-		}
-	}
-}
-
-static tegrabl_error_t check_rootfs_ab_status(uint32_t reg, uint8_t *update_smd)
+		struct slot_meta_data *smd)
 {
 	uint8_t retry_count;
 	uint32_t current_slot;
 
-	*update_smd = 0;
-
-	/*
-	 * Restore bootloader retry_count
-	 */
+	/* Restore retry_count to max_bl_retry_count for REDUNDANCY BL only. */
 	current_slot = BOOT_CHAIN_REG_SLOT_NUM_GET(reg);
-	retry_count = tegrabl_a_b_get_retry_count_reg(current_slot, reg);
-	++retry_count;
+	retry_count = tegrabl_get_max_retry_count(smd);
 	tegrabl_a_b_set_retry_count_reg(current_slot, retry_count);
 
-	*update_smd = 1;
 	return TEGRABL_NO_ERROR;
 }
 
-static tegrabl_error_t check_user_redundancy_status(uint32_t reg,
-		struct slot_meta_data *smd, uint8_t *update_smd)
+static tegrabl_error_t check_rootfs_ab_status(uint32_t reg,
+		struct slot_meta_data *smd)
+{
+	uint8_t retry_count;
+	uint32_t current_slot;
+
+	/*
+	 * Restore bootloader retry_count to max_bl_retry_count
+	 */
+	current_slot = BOOT_CHAIN_REG_SLOT_NUM_GET(reg);
+	retry_count = tegrabl_get_max_retry_count(smd);
+	tegrabl_a_b_set_retry_count_reg(current_slot, retry_count);
+
+	return TEGRABL_NO_ERROR;
+}
+
+static tegrabl_error_t check_user_redundancy_status(uint32_t bl_reg,
+		struct slot_meta_data *smd)
 {
 	tegrabl_error_t error;
 	uint8_t retry_count;
 	uint8_t slot1_priority, slot2_priority;
 	uint32_t current_slot;
-
-	*update_smd = 0;
+	uint8_t rotate_count = 0;
+	uint8_t max_rotate_count;
+	uint32_t rf_reg;
 
 	/*
-	 * Restore retry_count
+	 * Restore retry_count to max_bl_retry_count
 	 */
-	current_slot = BOOT_CHAIN_REG_SLOT_NUM_GET(reg);
-	retry_count = tegrabl_a_b_get_retry_count_reg(current_slot, reg);
-	++retry_count;
+	current_slot = BOOT_CHAIN_REG_SLOT_NUM_GET(bl_reg);
+	retry_count = tegrabl_get_max_retry_count(smd);
 	tegrabl_a_b_set_retry_count_reg(current_slot, retry_count);
-	reg = tegrabl_get_boot_slot_reg();
+	bl_reg = tegrabl_get_boot_slot_reg();
 
 	/*
+	 * When "unified bl&rf a/b" or Redundacny User is enabled:
 	 * For any boot failure at this stage (u-boot or kernel), the policy
-	 * is to try up to two times on a slot by changing slot's priority.
+	 * is to try up to two times on a slot by rotate_count in RF_SR.
 	 * When expired, switch slot and try again.
 	 *
-	 * Each try by either decreasing current slot's priority or increasing
-	 * the other slot's priority.
+	 * Use rotate_count in scratch register(RF_SR) to record the try times,
+	 * if control reaches kernel, UE restores the rotate_count in RF_SR;
+	 * if not, rotate_count will increase by 1 on each try.
+	 * If both slots have tried max_rotate_count/2 times, boot to recovery.
+	 *
+	 * When rotate_count reaches max_rotate_count/2 or max_rotate_count,
+	 * if both slots are bootable, switch slot by changing priority;
 	 *
 	 * If control reaches kernel, UE restores slots priorities.
 	 * If not, a/b logic at MB1 on next boot may switch boot slot based on
@@ -1189,28 +1362,49 @@ static tegrabl_error_t check_user_redundancy_status(uint32_t reg,
 		goto done;
 	}
 
-	/* Change priority only when both slots are bootable */
-	if (tegrabl_a_b_get_retry_count_reg(!current_slot, reg) &&
-		slot1_priority && slot2_priority) {
-		/* current slot priority must be greater or equal than
-		 * non-current slot */
-		TEGRABL_ASSERT(slot1_priority >= slot2_priority);
+	rf_reg = tegrabl_get_rootfs_slot_reg();
+	/*
+	 * The magic field of rootfs SR must match with ROOTFS_AB_REG_MAGIC,
+	 * since it has been initialized in tegrabl_a_b_init_rootfs_slot_reg()
+	 * if not match.
+	 */
+	TEGRABL_ASSERT(ROOTFS_AB_REG_MAGIC_GET(rf_reg) == ROOTFS_AB_REG_MAGIC);
 
-		/*
-		 * Change slot priorities so that each boot-chain can be
-		 * tried twice before switching boot-chain if boot failed
-		 * after cboot
-		 */
-		rotate_slots_priority(smd, current_slot, slot1_priority,
-				slot2_priority);
+	/* Increase rotate_count by 1 */
+	rotate_count = ROOTFS_AB_REG_ROTATE_COUNT_GET(rf_reg);
+	rotate_count++;
+
+	/*
+	 * When rotate_count reaches maximum(max_rotate_count/2) for one slot,
+	 * or when rotate_count reaches maximum(max_rotate_count) for both slots,
+	 * if both slots are bootable, switch bootloader slot.
+	 */
+	max_rotate_count = get_max_rotate_count(smd);
+	if ((rotate_count == max_rotate_count / 2) ||
+		(rotate_count == max_rotate_count)) {
+		/* Switch bootloader slot when both slots are bootable */
+		if (tegrabl_a_b_get_retry_count_reg(!current_slot, bl_reg) &&
+			slot1_priority && slot2_priority) {
+			/* current slot priority must be greater or equal than
+			 * non-current slot */
+			TEGRABL_ASSERT(slot1_priority >= slot2_priority);
+
+			/* Switch to non-current slot by changing priority */
+			tegrabl_a_b_set_priority(smd, current_slot, 14);
+			tegrabl_a_b_set_priority(smd, !current_slot, 15);
+		}
 	}
-	*update_smd = 1;
+
+	/* Save rotate_count to RF_SR */
+	rf_reg = ROOTFS_AB_REG_ROTATE_COUNT_SET(rotate_count, rf_reg);
+	tegrabl_set_rootfs_slot_reg(rf_reg);
+
 done:
 	return error;
 }
 
 static tegrabl_error_t check_redundancy_status(uint32_t reg,
-		struct slot_meta_data *smd, uint8_t *update_smd)
+		struct slot_meta_data *smd)
 {
 	tegrabl_error_t error;
 	uint16_t version;
@@ -1222,10 +1416,14 @@ static tegrabl_error_t check_redundancy_status(uint32_t reg,
 	 *
 	 * For REDUNDANCY USER, ie, redundancy is supported for cboot's payload
 	 *    such as u-boot and kernel. For such case, since BL is already
-	 *    successfully booted to cboot, we should restore retry count but
-	 *    update slot priority. If control can reach UE, UE is responsible
-	 *    to restore slot priority. If control can not reach UE, boot
-	 *    failure (including device reboot) happens between cboot and UE.
+	 *    successfully booted to cboot, we should restore retry count. We
+	 *    use rotate_count in scratch register(RF_SR) to record the try
+	 *    times. If control reaches kernel, UE restores the rotate_count
+	 *    in RF_SR; if not, rotate_count will increase by 1 on each try.
+	 *    If both slots have tried max_rotate_count/2 times, boot to recovery.
+	 *
+	 *    When rotate_count reaches max_rotate_count/2 or max_rotate_count,
+	 *    if both slots are bootable, switch slot by changing priority;
 	 *    By changing slot priority values, A/B logic at mb1 can switch
 	 *    boot slot when current boot slot's priority is lower than the
 	 *    other slot.
@@ -1234,12 +1432,16 @@ static tegrabl_error_t check_redundancy_status(uint32_t reg,
 	if ((BOOTCTRL_SUPPORT_REDUNDANCY_USER(version) == 0U) &&
 	    (BOOTCTRL_SUPPORT_ROOTFS_AB(version) == 0U)) {
 		/* REDUNDANCY is supported at bootloader only */
-		error = check_non_user_redundancy_status(reg, smd, update_smd);
-	} else if (BOOTCTRL_SUPPORT_REDUNDANCY_USER(version) != 0U) {
-		/* REDUNDANCY is supported at kernel (or u-boot) */
-		error = check_user_redundancy_status(reg, smd, update_smd);
+		error = check_non_user_redundancy_status(reg, smd);
+	} else if (BOOTCTRL_SUPPORT_REDUNDANCY_USER(version) ||
+	    BOOTCTRL_IS_UNIFIED_AB_ENABLED(version)) {
+		/*
+		 * REDUNDANCY is supported at kernel (or u-boot)
+		 * or unified bl&rf a/b is enabled.
+		 */
+		error = check_user_redundancy_status(reg, smd);
 	} else if (BOOTCTRL_SUPPORT_ROOTFS_AB(version) != 0U) {
-		error = check_rootfs_ab_status(reg, update_smd);
+		error = check_rootfs_ab_status(reg, smd);
 	} else {
 		error = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 	}
@@ -1253,7 +1455,6 @@ tegrabl_error_t tegrabl_a_b_update_smd(void)
 	struct slot_meta_data *smd = NULL;
 	uint32_t reg;
 	uint8_t bc_flag;
-	uint8_t update_smd = 0;
 	uint16_t version;
 
 	reg = tegrabl_get_boot_slot_reg();
@@ -1261,7 +1462,7 @@ tegrabl_error_t tegrabl_a_b_update_smd(void)
 	error = tegrabl_a_b_get_smd((void **)&smd);
 	if (error != TEGRABL_NO_ERROR) {
 		TEGRABL_SET_HIGHEST_MODULE(error);
-		goto fail;
+		goto done;
 	}
 	version = tegrabl_a_b_get_version(smd);
 	if ((BOOT_CHAIN_REG_MAGIC_GET(reg) == BOOT_CHAIN_REG_MAGIC) &&
@@ -1273,35 +1474,33 @@ tegrabl_error_t tegrabl_a_b_update_smd(void)
 		 * or
 		 * If REDUNDANCY enabled, check redundancy status. save retry count
 		 *    based on return flag.
+		 *
+		 * If SMD buffer is changed, flush SMD buffer to SMD partition.
 		 */
 		if ((bc_flag == BC_FLAG_REDUNDANCY_BOOT) &&
 		    (BOOTCTRL_SUPPORT_REDUNDANCY(version) != 0U)) {
-			error = check_redundancy_status(reg, smd, &update_smd);
-			if ((error != TEGRABL_NO_ERROR) || (update_smd == 0U)) {
+			error = check_redundancy_status(reg, smd);
+			if (error != TEGRABL_NO_ERROR) {
 				goto done;
 			}
 		}
 
-		/* Update SMD based on SR and flush to storage */
+		/* Update SMD based on SR */
 		reg = tegrabl_get_boot_slot_reg();
 		tegrabl_a_b_copy_retry_count(smd, &reg, FROM_REG_TO_SMD);
-		error = tegrabl_a_b_flush_smd(smd);
-		if (error != TEGRABL_NO_ERROR) {
-			TEGRABL_SET_HIGHEST_MODULE(error);
-			goto fail;
+
+		/* Flush SMD if current SMD buffer is changed */
+		if (memcmp(smd, smd_backup, sizeof(struct slot_meta_data_v2))) {
+			pr_info("SMD partition is updated.\n");
+			error = tegrabl_a_b_flush_smd(smd);
+			if (error != TEGRABL_NO_ERROR) {
+				TEGRABL_SET_HIGHEST_MODULE(error);
+				goto done;
+			}
 		}
 	}
 
 done:
-	/* Always flush smd for rootfs AB */
-	if ((BOOTCTRL_SUPPORT_ROOTFS_AB(version)) && (update_smd == 0U)) {
-		error = tegrabl_a_b_flush_smd(smd);
-		if (error != TEGRABL_NO_ERROR) {
-			TEGRABL_SET_HIGHEST_MODULE(error);
-		}
-	}
-
-fail:
 	/* Clear SR before handing over to kernel */
 	if (BOOT_CHAIN_REG_MAGIC_GET(reg) == BOOT_CHAIN_REG_MAGIC) {
 		reg = 0;

@@ -120,8 +120,9 @@ tegrabl_error_t tegrabl_partition_lookup_bdev(const char *partition_name, struct
 
 	/* find the partition with partition_name in the given block device */
 	list_for_every_entry(storage_list, entry, struct tegrabl_storage_info, node) {
-		if (entry->bdev != bdev)
+		if (entry->bdev != bdev) {
 			continue;
+		}
 
 		num_partitions = entry->num_partitions;
 		partition_info = entry->partitions;

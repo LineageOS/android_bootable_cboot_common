@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -99,6 +99,16 @@ tegrabl_error_t tegrabl_i2c_set_bus_freq_info(uint32_t *freq, uint32_t num);
 * @return Handle of the struct tegrabl_i2c if success, NULL if fails.
 */
 struct tegrabl_i2c *tegrabl_i2c_open(tegrabl_instance_i2c_t instance);
+
+/**
+ * @brief Lookup an I2C controller given a register region base address.
+ *
+ * @param[in] base Register region base address.
+ * @param[out] instance Return location for the I2C controller instance.
+ *
+ * @return TEGRABL_NO_ERROR on success, error code on failure.
+ */
+tegrabl_error_t tegrabl_i2c_lookup(uintptr_t base, tegrabl_instance_i2c_t *instance);
 
 /**
 * @brief Writes the given data on the i2c interface.
