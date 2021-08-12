@@ -266,6 +266,12 @@ static int tegrabl_linuxboot_add_secureos_name(char *cmdline, int len,
 	return tegrabl_snprintf(cmdline, len, "%s=%s ", param, tos_name);
 }
 
+extern int __version_start;
+static int tegrabl_linuxboot_add_bootloader_version(char *cmdline, int len, char *param, void *priv)
+{
+	return tegrabl_snprintf(cmdline, len, "%s=%s ", param, (char *)&__version_start);
+}
+
 static struct tegrabl_linuxboot_param common_params[] = {
 	{ "tzram", tegrabl_linuxboot_add_carveout,
 		(void *)((uintptr_t)TEGRABL_LINUXBOOT_CARVEOUT_TOS) },
@@ -284,6 +290,7 @@ static struct tegrabl_linuxboot_param common_params[] = {
 #if !defined(CONFIG_OS_IS_L4T)
 	{ "memtype", tegrabl_linuxboot_add_string, "0" },
 	{ "androidboot.secureos", tegrabl_linuxboot_add_secureos_name, NULL },
+	{ "androidboot.bootloader", tegrabl_linuxboot_add_bootloader_version, NULL },
 #endif
 	{ "usbcore.old_scheme_first", tegrabl_linuxboot_add_string, "1" },
 	{ NULL, NULL, NULL},
