@@ -32,6 +32,7 @@ const char *fastboot_a_b_var_list[] = {
 	"slot-suffixes",
 	"has-slot",
 	"slot-count",
+	"is-logical",
 };
 
 const char *fastboot_a_b_slot_var_list[] = {
@@ -185,6 +186,34 @@ fail:
 	return error;
 }
 
+static tegrabl_error_t partition_is_logical(const char *partition_name,
+										  bool *is_logical, char *response)
+{
+	tegrabl_error_t error = TEGRABL_NO_ERROR;
+	const struct tegrabl_fastboot_partition_info *partinfo = NULL;
+	struct tegrabl_partition partition;
+
+	partinfo = tegrabl_fastboot_get_partinfo(partition_name);
+	if (!partinfo) {
+		COPY_RESPONSE("No partition present with this name.");
+		goto fail;
+	}
+	/* Use raw partition name to check if it's a valid partition */
+	error = tegrabl_partition_open(partinfo->tegra_part_name, &partition);
+	if (error != TEGRABL_NO_ERROR) {
+		COPY_RESPONSE("No partition present with this name.");
+		goto fail;
+	}
+
+	tegrabl_partition_close(&partition);
+
+	*is_logical = false;
+	error = TEGRABL_NO_ERROR;
+
+fail:
+	return error;
+}
+
 tegrabl_error_t tegrabl_fastboot_a_b_var_handler(const char *arg,
 												 char *response)
 {
@@ -195,6 +224,7 @@ tegrabl_error_t tegrabl_fastboot_a_b_var_handler(const char *arg,
 	bool slot_unbootable;
 	uint8_t slot_retry_count = 0;
 	bool has_slot = false;
+	bool is_logical = false;
 	uint8_t num_slots = 0;
 
 	if (IS_VAR_TYPE("has-slot:")) {
@@ -258,6 +288,17 @@ tegrabl_error_t tegrabl_fastboot_a_b_var_handler(const char *arg,
 			goto fail;
 		}
 		sprintf(response + strlen(response), "%u", slot_retry_count);
+	} else if (IS_VAR_TYPE("is-logical:")) {
+		error = partition_is_logical(arg + strlen("is-logical:"), &is_logical,
+								   response);
+		if (error != TEGRABL_NO_ERROR) {
+			goto fail;
+		}
+		if (!is_logical) {
+			COPY_RESPONSE("no");
+		} else {
+			COPY_RESPONSE("yes");
+		}
 	} else {
 		error = TEGRABL_ERROR(TEGRABL_ERR_NOT_SUPPORTED, 0);
 	}
