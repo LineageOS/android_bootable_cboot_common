@@ -150,8 +150,6 @@ static tegrabl_error_t partition_has_slot(const char *partition_name,
 	tegrabl_error_t error = TEGRABL_NO_ERROR;
 	const struct tegrabl_fastboot_partition_info *partinfo = NULL;
 	struct tegrabl_partition partition;
-	char part_name[MAX_PART_NAME_LEN] = {0};
-	char slot_suffix[MAX_BOOT_CHAIN_SUFFIX_LEN] = {0};
 
 	/* "bootloader" is a special case for all bootloader binaries.
 	 * "has-slot" should return the same result as "cpu-bootloader" */
@@ -173,12 +171,7 @@ static tegrabl_error_t partition_has_slot(const char *partition_name,
 	tegrabl_partition_close(&partition);
 
 	/* Use partition name with slot 1 suffix to check if it has slots */
-	error = tegrabl_get_slot_suffix(1, slot_suffix);
-	if (error != TEGRABL_NO_ERROR) {
-		goto fail;
-	}
-	sprintf(part_name, "%s%s", partinfo->tegra_part_name, slot_suffix);
-	error = tegrabl_partition_open(part_name, &partition);
+	error = tegrabl_partition_open(partinfo->tegra_part_name_b, &partition);
 	if (error == TEGRABL_NO_ERROR) {
 		*has_slot = true;
 		tegrabl_partition_close(&partition);
