@@ -29,6 +29,7 @@ const struct tegrabl_fastboot_partition_info
 	{ "bmp", "BMP", "BMP_b", FASTBOOT_FS_TYPE_BASIC },
 	{ "rpb", "RPB", NULL, FASTBOOT_FS_TYPE_BASIC },
 	{ "odm", "odm_a", "odm_b", FASTBOOT_FS_TYPE_EXT4 },
+	{ "avb_custom_key", "avb_custom_key", NULL, FASTBOOT_FS_TYPE_BASIC },
 };
 
 const char *tegrabl_nv_private_partition_list[] = {
