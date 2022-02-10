@@ -20,13 +20,13 @@
 
 const struct tegrabl_fastboot_partition_info
 	fastboot_partition_map_table[] = {
-	{ "recovery", "SOS_a", "SOS_b", FASTBOOT_FS_TYPE_BASIC },
-	{ "boot", "kernel_a", "kernel_b", FASTBOOT_FS_TYPE_BASIC},
+	{ "recovery", "recovery_a", "recovery_b", FASTBOOT_FS_TYPE_BASIC },
+	{ "boot", "boot_a", "boot_b", FASTBOOT_FS_TYPE_BASIC},
 	{ "dtb", "kernel-dtb_a", "kernel-dtb_b", FASTBOOT_FS_TYPE_BASIC},
-	{ "system", "APP_a", "APP_b", FASTBOOT_FS_TYPE_EXT4 },
-	{ "userdata", "UDA", NULL, FASTBOOT_FS_TYPE_EXT4 },
+	{ "system", "system_a", "system_b", FASTBOOT_FS_TYPE_EXT4 },
+	{ "userdata", "userdata", NULL, FASTBOOT_FS_TYPE_EXT4 },
 	{ "vendor", "vendor_a", "vendor_b", FASTBOOT_FS_TYPE_EXT4 },
-	{ "bmp", "BMP", "BMP_b", FASTBOOT_FS_TYPE_BASIC },
+	{ "bmp", "bootlogo", "bootlogo_b", FASTBOOT_FS_TYPE_BASIC },
 	{ "rpb", "RPB", NULL, FASTBOOT_FS_TYPE_BASIC },
 	{ "odm", "odm_a", "odm_b", FASTBOOT_FS_TYPE_EXT4 },
 	{ "avb_custom_key", "avb_custom_key", NULL, FASTBOOT_FS_TYPE_BASIC },

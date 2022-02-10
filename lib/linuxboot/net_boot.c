@@ -395,7 +395,7 @@ tegrabl_error_t net_boot_load_kernel_and_dtb(void **boot_img_load_addr, void **d
 
 	/* Validate downloaded binaries */
 #if defined(CONFIG_ENABLE_SECURE_BOOT)
-	err = tegrabl_validate_binary(TEGRABL_BINARY_KERNEL, "kernel", BOOT_IMAGE_MAX_SIZE, *boot_img_load_addr,
+	err = tegrabl_validate_binary(TEGRABL_BINARY_KERNEL, "boot", BOOT_IMAGE_MAX_SIZE, *boot_img_load_addr,
 								  &boot_img_size);
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;

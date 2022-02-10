@@ -40,7 +40,7 @@ struct tegrabl_img_dtb_fdt {
 	uint32_t preload_dtb_bin_type;
 } img_dtb_fdt_table[] = {
 	{
-		.img_name_str = "kernel",
+		.img_name_str = "boot",
 		.dtb_name_str = "kernel-dtb",
 		.img_bin_type = TEGRABL_BINARY_KERNEL,
 		.dtb_bin_type = TEGRABL_BINARY_KERNEL_DTB,
@@ -56,7 +56,7 @@ struct tegrabl_img_dtb_fdt {
 	},
 #elif defined(CONFIG_OS_IS_ANDROID)
 	{
-		.img_name_str = "SOS",
+		.img_name_str = "recovery",
 		.dtb_name_str = "kernel-dtb",
 		.img_bin_type = TEGRABL_BINARY_RECOVERY_KERNEL,
 		.dtb_bin_type = TEGRABL_BINARY_KERNEL_DTB,
