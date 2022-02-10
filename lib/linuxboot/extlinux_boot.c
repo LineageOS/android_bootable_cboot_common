@@ -613,7 +613,7 @@ tegrabl_error_t extlinux_boot_load_kernel_and_dtb(struct tegrabl_fm_handle *fm_h
 	pr_info("Loading kernel ...\n");
 	err = load_binary_with_sig(fm_handle,
 							   TEGRABL_BINARY_KERNEL,
-							   "kernel",
+							   "boot",
 							   BOOT_IMAGE_MAX_SIZE,
 							   linux_path,
 							   *boot_img_load_addr,

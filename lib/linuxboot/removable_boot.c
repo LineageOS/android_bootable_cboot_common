@@ -41,7 +41,7 @@ struct tegrabl_img_dtb {
 	uint32_t dtb_bin_type;
 } img_dtb_table[] = {
 	{
-		.img_name_str = "kernel",
+		.img_name_str = "boot",
 		.dtb_name_str = "kernel-dtb",
 		.img_bin_type = TEGRABL_BINARY_KERNEL,
 		.dtb_bin_type = TEGRABL_BINARY_KERNEL_DTB
