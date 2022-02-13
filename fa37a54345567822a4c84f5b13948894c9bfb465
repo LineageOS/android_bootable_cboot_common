@@ -16,6 +16,23 @@
       "message": "Verified on lanai",
       "revId": "fa37a54345567822a4c84f5b13948894c9bfb465",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "51015ef3_1bc2b3f1",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 29024
+      },
+      "writtenOn": "2022-02-13T08:04:14Z",
+      "side": 1,
+      "message": "it\u0027s allows us to lock bootloader?",
+      "revId": "fa37a54345567822a4c84f5b13948894c9bfb465",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
     }
   ]
 }
