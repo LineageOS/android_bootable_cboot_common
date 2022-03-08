@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -86,6 +86,8 @@ static tegrabl_error_t sd_register_region(struct tegrabl_sdmmc *hsdmmc)
 #if !defined(CONFIG_ENABLE_BLOCKDEV_BASIC)
 	user_dev->write_block = sdmmc_bdev_write_block;
 	user_dev->erase = sdmmc_bdev_erase;
+	user_dev->xfer = sdmmc_bdev_xfer;
+	user_dev->xfer_wait = sdmmc_bdev_xfer_wait;
 #endif
 	user_dev->close = sdmmc_bdev_close;
 	user_dev->ioctl = sdmmc_bdev_ioctl;

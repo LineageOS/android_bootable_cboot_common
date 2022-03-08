@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2020, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2015-2021, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -297,6 +297,15 @@ tegrabl_error_t tegrabl_car_clk_get_reset_state(tegrabl_module_t module, uint8_t
  * @return TEGRABL_NO_ERROR if success, error-reason otherwise.
  */
 tegrabl_error_t tegrabl_pcie_unpowergate(uint32_t domain_id);
+
+/**
+ * @brief powergate a PCIe domain
+ *
+ * @domain_id - PCIe domain to be powergated
+ *
+ * @return TEGRABL_NO_ERROR if success, error-reason otherwise.
+ */
+tegrabl_error_t tegrabl_pcie_powergate(uint32_t domain_id);
 
 /**
  * @brief Set PCIe controller state

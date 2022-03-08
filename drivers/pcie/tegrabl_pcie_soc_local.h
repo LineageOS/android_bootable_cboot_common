@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -58,21 +58,21 @@ uint32_t *tegrabl_pcie_get_dbi_reg(void);
  *
  * @retval Pointer to the array of iATU base addresses for each controller
  */
-uint32_t *regrabl_pcie_get_iatu_reg(void);
+uint32_t *tegrabl_pcie_get_iatu_reg(void);
 
 /**
  * @brief API to get IO map starting address
  *
  * @retval Pointer to the array of IO map addresses for each controller
  */
-uint32_t *regrabl_pcie_get_io_base(void);
+uint32_t *tegrabl_pcie_get_io_base(void);
 
 /**
  * @brief API to get Memory map starting address
  *
  * @retval Pointer to the array of Memory map addresses for each controller
  */
-uint32_t *regrabl_pcie_get_mem_base(void);
+uint32_t *tegrabl_pcie_get_mem_base(void);
 
 /**
  * @brief API to power on a PCIe controller's phy
@@ -101,4 +101,23 @@ tegrabl_error_t tegrabl_pcie_soc_preinit(uint8_t ctrl_num);
  * @return TEGRABL_NO_ERROR if success, error-reason otherwise.
  */
 tegrabl_error_t tegrabl_pcie_soc_init(uint8_t ctrl_num, uint8_t link_speed);
+
+/**
+ * @brief API to turn off PCIe PME
+ *
+ * @ctrl_num - PCIe controller number to trun off PME
+ *
+ * @return None
+ */
+void tegrabl_pcie_soc_pme_turnoff(uint8_t ctrl_num);
+
+/**
+ * @brief API to powergate PCIe
+ *
+ * @ctrl_num - PCIe controller number to powergate
+ *
+ * @return TEGRABL_NO_ERROR if success, error-reason otherwise.
+ */
+tegrabl_error_t tegrabl_pcie_soc_powergate(uint8_t ctrl_num);
+
 #endif

@@ -65,7 +65,7 @@ tegrabl_error_t tegrabl_validate_binary(uint32_t bin_type, char *bin_name, uint3
 	pr_info("Validate %s ...\n", bin_name);
 
 	if (!tegrabl_do_ratchet_check(bin_type, load_addr)) {
-		err = TEGRABL_ERR_RATCHET;
+		err = TEGRABL_ERROR(TEGRABL_ERR_VERIFY_FAILED, 2);
 		goto fail;
 	}
 

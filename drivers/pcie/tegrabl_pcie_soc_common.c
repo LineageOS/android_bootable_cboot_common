@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.  All Rights Reserved.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -246,9 +246,9 @@ tegrabl_error_t tegrabl_pcie_soc_host_init(uint8_t ctrl_num, uint32_t flags, str
 	}
 
 	dbi_reg_offset = tegrabl_pcie_get_dbi_reg();
-	iatu_dma_offset = regrabl_pcie_get_iatu_reg();
-	pcie_io_base = regrabl_pcie_get_io_base();
-	pcie_mem_base = regrabl_pcie_get_mem_base();
+	iatu_dma_offset = tegrabl_pcie_get_iatu_reg();
+	pcie_io_base = tegrabl_pcie_get_io_base();
+	pcie_mem_base = tegrabl_pcie_get_mem_base();
 
 	if ((dbi_reg_offset == NULL) || (iatu_dma_offset == NULL) || (pcie_io_base == NULL) ||
 		(pcie_mem_base == NULL)) {
@@ -302,10 +302,13 @@ tegrabl_error_t tegrabl_pcie_reset_state(uint8_t ctrl_num)
 {
 	pr_trace("%s:\n", __func__);
 
-	tegrabl_set_ctrl_state(ctrl_num, false);
+	tegrabl_pcie_soc_pme_turnoff(ctrl_num);
 	tegrabl_car_rst_set(TEGRABL_MODULE_PCIE_CORE, ctrl_num);
 	tegrabl_car_rst_set(TEGRABL_MODULE_PCIE_APB, ctrl_num);
 	tegrabl_car_clk_disable(TEGRABL_MODULE_PCIE_CORE, ctrl_num);
+	tegrabl_set_ctrl_state(ctrl_num, false);
+	tegrabl_pcie_soc_powergate(ctrl_num);
+	tegrabl_pcie_disable_regulators(ctrl_num);
 
 	return TEGRABL_NO_ERROR;
 }
