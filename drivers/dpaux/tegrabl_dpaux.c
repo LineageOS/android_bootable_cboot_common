@@ -234,7 +234,7 @@ tegrabl_error_t dpaux_prod_set(struct tegrabl_dpaux *hdpaux, uint32_t mode)
 	mask = dpaux_prod_tuple[2];
 	val = dpaux_prod_tuple[3];
 #endif
-	if ((off < 0) || (off > (NV_ADDRESS_MAP_DPAUX_SIZE - *(int32_t *)hdpaux->base))) {
+	if ((off < 0) || (off > (int32_t)(NV_ADDRESS_MAP_DPAUX_SIZE - *(int32_t *)hdpaux->base))) {
 		pr_error("dpaux address offset is out of bounds\n");
 		goto fail;
 	}
