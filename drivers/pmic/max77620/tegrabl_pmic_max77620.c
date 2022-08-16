@@ -662,8 +662,12 @@ tegrabl_error_t tegrabl_max77620_init(uint32_t i2c_instance)
 	if (TEGRABL_NO_ERROR != tegrabl_dt_get_node_with_path(
 									fdt, "/bpmp_i2c/spmic",
 									&internal_node_offset)) {
-		pr_error("Cannot find DT node for 'bpmp_i2c' (pmic max77620)\n");
-		goto fail;
+		if (TEGRABL_NO_ERROR != tegrabl_dt_get_node_with_path(
+									fdt, "/bpmp/i2c/spmic",
+									&internal_node_offset)) {
+			pr_error("Cannot find DT node for 'bpmp_i2c' (pmic max77620)\n");
+			goto fail;
+		}
 	}
 
 
