@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2017, NVIDIA CORPORATION.  All Rights Reserved.
+ * Copyright (c) 2014-2022, NVIDIA CORPORATION.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -29,6 +29,14 @@
 
 #define LEGACY_BLOB_HEADER_LEN 36
 #define MAX_BLOB_SIZE (60 * 1024 * 1024)
+
+
+/**
+ * @brief auxinfo for error return *
+*/
+#define TEGRABL_BLOB_TYPE_MAX_BLOB_SIZE 1
+#define TEGRABL_BLOB_TYPE_UNCOMP_SIZE 2
+#define TEGRABL_BLOB_TYPE_DATA_SIZE 3
 
 /**
  * @brief blob signed header
@@ -274,6 +282,16 @@ tegrabl_error_t tegrabl_blob_init(char *part_name, uint8_t *bptr,
 		struct blob_header *blobheader = (struct blob_header *)header;
 		if (is_compressed_content(
 				(uint8_t *)header + blobheader->entries_offset, &decomp)) {
+			if ((blobheader->entries_offset == LEGACY_BLOB_HEADER_LEN) && (MAX_BLOB_SIZE < blobheader->entries_offset)) {
+				return TEGRABL_ERROR(TEGRABL_ERR_INVALID, TEGRABL_BLOB_TYPE_MAX_BLOB_SIZE);
+
+			} else if ((blobheader->entries_offset != LEGACY_BLOB_HEADER_LEN) && ( blobheader->uncomp_size < blobheader->entries_offset)){
+				return TEGRABL_ERROR(TEGRABL_ERR_INVALID, TEGRABL_BLOB_TYPE_UNCOMP_SIZE);
+			}
+			if (data_size < blobheader->entries_offset){
+				return TEGRABL_ERROR(TEGRABL_ERR_INVALID, TEGRABL_BLOB_TYPE_DATA_SIZE);
+			}
+
 			pr_info("decompressing %s blob ...\n", part_name);
 			error = blob_decompress(&blob_buf, (uint32_t *)&blob_asize, header,
 									blobheader->entries_offset, data_size,

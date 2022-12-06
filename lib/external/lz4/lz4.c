@@ -33,7 +33,7 @@
 */
 
 /*
- * Copyright (c) 2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
  */
 
 
@@ -204,12 +204,12 @@ static size_t LZ4_read_ARCH(const void* p)
 /* use optimized copy functions, to improve decompression perf */
 static void LZ4_copy4(void *dst_ptr, const void *src_ptr)
 {
-	*((uint32_t *)(dst_ptr)) = *((uint32_t *)(src_ptr));
+	memcpy((uint8_t *)dst_ptr, (uint8_t *)src_ptr, sizeof(uint32_t));
 }
 
 static void LZ4_copy8(void *dst_ptr, const void *src_ptr)
 {
-	*((uint64_t *)(dst_ptr)) = *((uint64_t *)(src_ptr));
+	memcpy((uint8_t *)dst_ptr, (uint8_t *)src_ptr, sizeof(uint64_t));
 }
 
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -128,7 +128,7 @@ tegrabl_error_t tegrabl_display_show_image(struct tegrabl_image_info *image)
 	uint32_t du_idx = 0;
 
 	if (!hdisplay) {
-		pr_error("%s: display is not initialized\n", __func__);
+		pr_warn("%s: display is not initialized\n", __func__);
 		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_INITIALIZED, 1);
 		goto fail;
 	}
@@ -156,7 +156,7 @@ tegrabl_error_t tegrabl_display_show_image(struct tegrabl_image_info *image)
 		err = tegrabl_display_unit_ioctl(hdisplay->du[du_idx],
 				DISPLAY_UNIT_IOCTL_GET_DISPLAY_PARAMS, (void *)disp_param);
 		if (err != TEGRABL_NO_ERROR) {
-			pr_error("%s: failed to process du %d\n", __func__, du_idx);
+			pr_warn("%s: failed to process du %d\n", __func__, du_idx);
 			goto fail;
 		}
 		pr_debug("%s: Get disp_params for instance %d\n", __func__,
@@ -172,7 +172,7 @@ tegrabl_error_t tegrabl_display_show_image(struct tegrabl_image_info *image)
 		if (image->format == TEGRABL_IMAGE_FORMAT_BMP) {
 			err = tegrabl_get_bmp(&bmp_img);
 			if (err != TEGRABL_NO_ERROR) {
-				pr_error("%s, du %d failed to read bmp from blob\n",
+				pr_warn("%s, du %d failed to read bmp from blob\n",
 						 __func__, du_idx);
 				goto fail;
 			}
@@ -184,7 +184,7 @@ tegrabl_error_t tegrabl_display_show_image(struct tegrabl_image_info *image)
 display_image:
 		err = tegrabl_display_unit_show_image(hdisplay->du[du_idx], image);
 		if (err != TEGRABL_NO_ERROR) {
-			pr_error("%s, du %d failed to show image\n", __func__, du_idx);
+			pr_warn("%s, du %d failed to show image\n", __func__, du_idx);
 			goto fail;
 		}
 	}
@@ -202,7 +202,7 @@ tegrabl_error_t tegrabl_display_clear(void)
 	uint32_t du_idx = 0;
 
 	if (!hdisplay) {
-		pr_error("%s: display is not initialized\n", __func__);
+		pr_warn("%s: display is not initialized\n", __func__);
 		err = TEGRABL_ERROR(TEGRABL_ERR_NOT_INITIALIZED, 2);
 		goto fail;
 	}
@@ -213,8 +213,7 @@ tegrabl_error_t tegrabl_display_clear(void)
 				 hdisplay->du[du_idx]->type);
 		err = tegrabl_display_unit_clear(hdisplay->du[du_idx]);
 		if (err != TEGRABL_NO_ERROR) {
-			pr_error("%s, du %d failed to clear display unit\n", __func__,
-					 du_idx);
+			pr_warn("%s, du %d failed to clear display unit\n", __func__, du_idx);
 			goto fail;
 		}
 	}
@@ -290,7 +289,7 @@ tegrabl_error_t tegrabl_display_get_params(
 	err = tegrabl_display_unit_ioctl(hdisplay->du[du_idx],
 			DISPLAY_UNIT_IOCTL_GET_DISPLAY_PARAMS, (void *)disp_param);
 	if (err != TEGRABL_NO_ERROR) {
-		pr_error("%s, du %d failed to get display params\n", __func__, du_idx);
+		pr_warn("%s, du %d failed to get display params\n", __func__, du_idx);
 		goto fail;
 	}
 
