@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2019-2022, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -233,7 +233,7 @@ fail:
     return err;
 }
 
-static ssize_t ext4_read_data_from_extent(ext2_t *ext2, struct ext2fs_dinode *inode, void *buf)
+static ssize_t ext4_read_data_from_extent(ext2_t *ext2, struct ext2fs_dinode *inode, void *buf, size_t len)
 {
     struct ext4_extent_header *extent_header = NULL;
     struct ext4_extent_idx *extent_idx = NULL;
@@ -244,6 +244,9 @@ static ssize_t ext4_read_data_from_extent(ext2_t *ext2, struct ext2fs_dinode *in
     uint8_t *buf_ptr = NULL;
     off_t total_bytes_read = 0;
     int err = 0;
+    uint32_t file_len_in_blocks = 0;
+    uint32_t total_blocks_read;
+    uint32_t block_size;
 
     LTRACE_ENTRY;
 
@@ -254,6 +257,15 @@ static ssize_t ext4_read_data_from_extent(ext2_t *ext2, struct ext2fs_dinode *in
     }
 
     buf_ptr = (uint8_t *)buf;
+    block_size = E2FS_BLOCK_SIZE(ext2->super_blk);
+
+    if (len != 0UL) {
+        file_len_in_blocks = len/block_size;
+        if ((len % block_size) != 0U) {
+            file_len_in_blocks++;
+        }
+        LTRACEF("file_len_in_blocks: %u\n", file_len_in_blocks);
+    }
 
     /* Extract extents info */
     extent_header = (struct ext4_extent_header *)inode->e2di_blocks;
@@ -284,11 +296,37 @@ static ssize_t ext4_read_data_from_extent(ext2_t *ext2, struct ext2fs_dinode *in
             err = ext4_read_extent(ext2, (struct ext4_extent_header *)buf2, buf_ptr, &bytes_read);
             total_bytes_read += bytes_read;
             buf_ptr += bytes_read;
+
+            total_blocks_read = total_bytes_read/block_size;
+            if ((total_bytes_read % block_size) != 0U) {
+                total_blocks_read++;
+            }
+
+            /* Check if extra block isn't read */
+            if ((len != 0) && (total_blocks_read > file_len_in_blocks)) {
+                TRACEF("More blocks are read (%u) than file block count (%u)\n",
+                        total_blocks_read, file_len_in_blocks);
+                err = ERR_NOT_VALID;
+                goto fail;
+            }
         }
     } else {
         /* Read leaf node */
         err = ext4_read_extent(ext2, extent_header, buf_ptr, &bytes_read);
         total_bytes_read += bytes_read;
+
+        total_blocks_read = total_bytes_read/block_size;
+        if ((total_bytes_read % block_size) != 0U) {
+            total_blocks_read++;
+        }
+
+        /* Check if extra block isn't read */
+        if ((len != 0) && (total_blocks_read > file_len_in_blocks)) {
+            TRACEF("More blocks are read (%u) than file block count (%u)\n",
+                    total_blocks_read, file_len_in_blocks);
+            err = ERR_NOT_VALID;
+            goto fail;
+        }
     }
 
     LTRACEF("err %d, bytes_read %lu\n", err, total_bytes_read);
@@ -406,7 +444,7 @@ static int lookup_linear_dir(ext2_t *ext2, struct ext2fs_dinode *dir_inode, cons
 
     file_blocknum = 0;
     for (;;) {
-        err = ext4_read_data_from_extent(ext2, dir_inode, buf);
+        err = ext4_read_data_from_extent(ext2, dir_inode, buf, 0);
         if (err <= 0) {
             return -1;
         }
@@ -493,7 +531,7 @@ status_t ext4_mount(struct tegrabl_bdev *dev, uint64_t start_sector, fscookie **
 {
     off_t fs_offset;
     uint32_t gd_size;
-    uint32_t total_gd_size;
+    uint64_t total_gd_size;
     struct ext2_block_group_desc *grp_desc;
     int i;
     int err = 0;
@@ -582,7 +620,7 @@ status_t ext4_mount(struct tegrabl_bdev *dev, uint64_t start_sector, fscookie **
     } else {
         gd_size = E2FS_GD_SIZE;
     }
-    total_gd_size = gd_size * ext2->group_count;
+    total_gd_size = (uint64_t)gd_size *  (uint64_t)ext2->group_count;
     ext2->grp_desc = tegrabl_memalign(SZ_64K, total_gd_size);
     if (ext2->grp_desc == NULL) {
         TRACEF("Failed to allocate memory for group descriptor\n");
@@ -696,6 +734,18 @@ ssize_t ext4_read_file(filecookie *fcookie, void *buf, off_t offset, size_t len)
     ext2_file_t *file = NULL;
 
     LTRACEF("\n");
+
+    if (len == 0) {
+        TRACEF("File length cannot be 0\n");
+        return -1;
+    }
+
+    /* Offset is not used in this function so it must be 0 */
+    if (offset != 0) {
+        TRACEF("Offset must be 0\n");
+        return -1;
+    }
+
     file = (ext2_file_t *)fcookie;
 
     /* Test that it's a file */
@@ -704,7 +754,7 @@ ssize_t ext4_read_file(filecookie *fcookie, void *buf, off_t offset, size_t len)
         return -1;
     }
 
-    return ext4_read_data_from_extent(file->ext2, &file->inode, buf);
+    return ext4_read_data_from_extent(file->ext2, &file->inode, buf, len);
 }
 
 static const struct fs_api ext4_api = {

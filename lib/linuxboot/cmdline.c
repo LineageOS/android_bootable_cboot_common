@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2020, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2014-2022, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -208,7 +208,7 @@ static int tegrabl_linuxboot_add_disp_param(char *cmdline, int len, char *param,
 	for (du_idx = 0; du_idx < DISPLAY_OUT_MAX; du_idx++) {
 		err = tegrabl_display_get_params(du_idx, &disp_params);
 		if (err != TEGRABL_NO_ERROR) {
-			pr_error("%s, du %d failed to get display params\n", __func__, du_idx);
+			pr_warn("%s, du %d failed to get display params\n", __func__, du_idx);
 			goto fail;
 		}
 

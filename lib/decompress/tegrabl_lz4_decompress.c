@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software and related documentation
@@ -67,7 +67,7 @@ tegrabl_error_t do_lz4_decompress(void *cntxt, void *in_buffer,
 		}
 		block_descriptor = *cbuf++;
 		if (frame_flag & CONTENT_SIZE_FALG_MASK) {
-			content_size = *(uint64_t *)cbuf;
+			memcpy((uint8_t *)&content_size, cbuf, sizeof(uint64_t));
 			cbuf += ORIGINAL_CONTENT_SZ;
 		}
 		header_csum = *cbuf++;
