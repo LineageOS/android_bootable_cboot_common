@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017 NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2016-2022 NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software and related documentation
@@ -33,6 +33,8 @@ struct rollback_limits {
 	const uint8_t tsec_gsc_ucode;     /* GSC uCode rollback level */
 	const uint8_t early_spe_fw;       /* Early SPE-FW's rollback level */
 	const uint8_t extended_spe_fw;    /* Extended SPE-FW's rollback level */
+	const uint8_t hdcp2srm;           /* srm rollback level, HDCP 2.2 */
+	const uint8_t cpubl;              /* srm rollback level for cpubl (quickboot) */
 }
 );
 
@@ -44,7 +46,7 @@ struct tegrabl_rollback {
 	const uint8_t fuse_idx;           /* Idx in odm reserved fuses array */
 	const uint8_t level;              /* mb1_bct's rollback level */
 	const struct rollback_limits limits;
-	uint8_t reserved[51];
+	uint8_t reserved[49];
 }
 );
 

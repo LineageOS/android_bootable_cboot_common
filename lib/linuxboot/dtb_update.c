@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2020, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2014-2022, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -756,14 +756,14 @@ static tegrabl_error_t add_disp_param(void *fdt, int nodeoffset)
 	for (du_idx = 0; du_idx < DISPLAY_OUT_MAX; du_idx++) {
 		err = tegrabl_display_get_params(du_idx, &disp_params);
 		if (err != TEGRABL_NO_ERROR) {
-			pr_error("%s: failed to get display params for du=%d\n", __func__, du_idx);
+			pr_warn("%s: failed to get display params for du=%d\n", __func__, du_idx);
 			goto fail;
 		}
 
 		if (disp_params.size != 0) {
 			err = update_fb_carveout(fdt, nodeoffset, &disp_params);
 			if (err != TEGRABL_NO_ERROR) {
-				pr_error("%s, failed to update display params for du=%d\n", __func__, du_idx);
+				pr_warn("%s, failed to update display params for du=%d\n", __func__, du_idx);
 				goto fail;
 			}
 		}

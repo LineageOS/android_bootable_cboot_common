@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2018-2022, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -221,9 +221,12 @@ static void parse_ip_info(void *fdt, int32_t offset, struct ip_info *ip_info)
 	uint32_t count;
 	const char *status;
 
-	err = tegrabl_dt_get_prop_u8_array(fdt, offset, boot_cfg_vars[1], 0, ip_info->tftp_server_ip, &count);
+	err = tegrabl_dt_get_prop_u8_array(fdt, offset, boot_cfg_vars[1], IP_LEN, ip_info->tftp_server_ip, &count);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_warn("%s: tftp-server-ip info not found in CBO options file\n", __func__);
+	} else if (count != IP_LEN) {
+		pr_warn("%s: Incorrect tftp-server-ip info in CBO options file\n", __func__);
+		memset(ip_info->tftp_server_ip, 0, IP_LEN);
 	} else {
 		print_ip("tftp-server-ip", ip_info->tftp_server_ip);
 	}
@@ -237,25 +240,34 @@ static void parse_ip_info(void *fdt, int32_t offset, struct ip_info *ip_info)
 		ip_info->is_dhcp_enabled = false;
 	}
 
-	err = tegrabl_dt_get_prop_u8_array(fdt, offset, boot_cfg_vars[3], 0, ip_info->static_ip, &count);
+	err = tegrabl_dt_get_prop_u8_array(fdt, offset, boot_cfg_vars[3], IP_LEN, ip_info->static_ip, &count);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_warn("%s: static-ip info not found in CBO options file\n", __func__);
+		goto skip_static_ip_parse;
+	} else if (count != IP_LEN) {
+		pr_warn("%s: Incorrect static-ip info in CBO options file\n", __func__);
 		goto skip_static_ip_parse;
 	} else {
 		print_ip("static-ip", ip_info->static_ip);
 	}
 
-	err = tegrabl_dt_get_prop_u8_array(fdt, offset, boot_cfg_vars[4], 0, ip_info->ip_netmask, &count);
+	err = tegrabl_dt_get_prop_u8_array(fdt, offset, boot_cfg_vars[4], IP_LEN, ip_info->ip_netmask, &count);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_warn("%s: netmask for static-ip not found in CBO options file\n", __func__);
+		goto skip_static_ip_parse;
+	} else if (count != IP_LEN) {
+		pr_warn("%s: Incorrect ip_netmask info in CBO options file\n", __func__);
 		goto skip_static_ip_parse;
 	} else {
 		print_ip("ip-netmask", ip_info->ip_netmask);
 	}
 
-	err = tegrabl_dt_get_prop_u8_array(fdt, offset, boot_cfg_vars[5], 0, ip_info->ip_gateway, &count);
+	err = tegrabl_dt_get_prop_u8_array(fdt, offset, boot_cfg_vars[5], IP_LEN, ip_info->ip_gateway, &count);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_warn("%s: gateway-ip for static-ip not found in CBO options file\n", __func__);
+		goto skip_static_ip_parse;
+	} else if (count != IP_LEN) {
+		pr_warn("%s: Incorrect ip_gateway info in CBO options file\n", __func__);
 		goto skip_static_ip_parse;
 	} else {
 		print_ip("ip-gateway", ip_info->ip_gateway);
@@ -264,9 +276,9 @@ static void parse_ip_info(void *fdt, int32_t offset, struct ip_info *ip_info)
 skip_static_ip_parse:
 	if (err != TEGRABL_NO_ERROR) {
 		/* all 3 ip's must be available else clear all */
-		memset(ip_info->static_ip, 0, 4);
-		memset(ip_info->ip_netmask, 0, 4);
-		memset(ip_info->ip_gateway, 0, 4);
+		memset(ip_info->static_ip, 0, IP_LEN);
+		memset(ip_info->ip_netmask, 0, IP_LEN);
+		memset(ip_info->ip_gateway, 0, IP_LEN);
 	}
 	return;
 }
@@ -408,13 +420,13 @@ void tegrabl_set_ip_info(const char *var_name, uint8_t *ip, bool is_dhcp_enabled
 	if (!strcmp(var_name, "dhcp-enabled")) {
 		g_cbo_info.ip_info.is_dhcp_enabled = is_dhcp_enabled;
 	} else if (!strcmp(var_name, "tftp-server-ip")) {
-		memcpy(g_cbo_info.ip_info.tftp_server_ip, ip, 4);
+		memcpy(g_cbo_info.ip_info.tftp_server_ip, ip, IP_LEN);
 	} else if (!strcmp(var_name, "static-ip")) {
-		memcpy(g_cbo_info.ip_info.static_ip, ip, 4);
+		memcpy(g_cbo_info.ip_info.static_ip, ip, IP_LEN);
 	} else if (!strcmp(var_name, "ip-netmask")) {
-		memcpy(g_cbo_info.ip_info.ip_netmask, ip, 4);
+		memcpy(g_cbo_info.ip_info.ip_netmask, ip, IP_LEN);
 	} else if (!strcmp(var_name, "ip-gateway")) {
-		memcpy(g_cbo_info.ip_info.ip_gateway, ip, 4);
+		memcpy(g_cbo_info.ip_info.ip_gateway, ip, IP_LEN);
 	} else {
 		pr_info("invalid variable\n");
 	}
@@ -462,13 +474,13 @@ void tegrabl_clear_ip_info(const char *var_name)
 	if (!strcmp(var_name, "dhcp-enabled")) {
 		g_cbo_info.ip_info.is_dhcp_enabled = false;
 	} else if (!strcmp(var_name, "tftp-server-ip")) {
-		memset(g_cbo_info.ip_info.tftp_server_ip, 0, 4);
+		memset(g_cbo_info.ip_info.tftp_server_ip, 0, IP_LEN);
 	} else if (!strcmp(var_name, "static-ip")) {
-		memset(g_cbo_info.ip_info.static_ip, 0, 4);
+		memset(g_cbo_info.ip_info.static_ip, 0, IP_LEN);
 	} else if (!strcmp(var_name, "ip-netmask")) {
-		memset(g_cbo_info.ip_info.ip_netmask, 0, 4);
+		memset(g_cbo_info.ip_info.ip_netmask, 0, IP_LEN);
 	} else if (!strcmp(var_name, "ip-gateway")) {
-		memset(g_cbo_info.ip_info.ip_gateway, 0, 4);
+		memset(g_cbo_info.ip_info.ip_gateway, 0, IP_LEN);
 	} else {
 		pr_info("invalid variable\n");
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2018-2022, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -28,15 +28,17 @@
 #define BOOT_FROM_BUILTIN_STORAGE	4
 #define BOOT_FROM_NVME				5
 
+#define IP_LEN					4
+
 #define GUID_STR_LEN				36
 #define GUID_STR_SIZE				(GUID_STR_LEN + 1)
 
 struct ip_info {
 	bool is_dhcp_enabled;
-	uint8_t static_ip[4];
-	uint8_t ip_netmask[4];
-	uint8_t ip_gateway[4];
-	uint8_t tftp_server_ip[4];
+	uint8_t static_ip[IP_LEN];
+	uint8_t ip_netmask[IP_LEN];
+	uint8_t ip_gateway[IP_LEN];
+	uint8_t tftp_server_ip[IP_LEN];
 };
 
 struct cbo_info {

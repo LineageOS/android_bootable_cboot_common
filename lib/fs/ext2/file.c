@@ -69,6 +69,11 @@ ssize_t ext2_read_file(filecookie *fcookie, void *buf, off_t offset, size_t len)
     ext2_file_t *file = (ext2_file_t *)fcookie;
     int err;
 
+    if (len == 0) {
+        TRACEF("File length cannot be 0\n");
+        return -1;
+    }
+
     // test that it's a file
     if (!S_ISREG(file->inode.e2di_mode)) {
         dprintf(INFO, "ext2_read_file: not a file, mode: 0x%04x\n", file->inode.e2di_mode);
