@@ -23,6 +23,7 @@ const struct tegrabl_fastboot_partition_info
 	{ "recovery", "recovery_a", "recovery_b", FASTBOOT_FS_TYPE_BASIC },
 	{ "boot", "boot_a", "boot_b", FASTBOOT_FS_TYPE_BASIC},
 	{ "dtb", "kernel-dtb_a", "kernel-dtb_b", FASTBOOT_FS_TYPE_BASIC},
+	{ "dtbo", "kernel-dtbo_a", "kernel-dtbo_b", FASTBOOT_FS_TYPE_BASIC},
 	{ "system", "system_a", "system_b", FASTBOOT_FS_TYPE_EXT4 },
 	{ "userdata", "userdata", NULL, FASTBOOT_FS_TYPE_EXT4 },
 	{ "vendor", "vendor_a", "vendor_b", FASTBOOT_FS_TYPE_EXT4 },
