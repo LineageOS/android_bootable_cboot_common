@@ -25,7 +25,7 @@
 
 /* TODO:: max download size needs to come from  uncached ram*/
 /* currently  max-download size is 32mb */
-#define MAX_DOWNLOAD_SIZE 0x2000000
+#define MAX_DOWNLOAD_SIZE 0x20000000
 #define MAX_RESPONSE_SIZE 64
 #define STATE_OFFLINE   0
 #define STATE_COMMAND   1
