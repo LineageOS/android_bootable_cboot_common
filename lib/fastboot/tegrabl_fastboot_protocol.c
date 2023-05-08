@@ -47,6 +47,7 @@
 #include <tegrabl_fastboot_a_b.h>
 #include <tegrabl_transport_usbf.h>
 #include <tegrabl_partition_manager.h>
+#include <tegrabl_soc_misc.h>
 #include <tegrabl_sparse.h>
 #include <tegrabl_exit.h>
 #include <tegrabl_board_info.h>
@@ -188,6 +189,7 @@ static void cmd_reboot(const char *arg, void *data, uint32_t size)
 	(void)size;
 
 	pr_info("Rebooting the device\n");
+	fastboot_okay("");
 
 	tegrabl_reset();
 
@@ -204,6 +206,33 @@ static void cmd_reboot_bootloader(const char *arg, void *data, uint32_t size)
 	fastboot_okay("");
 
 	tegrabl_reboot_fastboot();
+
+	return;
+}
+
+static void cmd_reboot_fastboot(const char *arg, void *data, uint32_t size)
+{
+	(void)arg;
+	(void)data;
+	(void)size;
+
+	pr_info("Rebooting to fastbootd is not implemented\n");
+	fastboot_fail("Rebooting to fastbootd is not implemented");
+
+	return;
+}
+
+static void cmd_reboot_recovery(const char *arg, void *data, uint32_t size)
+{
+	(void)arg;
+	(void)data;
+	(void)size;
+
+	pr_info("Rebooting to recovery\n");
+	fastboot_okay("");
+
+	tegrabl_set_pmc_scratch0_flag(TEGRABL_PMC_SCRATCH0_FLAG_BOOT_RECOVERY_KERNEL, true);
+	tegrabl_reset();
 
 	return;
 }
@@ -614,6 +643,8 @@ void tegrabl_fastboot_cmd_init(void)
 {
 	fastboot_register("reboot", cmd_reboot);
 	fastboot_register("reboot-bootloader", cmd_reboot_bootloader);
+	fastboot_register("reboot-fastboot", cmd_reboot_fastboot);
+	fastboot_register("reboot-recovery", cmd_reboot_recovery);
 	fastboot_register("getvar:", cmd_getvar);
 	fastboot_register("erase:", cmd_erase);
 	fastboot_register("download:", cmd_download);
