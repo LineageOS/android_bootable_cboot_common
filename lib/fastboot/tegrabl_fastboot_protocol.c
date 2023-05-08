@@ -47,6 +47,7 @@
 #include <tegrabl_fastboot_a_b.h>
 #include <tegrabl_transport_usbf.h>
 #include <tegrabl_partition_manager.h>
+#include <tegrabl_soc_misc.h>
 #include <tegrabl_sparse.h>
 #include <tegrabl_exit.h>
 #include <tegrabl_board_info.h>
@@ -187,9 +188,23 @@ static void cmd_reboot(const char *arg, void *data, uint32_t size)
 	(void)data;
 	(void)size;
 
-	pr_info("Rebooting the device\n");
-
-	tegrabl_reset();
+	if (!strcmp(arg, "bootloader")) {
+		pr_info("Rebooting to bootloader\n");
+		fastboot_okay("");
+		tegrabl_reboot_fastboot();
+	} else if (!strcmp(arg, "fastboot")) {
+		pr_info("Rebooting to fastbootd is not implemented\n");
+		fastboot_okay("Rebooting to fastbootd is not implemented");
+	} else if (!strcmp(arg, "recovery")) {
+		pr_info("Rebooting to recovery\n");
+		fastboot_okay("");
+		tegrabl_set_pmc_scratch0_flag(TEGRABL_PMC_SCRATCH0_FLAG_BOOT_RECOVERY_KERNEL, true);
+		tegrabl_reset();
+	} else {
+		pr_info("Rebooting the device\n");
+		fastboot_okay("");
+		tegrabl_reset();
+	}
 
 	return;
 }
