@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2019-2021, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (c) 2019-2022, NVIDIA Corporation.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -373,12 +373,12 @@ static tegrabl_error_t load_binary_with_sig(struct tegrabl_fm_handle *fm_handle,
 											uint32_t *load_size,
 											bool *loaded_from_rootfs)
 {
-	uint32_t sigheader_size = 0;
 	uint32_t file_size;
 	void *load_addr;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 #if defined(CONFIG_ENABLE_SECURE_BOOT)
+	uint32_t sigheader_size = 0;
 	char sig_file_path[FS_MAX_PATH_LEN];
 	uint32_t sig_file_size;
 	bool fail_flag = false;
