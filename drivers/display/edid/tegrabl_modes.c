@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -54,6 +54,28 @@ struct hdmi_mode s_720_480_2 = {
 		9,  /* v_front_porch */
 	},
 	2, /* VIC */
+};
+
+struct hdmi_mode s_1024_768_0 = {
+	1024,  /* width */
+	768,  /* height */
+	24,  /* bpp */
+	(60 << 16),  /* refresh */
+	65000000,  /* frequency in hz */
+	NVDISP_MODE_AVI_M_4_3,  /* flags */
+	{
+		1,  /* h_ref_to_sync */
+		1,  /* v_ref_to_sync */
+		136,  /* h_sync_width */
+		6,  /* v_sync_width */
+		160,  /* h_back_porch */
+		29,  /* v_back_porch */
+		1024,  /* h_disp_active */
+		768,  /* v_disp_active */
+		24,  /* h_front_porch */
+		3,  /* v_front_porch */
+	},
+	0, /* VIC */
 };
 
 struct hdmi_mode s_1280_720_4 = {
@@ -371,6 +393,7 @@ struct hdmi_mode s_hdmi_vic_4 = {
 struct hdmi_mode *s_hdmi_modes[] = {
 	&s_640_480_1,
 	&s_720_480_2,
+	&s_1024_768_0,
 	&s_1280_720_4,
 	&s_1920_1080_16,
 	&s_720_576_17,

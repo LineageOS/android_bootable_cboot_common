@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -61,7 +61,11 @@ void get_best_mode(struct monitor_data *monitor_info,
 		}
 	}
 
+#if defined(CONFIG_ENABLE_NVDISP_INIT)
+	q = s_1024_768_0;    /* Minimum mode that we support that works w/UEFI */
+#else
 	q = s_640_480_1;
+#endif
 	for (i = 0; i < monitor_info->n_modes; i++) {
 		m = monitor_info->modes[i];
 		pr_info("width = %d, height = %d, frequency = %d\n", m.width, m.height,

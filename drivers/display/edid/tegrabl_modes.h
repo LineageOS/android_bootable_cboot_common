@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -16,6 +16,8 @@
 extern struct hdmi_mode s_640_480_1;
 
 extern struct hdmi_mode s_720_480_2;
+
+extern struct hdmi_mode s_1024_768_0;
 
 extern struct hdmi_mode s_1280_720_4;
 
