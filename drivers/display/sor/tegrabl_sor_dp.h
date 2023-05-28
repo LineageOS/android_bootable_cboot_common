@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022 NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -45,6 +45,7 @@
 #define TRAINING_PATTERN_HBR2_COMPLIANCE 8
 /* newly added for T19x */
 #define TRAINING_PATTERN_4 9
+#define TRAINING_PATTERN_BS_CSTM 10
 
 /**
  *  @brief Program training pattern in Sor register

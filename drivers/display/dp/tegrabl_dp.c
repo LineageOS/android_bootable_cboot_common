@@ -1,5 +1,5 @@
  /*
-  * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+  * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
   *
   * NVIDIA Corporation and its licensors retain all intellectual property
   * and proprietary rights in and to this software, related documentation
@@ -659,9 +659,15 @@ void tegrabl_dp_tpg(struct tegrabl_dp *dp, uint32_t tp, uint32_t n_lanes)
 	if (tp == TRAINING_PATTERN_DISABLE)
 		tegrabl_dp_dpcd_write(dp, DPCD_TRAINING_PATTERN_SET,
 							  (tp | DPCD_TRAINING_PATTERN_SET_SC_DISABLED_F));
-	else
-		tegrabl_dp_dpcd_write(dp, DPCD_TRAINING_PATTERN_SET,
-							  (tp | DPCD_TRAINING_PATTERN_SET_SC_DISABLED_T));
+	else {
+		if (tp == TRAINING_PATTERN_4) {
+			tegrabl_dp_dpcd_write(dp, DPCD_TRAINING_PATTERN_SET,
+					(0x7 | DPCD_TRAINING_PATTERN_SET_SC_DISABLED_F));
+		} else {
+			tegrabl_dp_dpcd_write(dp, DPCD_TRAINING_PATTERN_SET,
+					(tp | DPCD_TRAINING_PATTERN_SET_SC_DISABLED_T));
+		}
+	}
 
 	tegrabl_sor_tpg(dp->sor, tp, n_lanes);
 }
