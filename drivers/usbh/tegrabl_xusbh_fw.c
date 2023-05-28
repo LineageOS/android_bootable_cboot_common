@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2021 NVIDIA Corporation.  All rights reserved.
+/* Copyright (c) 2018-2022 NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software and related documentation
@@ -144,7 +144,9 @@ tegrabl_error_t xusbh_has_firmware_partition(void)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	char partition_name[TEGRABL_GPT_MAX_PARTITION_NAME + 1];
+#if defined(CONFIG_ENABLE_A_B_SLOT)
 	uint32_t active_slot = BOOT_SLOT_A;
+#endif
 	struct tegrabl_partition part;
 
 	strcpy(partition_name, "xusb-fw");
@@ -190,7 +192,9 @@ tegrabl_error_t xusbh_load_firmware(void)
 	uint8_t *fw_data;
 	uint64_t fw_base;
 	char partition_name[TEGRABL_GPT_MAX_PARTITION_NAME + 1];
+#if defined(CONFIG_ENABLE_A_B_SLOT)
 	uint32_t active_slot = BOOT_SLOT_A;
+#endif
 	dma_addr_t dma_buf;
 	uint32_t reg_val;
 	uint32_t code_tag_blocks;
