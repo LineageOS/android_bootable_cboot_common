@@ -54,7 +54,7 @@
 #include <linux_load.h>
 #include <tegrabl_bootloader_update.h>
 #include <tegrabl_a_b_partition_naming.h>
-#include <menu.h>
+#include <lib/menu.h>
 
 #define MAX_SERIALNO_LEN 32
 #define MAX_PART_NAME_LEN 16
