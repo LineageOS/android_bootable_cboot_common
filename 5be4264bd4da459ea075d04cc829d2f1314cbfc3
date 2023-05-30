@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "82a09eb3_d8ebd8e4",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 14048
+      },
+      "writtenOn": "2023-05-30T03:54:40Z",
+      "side": 1,
+      "message": "Chain verified booting t186 with the normal target and t194 with the nvdisp-init target.",
+      "revId": "5be4264bd4da459ea075d04cc829d2f1314cbfc3",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    }
+  ]
+}
