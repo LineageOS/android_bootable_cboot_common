@@ -1369,18 +1369,6 @@ int fdt_add_subnode(void *fdt, int parentoffset, const char *name);
  */
 int fdt_del_node(void *fdt, int nodeoffset);
 
-/**
- * fdt_add_subnode_if_absent - Add a subnode to the given parent node if absent and
- *		  return the offset of the subnode
- *
- * @fdt: Handle to device tree blob
- * @parentnode: parentnode Node in FDT to which the subnode to be added
- * @nodename: Name of the subnode to be added
- *
- * returns offset of the subnode which is added/existing on sucess, otherwise appropriate error
- */
-int fdt_add_subnode_if_absent(void *fdt, int parentnode, char *nodename);
-
 /**********************************************************************/
 /* Debugging / informational functions                                */
 /**********************************************************************/

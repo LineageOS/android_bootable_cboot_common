@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.  All Rights Reserved.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.  All Rights Reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -94,6 +94,8 @@ struct tegrabl_pcie_dev {
 	struct tegrabl_pcie_bus *bus;
 	/** Host controller's private data structure */
 	void *pdata;
+	/** SMMU private data structure */
+	void *smmu_cookie;
 };
 
 /**

@@ -68,8 +68,7 @@ static int _fdt_rw_check_header(void *fdt)
 #define FDT_RW_CHECK_HEADER(fdt) \
 	{ \
 		int err; \
-		err = _fdt_rw_check_header(fdt); \
-		if (err != 0) \
+		if ((err = _fdt_rw_check_header(fdt)) != 0) \
 			return err; \
 	}
 
@@ -473,18 +472,4 @@ int fdt_pack(void *fdt)
 	fdt_set_totalsize(fdt, _fdt_data_size(fdt));
 
 	return 0;
-}
-
-int fdt_add_subnode_if_absent(void *fdt, int parentnode, char *nodename)
-{
-	int node = -1;
-
-	node = _fdt_rw_check_header(fdt);
-	if (node == 0) {
-		node = fdt_subnode_offset(fdt, parentnode, nodename);
-		if (node < 0)
-			node = fdt_add_subnode(fdt, parentnode, nodename);
-	}
-
-	return node;
 }

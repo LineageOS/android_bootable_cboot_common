@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2021-2023, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software and related documentation
@@ -22,6 +22,9 @@
 #include <tegrabl_nvme_priv.h>
 #include <tegrabl_nvme_err.h>
 #include <tegrabl_pcie.h>
+#include <tegrabl_smmu_ext.h>
+#include <tegrabl_devicetree.h>
+#include <tegrabl_pcie_soc_local.h>
 
 static void tegrabl_nvme_print_serial(char *array, size_t size, const char *prefix)
 {
@@ -29,6 +32,90 @@ static void tegrabl_nvme_print_serial(char *array, size_t size, const char *pref
 	strncpy(output, array, MIN(100 - 1, size));
 	output[MIN(100 - 1, size)] = '\0';
 	pr_info("%s %s\n", prefix, output);
+}
+
+static tegrabl_error_t nvme_smmu_protect(struct tegrabl_nvme_context *context,
+										 void *buffer,
+										 uint32_t *size,
+										 int prot)
+{
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	unsigned long smmu_buffer = (unsigned long)buffer;
+
+	if (context->smmu_en) {
+		pr_debug("SMMU: Enable SMMU protection @(%p, 0x%x)\n", buffer, *size);
+		/* smmu_buffer has to be page aligned */
+		if (smmu_buffer & (context->page_size - 1)) {
+			smmu_buffer -= (smmu_buffer & (context->page_size - 1));
+			pr_debug("new buffer = 0x%lx\n", smmu_buffer);
+			*size += ((unsigned long)buffer - smmu_buffer);
+		}
+		/* size has to be page aligned */
+		if (*size & (context->page_size - 1)) {
+			*size = ALIGN(*size, context->page_size);
+			pr_debug("new size = 0x%x\n", *size);
+		}
+
+		err = tegrabl_smmu_enable_prot(
+							context->pcie_dev->smmu_cookie,
+							smmu_buffer,
+							smmu_buffer,
+							(size_t)*size,
+							prot);
+		if (err != TEGRABL_NO_ERROR) {
+			pr_warn("SMMU: Failed protection @(%p, 0x%x)\n", buffer, *size);
+			*size = 0;
+		}
+	} else {
+		*size = 0;
+	}
+	pr_debug("returning size=0x%x\n", *size);
+	return err;
+}
+
+static uint32_t nvme_smmu_unprotect(struct tegrabl_nvme_context *context,
+									void *buffer,
+									uint32_t size)
+{
+	unsigned long smmu_buffer = (unsigned long)buffer;
+	size_t rsize = 0;
+
+	if (context->smmu_en && size) {
+		pr_debug("SMMU: Unprotect @(%p, 0x%x)\n", buffer, size);
+		/* smmu_buffer has to be page aligned */
+		if (smmu_buffer & (context->page_size - 1)) {
+			smmu_buffer -= (smmu_buffer & (context->page_size - 1));
+			pr_debug("new buffer = 0x%lx\n", smmu_buffer);
+			size += ((unsigned long)buffer - smmu_buffer);
+		}
+		/* size has to be page aligned */
+		if (size & (context->page_size - 1)) {
+			size = ALIGN(size, context->page_size);
+			pr_debug("new size = 0x%x\n", size);
+		}
+
+		rsize = tegrabl_smmu_disable_prot(
+							context->pcie_dev->smmu_cookie,
+							smmu_buffer,
+							(size_t)size);
+		if (rsize != (size_t)size) {
+			pr_warn("SMMU: Failed unprotection @(%p, 0x%x); rsize=0x%lx\n", buffer, size, rsize);
+		}
+	}
+
+	return (uint32_t)rsize;
+}
+
+static void nvme_free_buffer(struct tegrabl_nvme_context *context,
+							 void *buffer,
+							 uint32_t size)
+{
+	pr_debug("SMMU: free @(%p, 0x%x)\n", buffer, size);
+	if (context->smmu_en && size) {
+		nvme_smmu_unprotect(context, buffer, size);
+	}
+
+	tegrabl_free(buffer);
 }
 
 static tegrabl_error_t tegrabl_construct_nvme_qpair(struct tegrabl_nvme_context *context,
@@ -39,7 +126,8 @@ static tegrabl_error_t tegrabl_construct_nvme_qpair(struct tegrabl_nvme_context 
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	volatile uint32_t *doorbell_base = &context->ctrl.rgst->doorbell[0].sq_tdbl;
 	uint32_t doorbell_stride = 1 << context->ctrl.rgst->cap.dstrd;
-	pr_debug("doorbell base: %lu\n", (uintptr_t)doorbell_base);
+	uint32_t msize;
+	pr_debug("doorbell base: 0x%lx\n", (uintptr_t)doorbell_base);
 	pr_debug("doorbell_stride: %lu\n", (uintptr_t)doorbell_stride);
 
 	qpair->id = entry;
@@ -49,20 +137,32 @@ static tegrabl_error_t tegrabl_construct_nvme_qpair(struct tegrabl_nvme_context 
 	qpair->sq.tail = 0;
 	qpair->sq.size = queue_size;
 	qpair->sq.doorbell = doorbell_base + (2 * entry + 0) * doorbell_stride;
-	pr_debug("sq.doorbell: %lu\n", (uintptr_t)qpair->sq.doorbell);
+	pr_debug("sq.doorbell: 0x%lx\n", (uintptr_t)qpair->sq.doorbell);
+
+	msize = sizeof(struct tegrabl_nvme_sq_cmd) * queue_size;
+	msize = ALIGN(msize, alignment);
 
 	qpair->sq.entries = (struct tegrabl_nvme_sq_cmd *)
-		tegrabl_alloc_align(TEGRABL_HEAP_DMA, alignment,
-							sizeof(struct tegrabl_nvme_sq_cmd) * queue_size);
+		tegrabl_alloc_align(TEGRABL_HEAP_DMA, alignment, msize);
 	if (qpair->sq.entries == NULL) {
 		err = TEGRABL_ERR_NO_MEMORY;
 		pr_error("%s: Failed to allocate memory for sq\n", __func__);
 		return err;
 	}
-	memset(qpair->sq.entries, 0, sizeof(struct tegrabl_nvme_sq_cmd) * queue_size);
 
-	tegrabl_arch_clean_dcache_range((uintptr_t)qpair->sq.entries,
-									sizeof(struct tegrabl_nvme_sq_cmd) * queue_size);
+	memset(qpair->sq.entries, 0, msize);
+	tegrabl_arch_clean_dcache_range((uintptr_t)qpair->sq.entries, msize);
+
+	pr_debug("SMMU: protection on SQ @%p\n", qpair->sq.entries);
+	err = nvme_smmu_protect(context,
+							(void *)qpair->sq.entries,
+							&msize,
+							SMMU_WRITE);
+	qpair->sq.msize = msize;
+	if (err != TEGRABL_NO_ERROR) {
+		pr_warn("SMMU: Failed protection on SQ @%p\n", qpair->sq.entries);
+		err = TEGRABL_NO_ERROR;
+	}
 
 	/* Create completion queue */
 	qpair->cq.head = 0;
@@ -70,21 +170,32 @@ static tegrabl_error_t tegrabl_construct_nvme_qpair(struct tegrabl_nvme_context 
 	qpair->cq.phase = 1;
 	qpair->cq.size = queue_size;
 	qpair->cq.doorbell = doorbell_base + (2 * entry + 1) * doorbell_stride;
-	pr_debug("cq.doorbell: %lu\n", (uintptr_t)qpair->cq.doorbell);
+	pr_debug("cq.doorbell: 0x%lx\n", (uintptr_t)qpair->cq.doorbell);
+
+	msize = sizeof(struct tegrabl_nvme_cq_cmd) * queue_size;
+	msize = ALIGN(msize, alignment);
 
 	qpair->cq.entries = (struct tegrabl_nvme_cq_cmd *)
-		tegrabl_alloc_align(TEGRABL_HEAP_DMA, alignment,
-							sizeof(struct tegrabl_nvme_cq_cmd) * queue_size);
-
+		tegrabl_alloc_align(TEGRABL_HEAP_DMA, alignment, msize);
 	if (qpair->cq.entries == NULL) {
 		err = TEGRABL_ERR_NO_MEMORY;
-		tegrabl_free(qpair->sq.entries);
 		pr_error("%s: Failed to allocate memory for cq\n", __func__);
+		nvme_free_buffer(context, (void *)qpair->sq.entries, qpair->sq.msize);
 		return err;
 	}
-	memset(qpair->cq.entries, 0, sizeof(struct tegrabl_nvme_cq_cmd) * queue_size);
-	tegrabl_arch_clean_dcache_range((uintptr_t)qpair->cq.entries,
-									sizeof(struct tegrabl_nvme_cq_cmd) * queue_size);
+	memset(qpair->cq.entries, 0, msize);
+	tegrabl_arch_clean_dcache_range((uintptr_t)qpair->cq.entries, msize);
+
+	pr_debug("SMMU: protection on CQ @%p\n", qpair->cq.entries);
+	err = nvme_smmu_protect(context,
+							(void *)qpair->cq.entries,
+							&msize,
+							SMMU_WRITE);
+	qpair->cq.msize = msize;
+	if (err != TEGRABL_NO_ERROR) {
+		pr_warn("SMMU: Failed protection on CQ @%p\n", qpair->cq.entries);
+		err = TEGRABL_NO_ERROR;
+	}
 
 	return err;
 }
@@ -114,13 +225,27 @@ static tegrabl_error_t tegrabl_create_prp1(struct tegrabl_nvme_context *context)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	size_t alignment = context->page_size;
+	uint32_t msize;
+
 	TEGRABL_ASSERT(alignment >= sizeof(struct tegrabl_nvme_ctrlr_data));
 
-	context->ctrl.prp_list.prp1 = tegrabl_alloc_align(TEGRABL_HEAP_DMA, alignment, alignment);
+	msize = alignment;
+	context->ctrl.prp_list.prp1 = tegrabl_alloc_align(TEGRABL_HEAP_DMA, alignment, msize);
 	if (context->ctrl.prp_list.prp1 == NULL) {
 		err = TEGRABL_ERR_NO_MEMORY;
 		pr_error("%s: Failed to allocate memory\n", __func__);
 		return err;
+	}
+
+	pr_debug("SMMU: protection on prp1 @%p\n", context->ctrl.prp_list.prp1);
+	err = nvme_smmu_protect(context,
+							(void *)context->ctrl.prp_list.prp1,
+							&msize,
+							SMMU_READ | SMMU_WRITE);
+	context->ctrl.prp_list.prp1_msize = msize;
+	if (err != TEGRABL_NO_ERROR) {
+		pr_warn("SMMU: Failed protection on prp1. @%p\n", context->ctrl.prp_list.prp1);
+		err = TEGRABL_NO_ERROR;
 	}
 
 	return err;
@@ -129,6 +254,7 @@ static tegrabl_error_t tegrabl_create_prp1(struct tegrabl_nvme_context *context)
 static tegrabl_error_t tegrabl_create_prp_list(struct tegrabl_nvme_context *context)
 {
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	uint32_t msize;
 
 	/* Preallocate prp list using max transfer size */
 	/* Max transfer size is 512KiB */
@@ -142,13 +268,26 @@ static tegrabl_error_t tegrabl_create_prp_list(struct tegrabl_nvme_context *cont
 	pr_debug("alignment 0x%lx\n", alignment);
 	pr_debug("mdts 0x%lx\n", (1 << context->ctrl.cdata.mdts) * min_page_size);
 
-	context->ctrl.prp_list.prp_list = tegrabl_alloc_align(TEGRABL_HEAP_DMA, alignment,
-		prplist_size / alignment * sizeof(uint64_t));
+	msize = prplist_size / alignment * sizeof(uint64_t);
+	msize = ALIGN(msize, alignment);
+	context->ctrl.prp_list.prp_list = tegrabl_alloc_align(TEGRABL_HEAP_DMA, alignment, msize);
 	if (context->ctrl.prp_list.prp_list == NULL) {
 		err = TEGRABL_ERR_NO_MEMORY;
 		pr_error("%s: Failed to allocate prp_list\n", __func__);
 		return err;
 	}
+
+	pr_debug("SMMU: protection on prp_list @%p\n", context->ctrl.prp_list.prp_list);
+	err = nvme_smmu_protect(context,
+							(void *)context->ctrl.prp_list.prp_list,
+							&msize,
+							SMMU_READ | SMMU_WRITE);
+	context->ctrl.prp_list.prp_list_msize = msize;
+	if (err != TEGRABL_NO_ERROR) {
+		pr_warn("SMMU: Failed protection on prp_list @%p\n", context->ctrl.prp_list.prp_list);
+		err = TEGRABL_NO_ERROR;
+	}
+
 	context->ctrl.prp_list.max_size = prplist_size;
 	context->ctrl.prp_list.max_entries = prplist_size / alignment;
 	pr_debug("max_entries 0x%lx\n", context->ctrl.prp_list.max_entries);
@@ -168,7 +307,6 @@ static inline void tegrabl_cq_ring_doorbell(struct tegrabl_nvme_cq *cq)
 static inline void tegrabl_increment_command_id(struct tegrabl_nvme_context *context)
 {
 	context->ctrl.current_cid = context->ctrl.current_cid + 1;
-	pr_debug("Current cid: %u\n", context->ctrl.current_cid);
 	if (context->ctrl.current_cid == 0xffff)
 		context->ctrl.current_cid = 0;
 }
@@ -273,6 +411,7 @@ static tegrabl_error_t tegrabl_set_feature_numqueue_cmd(struct tegrabl_nvme_cont
 	tegrabl_increment_command_id(context);
 	current_entry->cdw10 = NVME_FEAT_NUM_Q;
 	current_entry->cdw11 = ((q_num - 1) << 16) | (q_num - 1);
+
 	tegrabl_arch_clean_dcache_range((uintptr_t)current_entry, sizeof(struct tegrabl_nvme_sq_cmd));
 
 	return tegrabl_exec_cmd(context, current_entry, &context->ctrl.admin_q, status);
@@ -444,8 +583,8 @@ static tegrabl_error_t tegrabl_create_io_queue(struct tegrabl_nvme_context *cont
 	goto success;
 
 fail:
-	tegrabl_free(context->ctrl.io_q.cq.entries);
-	tegrabl_free(context->ctrl.io_q.sq.entries);
+	nvme_free_buffer(context, (void *)context->ctrl.io_q.cq.entries, context->ctrl.io_q.cq.msize);
+	nvme_free_buffer(context, (void *)context->ctrl.io_q.sq.entries, context->ctrl.io_q.sq.msize);
 
 success:
 	return err;
@@ -529,12 +668,19 @@ tegrabl_error_t tegrabl_nvme_init(struct tegrabl_nvme_context *context)
 	struct tegrabl_pcie_dev *pcie_dev;
 	uint8_t pcie_ctlr_num = context->instance;
 
+	/* Initiate SMMU driver */
+	err = tegrabl_smmu_init();
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("%s: Failed tegrabl_smmu_init; error=0x%x\n", __func__, err);
+		goto fail;
+	}
+
 	/* Initiate pcie device */
 	err = tegrabl_pcie_init(pcie_ctlr_num, 1);
 	if (err != TEGRABL_NO_ERROR) {
 		pr_error("%s: Failed tegrabl_pcie_init(%u); error=0x%x\n", __func__, pcie_ctlr_num, err);
 		err = TEGRABL_ERROR(err, TEGRABL_ERR_NVME_CTLR_INIT);
-		goto fail;
+		goto smmu_deinit;
 	}
 
 	/* get the NVME pcie device */
@@ -544,8 +690,30 @@ tegrabl_error_t tegrabl_nvme_init(struct tegrabl_nvme_context *context)
 		err = TEGRABL_ERROR(TEGRABL_ERR_INIT_FAILED, TEGRABL_ERR_NVME_CTLR_INIT);
 		goto reset;
 	}
-	pr_debug("pcie_dev=%p\n", pcie_dev);
-	pr_debug("Found NVMe pcie device\n");
+	context->pcie_dev = pcie_dev;
+	pr_info("pcie_dev=%p\n", pcie_dev);
+	pr_info("Found NVMe pcie device\n");
+
+	{
+		void *fdt;
+		int32_t pcie_node_offset = 0;
+
+		err = tegrabl_dt_get_fdt_handle(TEGRABL_DT_BL, &fdt);
+		if (err == TEGRABL_NO_ERROR) {
+			pcie_node_offset = tegrabl_get_pcie_ctrl_node_offset(pcie_ctlr_num);
+			if (pcie_node_offset != 0) {
+				err = tegrabl_smmu_add_device(fdt, pcie_node_offset, &pcie_dev->smmu_cookie);
+				if (err == TEGRABL_NO_ERROR) {
+					pr_debug("%s: Successfully add ctrl %u to SMMU prot.\n", __func__, pcie_ctlr_num);
+					context->smmu_en = true;
+				} else {
+					pr_warn("%s: Cannot add ctrl %u to SMMU prot.\n", __func__, pcie_ctlr_num);
+					/* ignore the error, treat it as no SMMU. */
+				}
+			}
+		}
+		err = TEGRABL_NO_ERROR;
+	}
 
 	/* get bar0 address from PCIe device */
 	uint64_t bar = pcie_dev->bar[0].start;
@@ -654,17 +822,23 @@ tegrabl_error_t tegrabl_nvme_init(struct tegrabl_nvme_context *context)
 	goto success;
 
 prplist:
-	tegrabl_free(context->ctrl.prp_list.prp_list);
+	nvme_free_buffer(context, (void *)context->ctrl.prp_list.prp_list, context->ctrl.prp_list.prp_list_msize);
 
 prp1:
-	tegrabl_free(context->ctrl.prp_list.prp1);
+	nvme_free_buffer(context, (void *)context->ctrl.prp_list.prp1, context->ctrl.prp_list.prp1_msize);
 
 adminq:
-	tegrabl_free(context->ctrl.admin_q.cq.entries);
-	tegrabl_free(context->ctrl.admin_q.sq.entries);
+	nvme_free_buffer(context, (void *)context->ctrl.admin_q.cq.entries, context->ctrl.admin_q.cq.msize);
+	nvme_free_buffer(context, (void *)context->ctrl.admin_q.sq.entries, context->ctrl.admin_q.sq.msize);
+
+	if (context->smmu_en)
+		tegrabl_smmu_remove_device(context->pcie_dev->smmu_cookie);
 
 reset:
 	tegrabl_nvme_reset_pcie(context);
+
+smmu_deinit:
+	tegrabl_smmu_deinit();
 
 fail:
 success:
@@ -748,9 +922,21 @@ tegrabl_error_t tegrabl_nvme_rw_blocks(struct tegrabl_nvme_context *context, voi
 	bnum_t count = blkcnt;
 	dma_addr_t buf = (dma_addr_t)buffer;
 	size_t bulk_count;
+	uint32_t tsize;
 
-	pr_debug("%s: %s blknr=0x%x, blkcnt=0x%x\n", __func__,  write ? "Write" : "Read", blknr, blkcnt);
+	pr_debug("%s: %s blknr=0x%x, blkcnt=0x%x\n", __func__, write ? "Write" : "Read", blknr, blkcnt);
 	pr_debug("total_len=0x%lx\n", total_len);
+
+	pr_debug("SMMU: protection on rw_blocks @(%p, 0x%lx)\n", buffer, total_len);
+	tsize = total_len;
+	err = nvme_smmu_protect(context,
+							buffer,
+							&tsize,
+							SMMU_READ | SMMU_WRITE);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_warn("SMMU: Failed protection on rw_blocks. @%p\n", buffer);
+		err = TEGRABL_NO_ERROR;
+	}
 
 	if (write) {
 		tegrabl_arch_clean_dcache_range((uintptr_t)buffer, total_len);
@@ -788,6 +974,11 @@ tegrabl_error_t tegrabl_nvme_rw_blocks(struct tegrabl_nvme_context *context, voi
 		tegrabl_arch_invalidate_dcache_range((uintptr_t)buffer, (size_t)total_len);
 	}
 
+	pr_debug("SMMU: free rw_blocks @(%p, 0x%lx)\n", buffer, total_len);
+	if (context->smmu_en && tsize) {
+		nvme_smmu_unprotect(context, buffer, (uint32_t)total_len);
+	}
+
 fail:
 	return err;
 }
@@ -800,12 +991,15 @@ fail:
  */
 void tegrabl_nvme_free_buffers(struct tegrabl_nvme_context *context)
 {
-	tegrabl_free(context->ctrl.prp_list.prp1);
-	tegrabl_free(context->ctrl.prp_list.prp_list);
-	tegrabl_free(context->ctrl.admin_q.cq.entries);
-	tegrabl_free(context->ctrl.admin_q.sq.entries);
-	tegrabl_free(context->ctrl.io_q.cq.entries);
-	tegrabl_free(context->ctrl.io_q.sq.entries);
+	nvme_free_buffer(context, (void *)context->ctrl.prp_list.prp1, context->ctrl.prp_list.prp1_msize);
+	nvme_free_buffer(context, (void *)context->ctrl.prp_list.prp_list, context->ctrl.prp_list.prp_list_msize);
+	nvme_free_buffer(context, (void *)context->ctrl.admin_q.cq.entries, context->ctrl.admin_q.cq.msize);
+	nvme_free_buffer(context, (void *)context->ctrl.admin_q.sq.entries, context->ctrl.admin_q.sq.msize);
+	nvme_free_buffer(context, (void *)context->ctrl.io_q.cq.entries, context->ctrl.io_q.cq.msize);
+	nvme_free_buffer(context, (void *)context->ctrl.io_q.sq.entries, context->ctrl.io_q.sq.msize);
+
+	if (context->smmu_en)
+		tegrabl_smmu_remove_device(context->pcie_dev->smmu_cookie);
 }
 
 /**
