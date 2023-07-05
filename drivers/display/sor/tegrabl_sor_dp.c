@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -25,27 +25,29 @@
 
 void tegrabl_sor_tpg(struct sor_data *sor, uint32_t tp, uint32_t n_lanes)
 {
-	uint32_t const tbl[][2] = {
-		/* ansi8b/10b encoded, scrambled */
-		{1, 1}, /* no pattern, training not in progress */
-		{1, 0}, /* training pattern 1 */
-		{1, 0}, /* training pattern 2 */
-		{1, 0}, /* training pattern 3 */
-		{1, 0}, /* D102 */
-		{1, 1}, /* SBLERRRATE */
-		{0, 0}, /* PRBS7 */
-		{0, 0}, /* CSTM */
-		{1, 1}, /* HBR2_COMPLIANCE */
+	uint32_t const tbl[][3] = {
+		/* pattern setting, ansi8b/10b encoded, scrambled */
+		{0, 1, 1}, /* no pattern, training not in progress */
+		{1, 1, 0}, /* training pattern 1 */
+		{2, 1, 0}, /* training pattern 2 */
+		{3, 1, 0}, /* training pattern 3 */
+		{4, 1, 0}, /* D102 */
+		{5, 1, 1}, /* SBLERRRATE */
+		{6, 0, 0}, /* PRBS7 */
+		{7, 0, 0}, /* CSTM */
+		{8, 1, 1}, /* HBR2_COMPLIANCE */
+		{11, 1, 1}, /* Training pattern 4 */
+		{7, 1, 1}, /* BS_CSTM */
 	};
 	uint32_t cnt;
 	uint32_t val = 0;
 
 	for (cnt = 0; cnt < n_lanes; cnt++) {
 		uint32_t tp_shift = NV_SOR_DP_TPG_LANE1_PATTERN_SHIFT * cnt;
-		val |= tp << tp_shift |
-			tbl[tp][0] << (tp_shift +
-			NV_SOR_DP_TPG_LANE0_CHANNELCODING_SHIFT) |
+		val |= tbl[tp][0] << tp_shift |
 			tbl[tp][1] << (tp_shift +
+			NV_SOR_DP_TPG_LANE0_CHANNELCODING_SHIFT) |
+			tbl[tp][2] << (tp_shift +
 			NV_SOR_DP_TPG_LANE0_SCRAMBLEREN_SHIFT);
 	}
 

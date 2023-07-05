@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2015-2022, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property and
  * proprietary rights in and to this software and related documentation.  Any
@@ -277,43 +277,36 @@ char* strcat(char* dest, const char* src)
 
 int strcmp(const char* s1, const char* s2)
 {
-	uint8_t arg;
+	unsigned char c1, c2;
 
-	while (*s1 == *s2) {
-		s2++;
-		if (*s1 == '\0') {
-			s1++;
-			return 0;
+	while (true) {
+		c1 = *s1++;
+		c2 = *s2++;
+		if (c1 != c2) {
+			return c1 < c2 ? -1 : 1;
 		}
-		s1++;
+		if (c1 == '\0') {
+			break;
+		}
 	}
-
-	arg = *(unsigned const char *)s1 - *(unsigned const char *)s2;
-	return (int32_t)arg;
+	return 0;
 }
 
 int strncmp(const char* s1, const char* s2, size_t n)
 {
-	uint8_t arg;
+	unsigned char c1, c2;
 
-	if (n == 0U) {
-		return 0;
-	}
-
-	do {
-		if (*s1 != *s2) {
-			arg = *(unsigned const char *)s1 - *(unsigned const char *)s2;
-			return (int32_t)arg;
+	while (n > 0) {
+		c1 = *s1++;
+		c2 = *s2++;
+		if (c1 != c2) {
+			return c1 < c2 ? -1 : 1;
 		}
-		s2++;
-		if (*s1 == '\0') {
-			s1++;
+		if (c1 == '\0') {
 			break;
 		}
-		s1++;
 		n--;
-	} while (n != 0UL);
-
+	}
 	return 0;
 }
 

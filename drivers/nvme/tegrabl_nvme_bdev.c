@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2021-2023, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software and related documentation
@@ -20,6 +20,7 @@
 #include <tegrabl_nvme_priv.h>
 #include <tegrabl_nvme_err.h>
 #include <tegrabl_blockdev.h>
+#include <tegrabl_smmu_ext.h>
 
 static bool init_done;
 
@@ -169,6 +170,7 @@ static tegrabl_error_t tegrabl_nvme_bdev_close(struct tegrabl_bdev *dev)
 				tegrabl_nvme_free_buffers(context);
 				error = tegrabl_nvme_reset_pcie(context);
 				tegrabl_free(context);
+				tegrabl_smmu_deinit();
 				if (error != TEGRABL_NO_ERROR) {
 					pr_error("%s: Failed tegrabl_nvme_reset_pcie; error=0x%x\n", __func__, error);
 					error = TEGRABL_ERROR(error, TEGRABL_ERR_NVME_BDEV_CLOSE);

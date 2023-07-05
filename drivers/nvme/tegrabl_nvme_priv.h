@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2021-2023, NVIDIA Corporation.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software and related documentation
@@ -30,6 +30,7 @@ struct tegrabl_nvme_sq {
 	size_t size;
 	volatile uint32_t *doorbell;
 	struct tegrabl_nvme_sq_cmd *entries;
+	uint32_t msize;
 };
 
 struct tegrabl_nvme_cq {
@@ -41,6 +42,7 @@ struct tegrabl_nvme_cq {
 	uint8_t phase;
 	volatile uint32_t *doorbell;
 	struct tegrabl_nvme_cq_cmd *entries;
+	uint32_t msize;
 };
 
 struct tegrabl_nvme_queue_pair {
@@ -53,7 +55,9 @@ struct tegrabl_prplist {
 	size_t max_size;
 	size_t max_entries;
 	void *prp1;
+	uint32_t prp1_msize;
 	uint64_t *prp_list;
+	uint32_t prp_list_msize;
 };
 
 struct tegrabl_nvme_ctrl {
@@ -75,6 +79,8 @@ struct tegrabl_nvme_context {
 	size_t page_size;
 	uint8_t instance;
 	struct tegrabl_nvme_ctrl ctrl;
+	struct tegrabl_pcie_dev *pcie_dev;
+	bool smmu_en;
 };
 
 /**

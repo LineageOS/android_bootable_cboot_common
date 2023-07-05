@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA Corporation and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -603,6 +603,7 @@ static tegrabl_error_t lt_channel_equalization_state(
 	bool ce_done = true;
 	bool cur_hpd;
 	tegrabl_error_t ret = TEGRABL_NO_ERROR;
+	uint32_t val;
 
 	CHECK_RET(tegrabl_dpaux_hpd_status(lt_data->dp->hdpaux, &cur_hpd));
 
@@ -613,6 +614,34 @@ static tegrabl_error_t lt_channel_equalization_state(
 		tgt_state = STATE_RESET;
 		timeout = HPD_DROP_TIMEOUT_MS;
 		goto done;
+	}
+
+	/*
+	 * On T194, the HW pattern generator sends the RD_RESET (running
+	 * disparity reset) signal one clock cycle too early. This specifically
+	 * affects TPS4 since TPS4 requires scrambling, so whatever symbol is
+	 * sent during this early cycle will be random. As a result, the RD of
+	 * the first symbol of TPS4 will be random as well.
+	 *
+	 * In order to WAR this issue, we will send a custom BS (blanking start)
+	 * pattern when switching from TPS1 to TPS4 during equalization in order
+	 * to control what the RD of the "early symbol" will be.
+	 */
+#define BS_DISPARITY_RESET_PATTERN_1 0x1BC6F1BC
+#define BS_DISPARITY_RESET_PATTERN_2 0xC6F1BC6F
+#define BS_DISPARITY_RESET_PATTERN_3 0x6F1B
+
+	if (lt_data->dp->link_cfg.tps == TRAINING_PATTERN_4) {
+		sor_writel(lt_data->dp->sor, SOR_NV_PDISP_SOR_DP_LQ_CSTM0_0 + lt_data->dp->sor->portnum, BS_DISPARITY_RESET_PATTERN_1);
+		sor_writel(lt_data->dp->sor, SOR_NV_PDISP_SOR_DP_LQ_CSTM1_0 + lt_data->dp->sor->portnum, BS_DISPARITY_RESET_PATTERN_2);
+		sor_writel(lt_data->dp->sor, SOR_NV_PDISP_SOR_DP_LQ_CSTM2_0 + lt_data->dp->sor->portnum, BS_DISPARITY_RESET_PATTERN_3);
+
+		val = sor_readl(lt_data->dp->sor, SOR_NV_PDISP_SOR_DP_CONFIG0_0 + lt_data->dp->sor->portnum);
+		val = NV_FLD_SET_DRF_DEF(SOR_NV_PDISP, SOR_DP_CONFIG0, RD_RESET_VAL,
+				POSITIVE, val);
+		sor_writel(lt_data->dp->sor, (SOR_NV_PDISP_SOR_DP_CONFIG0_0 + lt_data->dp->sor->portnum), val);
+
+		tegrabl_sor_tpg(lt_data->dp->sor, TRAINING_PATTERN_BS_CSTM, lt_data->n_lanes);
 	}
 
 	CHECK_RET(set_lt_tpg(lt_data, lt_data->dp->link_cfg.tps));

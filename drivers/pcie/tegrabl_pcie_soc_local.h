@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -119,5 +119,8 @@ void tegrabl_pcie_soc_pme_turnoff(uint8_t ctrl_num);
  * @return TEGRABL_NO_ERROR if success, error-reason otherwise.
  */
 tegrabl_error_t tegrabl_pcie_soc_powergate(uint8_t ctrl_num);
+
+/* returns pcie controller's node offset in fdt */
+int32_t tegrabl_get_pcie_ctrl_node_offset(uint8_t ctrl_num);
 
 #endif

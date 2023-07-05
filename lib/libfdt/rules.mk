@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015 - 2016, NVIDIA Corporation.  All Rights Reserved.
+# Copyright (c) 2015 - 2019, NVIDIA Corporation.  All Rights Reserved.
 #
 # NVIDIA Corporation and its licensors retain all intellectual property and
 # proprietary rights in and to this software and related documentation.  Any
@@ -17,6 +17,7 @@ GLOBAL_INCLUDES += \
 
 MODULE_SRCS += \
 	$(LOCAL_DIR)/fdt.c \
+	$(LOCAL_DIR)/fdt_local.c \
 	$(LOCAL_DIR)/fdt_ro.c \
 	$(LOCAL_DIR)/fdt_rw.c \
 	$(LOCAL_DIR)/fdt_strerror.c \
