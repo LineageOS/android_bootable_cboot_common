@@ -16,6 +16,29 @@
       "message": "Verified on quill, lanai, galen, and rey",
       "revId": "522ac502dbe6222a98ea82349c3f2fca924488f4",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "2c5af168_92ec5f8c",
+        "filename": "lib/fastboot/tegrabl_fastboot_partinfo.c",
+        "patchSetId": 2
+      },
+      "lineNbr": 29,
+      "author": {
+        "id": 13648
+      },
+      "writtenOn": "2023-07-06T22:59:58Z",
+      "side": 1,
+      "message": "Shouldn\u0027t it be bootlogo_a?",
+      "range": {
+        "startLine": 29,
+        "startChar": 16,
+        "endLine": 29,
+        "endChar": 24
+      },
+      "revId": "522ac502dbe6222a98ea82349c3f2fca924488f4",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
     }
   ]
 }
