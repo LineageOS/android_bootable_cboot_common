@@ -8,7 +8,9 @@ GLOBAL_INCLUDES += \
 	$(LOCAL_DIR)/../../../../../../external/avb \
 	$(LOCAL_DIR)/../../../../../../external/avb/libavb/sha
 
-MODULE_CFLAGS := -Wno-error=maybe-uninitialized
+MODULE_CFLAGS := \
+        -Wno-error=maybe-uninitialized \
+        -Wno-error=format
 
 MODULE_SRCS += \
         $(LIBAVB_DIR)/avb_chain_partition_descriptor.c \
