@@ -79,7 +79,7 @@ typedef uint32_t sdmmc_device_status;
 #define UNKNOWN_PARTITION 5UL
 typedef uint32_t sdmmc_access_region;
 
-struct tegrabl_sdmmc {
+typedef struct tegrabl_sdmmc {
 	/* Is Sdmmc controller initialized */
 	bool initialized;
 
