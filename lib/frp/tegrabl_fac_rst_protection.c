@@ -28,8 +28,9 @@ tegrabl_error_t tegrabl_is_frp_enabled(char *frp_part_name, bool *enabled)
 	/* open FRP partition */
 	ret = tegrabl_partition_open(frp_part_name, &partition);
 	if (ret != TEGRABL_NO_ERROR) {
-		pr_error("failed to open partition %s\n", frp_part_name);
-		return ret;
+		pr_warn("failed to open partition %s\n", frp_part_name);
+		*enabled = false;
+		return TEGRABL_NO_ERROR;;
 	}
 
 	/* get partition size */
