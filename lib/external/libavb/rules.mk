@@ -10,7 +10,8 @@ GLOBAL_INCLUDES += \
 
 MODULE_CFLAGS := \
         -Wno-error=maybe-uninitialized \
-        -Wno-error=format
+        -Wno-error=format \
+        -Wno-error=strict-prototypes
 
 MODULE_SRCS += \
         $(LIBAVB_DIR)/avb_chain_partition_descriptor.c \
