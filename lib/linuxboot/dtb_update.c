@@ -13,6 +13,7 @@
 #include "build_config.h"
 
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <inttypes.h>
 #include <libfdt.h>
@@ -773,6 +774,145 @@ fail:
 	/*Having no external display is not an error*/
 	return TEGRABL_NO_ERROR;
 }
+
+#if !defined(CONFIG_ENABLE_NVDISP_INIT)
+#define BYTES_PER_PIXEL 4
+static tegrabl_error_t update_simplefb_info(void *fdt, int chosen_offset,
+	struct tegrabl_display_unit_params *disp_params)
+{
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	int fdt_err = 0, len = 0;
+	int32_t sfb_offset = 0, mem_offset = 0;
+	uint32_t stride = disp_params->width * BYTES_PER_PIXEL;
+	uint32_t buf = 0, count = 0;
+	const void* ptr = NULL;
+	char str[64];
+	uint64_t reg[2];
+	uint32_t iommu[5];
+
+	sprintf(str, "framebuffer%u", disp_params->instance);
+	sfb_offset = fdt_subnode_offset(fdt, chosen_offset, str);
+	if ((sfb_offset < 0) || (fdt_node_check_compatible(fdt, sfb_offset, "simple-framebuffer") != 0)) {
+		pr_warn("%s, failed to find simple-framebuffer node\n", __func__);
+		goto fail;
+	}
+
+	ptr = fdt_getprop(fdt, sfb_offset, "bootloader-status", NULL);
+	if (ptr && strcmp(ptr, "okay")) {
+		pr_warn("%s, Simple-framebuffer node is disabled\n", __func__);
+		err = TEGRABL_ERROR(TEGRABL_ERR_NO_ACCESS, 0);
+		goto fail;
+	}
+
+	ptr = fdt_getprop (fdt, sfb_offset, "memory-region", &len);
+	if (ptr == NULL || len != sizeof(uint32_t)) {
+		pr_warn("%s, failed to get memory-region reference\n", __func__);
+		goto fail;
+	}
+
+	mem_offset = fdt_node_offset_by_phandle(fdt, fdt32_to_cpu(*(uint32_t*)ptr));
+	if (mem_offset < 0) {
+		pr_warn("%s, failed to find memory-region node\n", __func__);
+		goto fail;
+	}
+
+	buf = cpu_to_fdt32((uint32_t)disp_params->width);
+	fdt_err = fdt_setprop(fdt, sfb_offset, "width", &buf, sizeof(buf));
+	if (fdt_err < 0) {
+		pr_error("%s, error updating \"width\" property: %d\n", __func__, fdt_err);
+		goto fail;
+	}
+
+	buf = cpu_to_fdt32((uint32_t)disp_params->height);
+	fdt_err = fdt_setprop(fdt, sfb_offset, "height", &buf, sizeof(buf));
+	if (fdt_err < 0) {
+		pr_error("%s, error updating \"height\" property: %d\n", __func__, fdt_err);
+		goto fail;
+	}
+
+	buf = cpu_to_fdt32((uint32_t)stride);
+	fdt_err = fdt_setprop(fdt, sfb_offset, "stride", &buf, sizeof(buf));
+	if (fdt_err < 0) {
+		pr_error("%s, error updating \"stride\" property: %d\n", __func__, fdt_err);
+		goto fail;
+	}
+
+	/* Operate on carveout node */
+	sprintf(str, "framebuffer@%lx", disp_params->addr);
+	fdt_err = fdt_set_name(fdt, mem_offset, str);
+	if (fdt_err < 0) {
+		pr_error("%s, error updating \"name\" property: %d\n", __func__, fdt_err);
+		goto fail;
+	}
+
+	reg[0] = cpu_to_fdt64(disp_params->addr);
+	reg[1] = cpu_to_fdt64(disp_params->size);
+	fdt_err = fdt_setprop(fdt, mem_offset, "reg", reg, sizeof(reg));
+	if (fdt_err < 0) {
+		pr_error("%s, error updating \"reg\" property: %d\n", __func__, fdt_err);
+		goto fail;
+	}
+
+	err = tegrabl_dt_get_prop_u32_array(fdt, mem_offset, "iommu-addresses", sizeof(iommu)/sizeof(iommu[0]), iommu, &count);
+	if (err == TEGRABL_NO_ERROR && count == (sizeof(iommu)/sizeof(iommu[0]))) {
+		iommu[0] = cpu_to_fdt32(iommu[0]); // tegrabl helper auto converts to cpu endiness
+		memcpy(&iommu[1], reg, sizeof(reg));
+		fdt_err = fdt_setprop_inplace(fdt, mem_offset, "iommu-addresses", iommu, sizeof(iommu));
+		if (fdt_err < 0) {
+			pr_error("%s, error updating \"iommu-addresses\" property: %d\n", __func__, fdt_err);
+			goto fail;
+		}
+	} else if (err != TEGRABL_ERR_NOT_FOUND) { // Not an error if the node is entirely missing
+		pr_error("%s, Malformed \"iommu-addresses\" property\n", __func__);
+		goto fail;
+	}
+
+	fdt_err = fdt_setprop_string(fdt, mem_offset, "status", "okay");
+	if (fdt_err < 0) {
+		pr_error("%s, error updating carveout \"status\" property: %d\n", __func__, fdt_err);
+		goto fail;
+	}
+
+	/* Only enable simplefb node if everything else succeeded */
+	fdt_err = fdt_setprop_string(fdt, sfb_offset, "status", "okay");
+	if (fdt_err < 0) {
+		pr_error("%s, error updating simplefb \"status\" property: %d\n", __func__, fdt_err);
+		goto fail;
+	}
+
+	pr_info("%s, simplefb node enabled with buffer at 0x%08" PRIxPTR ", 0x%08x bytes\n", __func__, disp_params->addr, disp_params->size);
+
+fail:
+	return err;
+}
+
+static tegrabl_error_t add_simplefb_info(void *fdt, int nodeoffset)
+{
+	uint32_t du_idx = 0;
+	struct tegrabl_display_unit_params disp_params;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+
+	for (du_idx = 0; du_idx < DISPLAY_OUT_MAX; du_idx++) {
+		err = tegrabl_display_get_params(du_idx, &disp_params);
+		if (err != TEGRABL_NO_ERROR) {
+			pr_warn("%s: failed to get display params for du=%d\n", __func__, du_idx);
+			goto fail;
+		}
+
+		if (disp_params.size != 0) {
+			err = update_simplefb_info(fdt, nodeoffset, &disp_params);
+			if (err != TEGRABL_NO_ERROR) {
+				pr_warn("%s, failed to update display params for du=%d\n", __func__, du_idx);
+				goto fail;
+			}
+		}
+	}
+
+fail:
+	/*Having no external display is not an error*/
+	return TEGRABL_NO_ERROR;
+}
+#endif
 #endif
 
 static struct tegrabl_linuxboot_dtnode_info common_nodes[] = {
@@ -796,6 +936,9 @@ static struct tegrabl_linuxboot_dtnode_info common_nodes[] = {
 	{ "memory", add_memory_info},
 #if defined(CONFIG_ENABLE_DISPLAY)
 	{ "reserved-memory", add_disp_param},
+#if !defined(CONFIG_ENABLE_NVDISP_INIT)
+	{ "chosen", add_simplefb_info},
+#endif
 #endif
 	{ NULL, NULL},
 };
