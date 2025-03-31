@@ -53,7 +53,7 @@ struct tegrabl_kernel_bin {
 };
 
 struct tegrabl_kernel_load_callbacks {
-	tegrabl_error_t (*verify_boot)(union tegrabl_bootimg_header *, void *,
+	tegrabl_error_t (*verify_boot)(tegrabl_bootimg_header *, void *,
 								   void *);
 };
 

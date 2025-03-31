@@ -84,55 +84,40 @@ fail:
 #endif  /* CONFIG_ENABLE_SECURE_BOOT */
 
 /* Sanity checks the kernel image extracted from Android boot image */
-tegrabl_error_t tegrabl_verify_boot_img_hdr(union tegrabl_bootimg_header *hdr, uint32_t img_size)
+tegrabl_error_t tegrabl_verify_boot_img_hdr(tegrabl_bootimg_header *hdr, uint32_t img_size)
 {
 	uint32_t hdr_size;
 	uint64_t hdr_fields_sum;
-	uint32_t known_crc = 0;
-	uint32_t calculated_crc = 0;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 
 	pr_info("Checking boot.img header magic ... ");
-	if (memcmp(hdr->magic, ANDROID_MAGIC, ANDROID_MAGIC_SIZE)) {
+	if (memcmp(hdr->magic, BOOT_MAGIC, BOOT_MAGIC_SIZE)) {
 		pr_error("Invalid header magic\n");
 		err = TEGRABL_ERROR(TEGRABL_ERR_VERIFY_FAILED, 0);
 		goto fail;
 	}
 	pr_info("[OK]\n");
 
-	if (hdr->pagesize < sizeof(union tegrabl_bootimg_header)) {
+	if (hdr->page_size < sizeof(tegrabl_bootimg_header)) {
 		pr_error("Page size field (0x%08x) is less than header structure size (0x%08lx)\n",
-				 hdr->pagesize, sizeof(union tegrabl_bootimg_header));
+				 hdr->page_size, sizeof(tegrabl_bootimg_header));
 		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 		goto fail;
 	}
 
-	hdr_size = hdr->pagesize;
-	hdr_fields_sum = hdr_size + hdr->kernelsize + hdr->ramdisksize + hdr->secondsize;
+	hdr_size = hdr->page_size;
+	hdr_fields_sum = hdr_size + hdr->kernel_size + hdr->ramdisk_size + hdr->second_size;
 	pr_trace("img/buffer size : 0x%08x\n", (uint32_t)img_size);
 	pr_trace("hdr fields sum  : 0x%08x\n", (uint32_t)hdr_fields_sum);
-	pr_trace("kernel size     : 0x%08x\n", (uint32_t)hdr->kernelsize);
-	pr_trace("ramdisk size    : 0x%08x\n", (uint32_t)hdr->ramdisksize);
-	pr_trace("second size     : 0x%08x\n", (uint32_t)hdr->secondsize);
-	pr_trace("page size       : 0x%08x\n", (uint32_t)hdr->pagesize);
+	pr_trace("kernel size     : 0x%08x\n", (uint32_t)hdr->kernel_size);
+	pr_trace("ramdisk size    : 0x%08x\n", (uint32_t)hdr->ramdisk_size);
+	pr_trace("second size     : 0x%08x\n", (uint32_t)hdr->second_size);
+	pr_trace("page size       : 0x%08x\n", (uint32_t)hdr->page_size);
 	if (hdr_fields_sum > img_size) {
 		pr_error("Header size fields (0x%016lx) is greater than actual binary or buffer size (0x%08x)\n",
 				 hdr_fields_sum, img_size);
 		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 1);
 		goto fail;
-	}
-
-	/* Check header CRC if present */
-	known_crc = hdr->word[(ANDROID_HEADER_SIZE - CRC32_SIZE) / sizeof(uint32_t)];
-	if (known_crc) {
-		pr_info("Checking boot.img header crc ... ");
-		calculated_crc = tegrabl_utils_crc32(0, (char *)hdr, ANDROID_HEADER_SIZE);
-		if (calculated_crc != known_crc) {
-			pr_error("Invalid boot.img @ %p (header crc mismatch)\n", hdr);
-			err = TEGRABL_ERROR(TEGRABL_ERR_VERIFY_FAILED, 1);
-			goto fail;
-		}
-		pr_info("[OK]\n");
 	}
 
 fail:

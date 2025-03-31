@@ -67,7 +67,7 @@ tegrabl_error_t tegrabl_validate_binary(uint32_t bin_type, char *bin_name, uint3
  *
  * @return TEGRABL_NO_ERROR if success, specific error if fails
  */
-tegrabl_error_t tegrabl_verify_boot_img_hdr(union tegrabl_bootimg_header *hdr, uint32_t img_size);
+tegrabl_error_t tegrabl_verify_boot_img_hdr(tegrabl_bootimg_header *hdr, uint32_t img_size);
 
 #if defined(__cplusplus)
 }
