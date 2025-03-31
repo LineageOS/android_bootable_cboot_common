@@ -166,7 +166,8 @@ typedef struct boot_img_hdr_v0 boot_img_hdr;
  * 7. if second_size != 0: jump to second_addr
  *    else: jump to kernel_addr
  */
-struct boot_img_hdr_v1 : public boot_img_hdr_v0 {
+struct boot_img_hdr_v1 {
+    struct boot_img_hdr_v0;        /* This is an extension of boot_img_hdr_v0 */
     uint32_t recovery_dtbo_size;   /* size in bytes for recovery DTBO/ACPIO image */
     uint64_t recovery_dtbo_offset; /* offset to recovery dtbo/acpio in boot image */
     uint32_t header_size;
@@ -209,9 +210,10 @@ struct boot_img_hdr_v1 : public boot_img_hdr_v0 {
  * 7. if second_size != 0: jump to second_addr
  *    else: jump to kernel_addr
  */
-struct boot_img_hdr_v2 : public boot_img_hdr_v1 {
-    uint32_t dtb_size; /* size in bytes for DTB image */
-    uint64_t dtb_addr; /* physical load address for DTB image */
+struct boot_img_hdr_v2 {
+    struct boot_img_hdr_v1; /* This is an extension of boot_img_hdr_v1 */
+    uint32_t dtb_size;      /* size in bytes for DTB image */
+    uint64_t dtb_addr;      /* physical load address for DTB image */
 } __attribute__((packed));
 
 
@@ -410,11 +412,13 @@ struct vendor_boot_img_hdr_v3 {
  *    contained outside boot and vendor boot partitions), otherwise
  *    jump to kernel_addr
  */
-struct boot_img_hdr_v4 : public boot_img_hdr_v3 {
+struct boot_img_hdr_v4 {
+    struct boot_img_hdr_v3;  /* This is an extension of boot_img_hdr_v3 */
     uint32_t signature_size; /* size in bytes */
 } __attribute__((packed));
 
-struct vendor_boot_img_hdr_v4 : public vendor_boot_img_hdr_v3 {
+struct vendor_boot_img_hdr_v4 {
+    struct vendor_boot_img_hdr_v3; /* This is an extension of vendor_boot_img_hdr_v3 */
     uint32_t vendor_ramdisk_table_size; /* size in bytes for the vendor ramdisk table */
     uint32_t vendor_ramdisk_table_entry_num; /* number of entries in the vendor ramdisk table */
     uint32_t vendor_ramdisk_table_entry_size; /* size in bytes for a vendor ramdisk table entry */
