@@ -172,7 +172,10 @@ tegrabl_error_t tegrabl_get_os_version(union android_os_version *os_version)
 		return TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 	}
 
-	*os_version = (union android_os_version)android_hdr->os_version;
+	if (android_hdr->header_version >= 3)
+		*os_version = (union android_os_version)((struct boot_img_hdr_v3*)android_hdr)->os_version;
+	else
+		*os_version = (union android_os_version)android_hdr->os_version;
 	return TEGRABL_NO_ERROR;
 }
 #endif
@@ -197,8 +200,13 @@ static tegrabl_error_t extract_kernel(void *boot_img_load_addr,
 	hdr = (tegrabl_bootimg_header *)boot_img_load_addr;
 	if (HAS_BOOT_IMG_HDR(hdr)) {
 		/* Get kernel addr and size from boot img header */
-		payload_addr = (uintptr_t)hdr + hdr->page_size;
-		kernel_size = hdr->kernel_size;
+		if (hdr->header_version >= 3) {
+			payload_addr = (uintptr_t)hdr + 4096;
+			kernel_size = ((struct boot_img_hdr_v3*)boot_img_load_addr)->kernel_size;
+		} else {
+			payload_addr = (uintptr_t)hdr + hdr->page_size;
+			kernel_size = hdr->kernel_size;
+		}
 	} else {  /*  In extinux boot, raw kernel image gets loaded */
 		ahdr = boot_img_load_addr;
 		if (ahdr->magic == ARM64_MAGIC) {
@@ -244,24 +252,35 @@ static tegrabl_error_t extract_ramdisk(void *boot_img_load_addr)
 	tegrabl_bootimg_header *hdr = NULL;
 	uint64_t ramdisk_offset = (uint64_t)NULL; /* Offset of 1st ramdisk byte in boot.img */
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	uint32_t ramdisksize, kernel_size, page_size;
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
 
 	ramdisk_load = tegrabl_get_ramdisk_load_addr();
 	pr_trace("%u: ramdisk load addr: 0x%"PRIx64"\n", __LINE__, ramdisk_load);
 
-	/* Sanity check */
 	hdr = (tegrabl_bootimg_header *)boot_img_load_addr;
-	if (hdr->ramdisk_size > RAMDISK_MAX_SIZE) {
+	if (hdr->header_version >= 3) {
+		ramdisksize = ((struct boot_img_hdr_v3*)boot_img_load_addr)->ramdisk_size;
+		kernel_size = ((struct boot_img_hdr_v3*)boot_img_load_addr)->kernel_size;
+		page_size = 4096;
+	} else {
+		ramdisksize = hdr->ramdisk_size;
+		kernel_size = hdr->kernel_size;
+		page_size = hdr->page_size;
+	}
+
+	/* Sanity check */
+	if (ramdisksize > RAMDISK_MAX_SIZE) {
 		pr_error("Ramdisk size (0x%08x) is greater than allocated size (0x%08x)\n",
-				 hdr->ramdisk_size, RAMDISK_MAX_SIZE);
+				 ramdisksize, RAMDISK_MAX_SIZE);
 		err = TEGRABL_ERROR(TEGRABL_ERR_TOO_LARGE, 1);
 		goto fail;
 	}
 
-	ramdisk_offset = ROUND_UP_POW2(hdr->page_size + hdr->kernel_size, hdr->page_size);
+	ramdisk_offset = ROUND_UP_POW2(page_size + kernel_size, page_size);
 	ramdisk_offset = (uintptr_t)hdr + ramdisk_offset;
-	ramdisk_size = hdr->ramdisk_size;
+	ramdisk_size = ramdisksize;
 
 	if (ramdisk_offset != ramdisk_load) {
 		pr_info("Move ramdisk (len: %"PRIu64") from 0x%"PRIx64" to 0x%"PRIx64
@@ -269,7 +288,10 @@ static tegrabl_error_t extract_ramdisk(void *boot_img_load_addr)
 		memmove((void *)((uintptr_t)ramdisk_load), (void *)((uintptr_t)ramdisk_offset), ramdisk_size);
 	}
 
-	bootimg_cmdline = (char *)hdr->cmdline;
+	if (hdr->header_version >= 3)
+		bootimg_cmdline = (char *)((struct boot_img_hdr_v3*)boot_img_load_addr)->cmdline;
+	else
+		bootimg_cmdline = (char *)hdr->cmdline;
 
 fail:
 	return err;

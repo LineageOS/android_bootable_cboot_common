@@ -89,6 +89,7 @@ tegrabl_error_t tegrabl_verify_boot_img_hdr(tegrabl_bootimg_header *hdr, uint32_
 	uint32_t hdr_size;
 	uint64_t hdr_fields_sum;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
+	struct boot_img_hdr_v3* hdr_v3 = NULL;
 
 	pr_info("Checking boot.img header magic ... ");
 	if (memcmp(hdr->magic, BOOT_MAGIC, BOOT_MAGIC_SIZE)) {
@@ -98,21 +99,32 @@ tegrabl_error_t tegrabl_verify_boot_img_hdr(tegrabl_bootimg_header *hdr, uint32_
 	}
 	pr_info("[OK]\n");
 
-	if (hdr->page_size < sizeof(tegrabl_bootimg_header)) {
+	if ((hdr->header_version <= 2) && (hdr->page_size < sizeof(tegrabl_bootimg_header))) {
 		pr_error("Page size field (0x%08x) is less than header structure size (0x%08lx)\n",
 				 hdr->page_size, sizeof(tegrabl_bootimg_header));
 		err = TEGRABL_ERROR(TEGRABL_ERR_INVALID, 0);
 		goto fail;
 	}
 
-	hdr_size = hdr->page_size;
-	hdr_fields_sum = hdr_size + hdr->kernel_size + hdr->ramdisk_size + hdr->second_size;
-	pr_trace("img/buffer size : 0x%08x\n", (uint32_t)img_size);
-	pr_trace("hdr fields sum  : 0x%08x\n", (uint32_t)hdr_fields_sum);
-	pr_trace("kernel size     : 0x%08x\n", (uint32_t)hdr->kernel_size);
-	pr_trace("ramdisk size    : 0x%08x\n", (uint32_t)hdr->ramdisk_size);
-	pr_trace("second size     : 0x%08x\n", (uint32_t)hdr->second_size);
-	pr_trace("page size       : 0x%08x\n", (uint32_t)hdr->page_size);
+	if (hdr->header_version >= 3) {
+		hdr_v3 = (struct boot_img_hdr_v3*)hdr;
+		hdr_size = 4096;
+		hdr_fields_sum = hdr_size + hdr_v3->kernel_size + hdr_v3->ramdisk_size;
+		pr_trace("img/buffer size : 0x%08x\n", (uint32_t)img_size);
+		pr_trace("hdr fields sum  : 0x%08x\n", (uint32_t)hdr_fields_sum);
+		pr_trace("kernel size     : 0x%08x\n", (uint32_t)hdr_v3->kernel_size);
+		pr_trace("ramdisk size    : 0x%08x\n", (uint32_t)hdr_v3->ramdisk_size);
+		pr_trace("page size       : 0x%08x\n", (uint32_t)4096);
+	} else {
+		hdr_size = hdr->page_size;
+		hdr_fields_sum = hdr_size + hdr->kernel_size + hdr->ramdisk_size + hdr->second_size;
+		pr_trace("img/buffer size : 0x%08x\n", (uint32_t)img_size);
+		pr_trace("hdr fields sum  : 0x%08x\n", (uint32_t)hdr_fields_sum);
+		pr_trace("kernel size     : 0x%08x\n", (uint32_t)hdr->kernel_size);
+		pr_trace("ramdisk size    : 0x%08x\n", (uint32_t)hdr->ramdisk_size);
+		pr_trace("second size     : 0x%08x\n", (uint32_t)hdr->second_size);
+		pr_trace("page size       : 0x%08x\n", (uint32_t)hdr->page_size);
+	}
 	if (hdr_fields_sum > img_size) {
 		pr_error("Header size fields (0x%016lx) is greater than actual binary or buffer size (0x%08x)\n",
 				 hdr_fields_sum, img_size);
