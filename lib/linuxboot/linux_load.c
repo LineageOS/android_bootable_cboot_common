@@ -247,12 +247,19 @@ fail:
 	return err;
 }
 
-static tegrabl_error_t extract_ramdisk(void *boot_img_load_addr)
+static tegrabl_error_t extract_ramdisk(void *boot_img_load_addr, void* vendor_boot_load_addr)
 {
 	tegrabl_bootimg_header *hdr = NULL;
 	uint64_t ramdisk_offset = (uint64_t)NULL; /* Offset of 1st ramdisk byte in boot.img */
+	uint64_t vendor_ramdisk_offset = (uint64_t)NULL;
+	uint64_t vendor_ramdisk_table_offset = (uint64_t)NULL;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	uint32_t ramdisksize, kernel_size, page_size;
+	struct vendor_boot_img_hdr_v3 *vhdr = (struct vendor_boot_img_hdr_v3*)vendor_boot_load_addr;
+	struct vendor_boot_img_hdr_v4 *vhdr4 = NULL;
+	struct vendor_ramdisk_table_entry_v4 *vrte = NULL;
+	uint64_t vrd = (uint64_t)NULL, rlo = (uint64_t)NULL;
+	uint8_t i;
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
 
@@ -260,6 +267,7 @@ static tegrabl_error_t extract_ramdisk(void *boot_img_load_addr)
 	pr_trace("%u: ramdisk load addr: 0x%"PRIx64"\n", __LINE__, ramdisk_load);
 
 	hdr = (tegrabl_bootimg_header *)boot_img_load_addr;
+
 	if (hdr->header_version >= 3) {
 		ramdisksize = ((struct boot_img_hdr_v3*)boot_img_load_addr)->ramdisk_size;
 		kernel_size = ((struct boot_img_hdr_v3*)boot_img_load_addr)->kernel_size;
@@ -280,14 +288,46 @@ static tegrabl_error_t extract_ramdisk(void *boot_img_load_addr)
 
 	ramdisk_offset = ROUND_UP_POW2(page_size + kernel_size, page_size);
 	ramdisk_offset = (uintptr_t)hdr + ramdisk_offset;
-	ramdisk_size = ramdisksize;
 
-	if (ramdisk_offset != ramdisk_load) {
+	if (vhdr && vhdr->header_version == 3) {
+		vendor_ramdisk_offset = ROUND_UP(vhdr->header_size, vhdr->page_size);
+		vendor_ramdisk_offset = (uintptr_t)vhdr + vendor_ramdisk_offset;
+
+		memmove((void *)((uintptr_t)ramdisk_load), (void *)((uintptr_t)vendor_ramdisk_offset), vhdr->vendor_ramdisk_size);
+		ramdisk_size = vhdr->vendor_ramdisk_size;
+
+		memmove((void *)((uintptr_t)ramdisk_load+vhdr->vendor_ramdisk_size), (void *)((uintptr_t)ramdisk_offset), ramdisksize);
+		ramdisk_size += ramdisksize;
+	} else if (vhdr && vhdr->header_version >= 4) {
+		vhdr4 = (struct vendor_boot_img_hdr_v4*)vhdr;
+		vendor_ramdisk_offset = ROUND_UP(vhdr->header_size, vhdr4->page_size);
+		vendor_ramdisk_offset = (uintptr_t)vhdr4 + vendor_ramdisk_offset;
+		vendor_ramdisk_table_offset = vendor_ramdisk_offset + ROUND_UP(vhdr4->vendor_ramdisk_size, vhdr4->page_size) +
+			ROUND_UP(vhdr->dtb_size, vhdr4->page_size);
+
+		ramdisk_size = 0;
+		for (i = 0; i < vhdr4->vendor_ramdisk_table_entry_num; i++) {
+			vrte = (struct vendor_ramdisk_table_entry_v4*)(vendor_ramdisk_table_offset +
+				(i * vhdr4->vendor_ramdisk_table_entry_size));
+			vrd = vendor_ramdisk_offset + vrte->ramdisk_offset;
+			rlo = ramdisk_load + vrte->ramdisk_offset;
+
+			memmove((void *)((uintptr_t)rlo), (void *)((uintptr_t)vrd), vrte->ramdisk_size);
+			ramdisk_size += vrte->ramdisk_size;
+		}
+
+		rlo += vrte->ramdisk_size;
+		memmove((void *)((uintptr_t)rlo), (void *)((uintptr_t)ramdisk_offset), ramdisksize);
+		ramdisk_size += ramdisksize;
+	} else if (ramdisk_offset != ramdisk_load) {
+		ramdisk_size = ramdisksize;
 		pr_info("Move ramdisk (len: %"PRIu64") from 0x%"PRIx64" to 0x%"PRIx64
 				"\n", ramdisk_size, ramdisk_offset, ramdisk_load);
 		memmove((void *)((uintptr_t)ramdisk_load), (void *)((uintptr_t)ramdisk_offset), ramdisk_size);
 	}
 
+	if (vhdr)
+		bootimg_cmdline = (char *)vhdr->cmdline;
 	if (hdr->header_version >= 3)
 		bootimg_cmdline = (char *)((struct boot_img_hdr_v3*)boot_img_load_addr)->cmdline;
 	else
@@ -612,6 +652,7 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 	void *kernel_dtbo = NULL;
 	void *boot_img_load_addr = NULL;
 	void *ramdisk_load_addr = NULL;
+	void *vendor_boot_load_addr = NULL;
 	uint32_t kernel_size = 0;
 
 	pr_trace("%s(): %u\n", __func__, __LINE__);
@@ -626,6 +667,7 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 										 kernel_dtb,
 										 &kernel_dtbo,
 										 &ramdisk_load_addr,
+										 &vendor_boot_load_addr,
 										 data,
 										 data_size,
 										 &kernel_size,
@@ -653,7 +695,7 @@ tegrabl_error_t tegrabl_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel,
 	}
 
 	if (HAS_BOOT_IMG_HDR((tegrabl_bootimg_header *)boot_img_load_addr)) {
-		err = extract_ramdisk(boot_img_load_addr);
+		err = extract_ramdisk(boot_img_load_addr, vendor_boot_load_addr);
 		if (err != TEGRABL_NO_ERROR) {
 			pr_error("Error %u loading the ramdisk\n", err);
 			goto fail;

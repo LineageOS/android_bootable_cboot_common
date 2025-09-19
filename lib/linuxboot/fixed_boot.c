@@ -21,6 +21,8 @@
 #include <tegrabl_linuxboot_utils.h>
 #include <tegrabl_devicetree.h>
 #include <tegrabl_exit.h>
+#include <tegrabl_partition_manager.h>
+#include <tegrabl_gpt.h>
 #include <linux_load.h>
 #if defined(CONFIG_ENABLE_EXTLINUX_BOOT)
 #include <extlinux_boot.h>
@@ -68,13 +70,15 @@ struct tegrabl_img_dtb_fdt {
 static tegrabl_error_t
 tegrabl_load_from_partition(struct tegrabl_kernel_bin *kernel,
 			    void **boot_img_load_addr, void **dtb_load_addr,
-			    void **kernel_dtbo,
+			    void **kernel_dtbo, void **vendor_boot_load_addr,
 			    void *data, uint32_t data_size,
 			    bool boot_to_recovery)
 {
-	uint32_t boot_img_size;
+	uint32_t boot_img_size, vendor_boot_size;
 	tegrabl_error_t err = TEGRABL_NO_ERROR;
 	struct tegrabl_img_dtb_fdt *img_dtb_fdt = NULL;
+	char partition_name[TEGRABL_GPT_MAX_PARTITION_NAME + 1];
+	struct tegrabl_partition part;
 
 	TEGRABL_UNUSED(kernel_dtbo);
 	TEGRABL_UNUSED(boot_to_recovery);
@@ -118,6 +122,28 @@ tegrabl_load_from_partition(struct tegrabl_kernel_bin *kernel,
 	err = tegrabl_verify_boot_img_hdr(*boot_img_load_addr, boot_img_size);
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
+	}
+
+	err = tegrabl_get_partition_name(TEGRABL_BINARY_VENDOR_KERNEL, 0, partition_name);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_error("Failed to get vendor_boot partition name\n");
+		goto boot_image_load_done;
+	}
+	if (tegrabl_get_partition_name(TEGRABL_BINARY_VENDOR_KERNEL, 0, partition_name) == TEGRABL_NO_ERROR &&
+	    tegrabl_partition_open(partition_name, &part) == TEGRABL_NO_ERROR) {
+		tegrabl_partition_close(&part);
+		err = tegrabl_load_binary(TEGRABL_BINARY_VENDOR_KERNEL, vendor_boot_load_addr,
+					&vendor_boot_size);
+		if (err != TEGRABL_NO_ERROR) {
+			*vendor_boot_load_addr = NULL;
+			goto boot_image_load_done;
+		}
+		vendor_boot_size = BOOT_IMAGE_MAX_SIZE;
+		err = tegrabl_verify_vendor_boot_hdr(*vendor_boot_load_addr, vendor_boot_size);
+		if (err != TEGRABL_NO_ERROR) {
+			*vendor_boot_load_addr = NULL;
+			goto boot_image_load_done;
+		}
 	}
 
 boot_image_load_done:
@@ -175,6 +201,7 @@ tegrabl_error_t fixed_boot_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel
 											   void **dtb_load_addr,
 											   void **kernel_dtbo,
 											   void **ramdisk_load_addr,
+											   void **vendor_boot_load_addr,
 											   void *data,
 											   uint32_t data_size,
 											   uint32_t *kernel_size,
@@ -215,6 +242,7 @@ tegrabl_error_t fixed_boot_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel
 		/* Load recovery kernel and kernel-dtb */
 		err = tegrabl_load_from_partition(kernel, boot_img_load_addr,
 						  dtb_load_addr, kernel_dtbo,
+						  vendor_boot_load_addr,
 						  data, data_size,
 						  true);
 		if (err != TEGRABL_NO_ERROR) {
@@ -262,6 +290,7 @@ tegrabl_error_t fixed_boot_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel
 	/* Load normal kernel and kernel-dtb */
 	err = tegrabl_load_from_partition(kernel, boot_img_load_addr,
 					  dtb_load_addr, kernel_dtbo,
+					  vendor_boot_load_addr,
 					  data, data_size,
 					  false);
 	if (err != TEGRABL_NO_ERROR) {
