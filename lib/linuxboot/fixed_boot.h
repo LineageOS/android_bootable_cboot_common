@@ -19,6 +19,7 @@
  * @param dtb_load_addr Ptr to the address where dtb is loaded (output)
  * @param kernel_dtbo Ptr to the address where dtbo is loaded (output)
  * @param ramdisk_load_addr Ptr to the address where ramdisk is loaded (output)
+ * @param vendor_boot_img_load_addr Ptr to the address where vendor_boot.img is loaded (output)
  * @param data Ptr to the kernel image stored in memory
  * @param data_size Size of the kernel image stored in memory
  * @param kernel_size Ptr to the kernel size buffer (output)
@@ -31,6 +32,7 @@ tegrabl_error_t fixed_boot_load_kernel_and_dtb(struct tegrabl_kernel_bin *kernel
 											   void **dtb_load_addr,
 											   void **kernel_dtbo,
 											   void **ramdisk_load_addr,
+											   void **vendor_boot_img_load_addr,
 											   void *data,
 											   uint32_t data_size,
 											   uint32_t *kernel_size,
