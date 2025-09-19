@@ -135,3 +135,20 @@ tegrabl_error_t tegrabl_verify_boot_img_hdr(tegrabl_bootimg_header *hdr, uint32_
 fail:
 	return err;
 }
+
+tegrabl_error_t tegrabl_verify_vendor_boot_img_hdr(tegrabl_bootimg_header *hdr, uint32_t img_size)
+{
+	struct vendor_boot_img_hdr_v3 *vhdr = (struct vendor_boot_img_hdr_v3*)hdr;
+	tegrabl_error_t err = TEGRABL_NO_ERROR;
+
+	pr_info("Checking vendor_boot.img header magic ... ");
+	if (memcmp(vhdr->magic, VENDOR_BOOT_MAGIC, VENDOR_BOOT_MAGIC_SIZE)) {
+		pr_error("Invalid header magic\n");
+		err = TEGRABL_ERROR(TEGRABL_ERR_VERIFY_FAILED, 0);
+		goto fail;
+	}
+	pr_info("[OK]\n");
+
+fail:
+	return err;
+}
