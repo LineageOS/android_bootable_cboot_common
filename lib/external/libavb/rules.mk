@@ -6,7 +6,7 @@ MODULE := $(LOCAL_DIR)
 
 GLOBAL_INCLUDES += \
 	$(LOCAL_DIR)/../../../../../../external/avb \
-	$(LOCAL_DIR)/../../../../../../external/avb/libavb/sha
+	$(LOCAL_DIR)/../../../../../../external/avb/libavb/crypto
 
 MODULE_CFLAGS := \
         -Wno-error=maybe-uninitialized \
@@ -30,7 +30,7 @@ MODULE_SRCS += \
         $(LIBAVB_DIR)/avb_util.c \
         $(LIBAVB_DIR)/avb_vbmeta_image.c \
         $(LIBAVB_DIR)/avb_version.c \
-        $(LIBAVB_DIR)/sha/sha256_impl.c \
-        $(LIBAVB_DIR)/sha/sha512_impl.c
+        $(LIBAVB_DIR)/crypto/sha256_impl.c \
+        $(LIBAVB_DIR)/crypto/sha512_impl.c
 
 include make/module.mk
