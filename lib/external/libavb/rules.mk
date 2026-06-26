@@ -23,6 +23,7 @@ MODULE_SRCS += \
         $(LIBAVB_DIR)/avb_hash_descriptor.c \
         $(LIBAVB_DIR)/avb_hashtree_descriptor.c \
         $(LIBAVB_DIR)/avb_kernel_cmdline_descriptor.c \
+        $(LIBAVB_DIR)/avb_mldsa.c \
         $(LIBAVB_DIR)/avb_property_descriptor.c \
         $(LIBAVB_DIR)/avb_rsa.c \
         $(LIBAVB_DIR)/avb_slot_verify.c \
@@ -30,6 +31,7 @@ MODULE_SRCS += \
         $(LIBAVB_DIR)/avb_util.c \
         $(LIBAVB_DIR)/avb_vbmeta_image.c \
         $(LIBAVB_DIR)/avb_version.c \
+        $(LIBAVB_DIR)/crypto/mldsa_impl.c \
         $(LIBAVB_DIR)/crypto/sha256_impl.c \
         $(LIBAVB_DIR)/crypto/sha512_impl.c
 
