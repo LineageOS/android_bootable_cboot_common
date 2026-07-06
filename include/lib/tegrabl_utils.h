@@ -17,6 +17,7 @@
 #include <tegrabl_compiler.h>
 
 #define BASE_10  10UL
+#define BASE_16  16UL
 
 #define SZ_256  256UL
 #define SZ_512  512UL
