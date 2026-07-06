@@ -358,6 +358,15 @@ static tegrabl_error_t extract_kernel_dtb(void **kernel_dtb, void *kernel_dtbo)
 		goto fail;
 	}
 
+	pr_trace("kernel-dtbo @ %p\n", kernel_dtbo);
+#if defined(CONFIG_ENABLE_DTB_OVERLAY)
+	err = tegrabl_dtb_overlay(kernel_dtb, kernel_dtbo);
+	if (err != TEGRABL_NO_ERROR) {
+		pr_warn("Booting with default kernel-dtb!!!\n");
+		err = TEGRABL_NO_ERROR;
+	}
+#endif
+
 	err = tegrabl_linuxboot_update_dtb(*kernel_dtb);
 	if (err != TEGRABL_NO_ERROR) {
 		goto fail;
@@ -369,15 +378,6 @@ static tegrabl_error_t extract_kernel_dtb(void **kernel_dtb, void *kernel_dtbo)
 		if (err != TEGRABL_NO_ERROR) {
 			goto fail;
 		}
-	}
-#endif
-
-	pr_trace("kernel-dtbo @ %p\n", kernel_dtbo);
-#if defined(CONFIG_ENABLE_DTB_OVERLAY)
-	err = tegrabl_dtb_overlay(kernel_dtb, kernel_dtbo);
-	if (err != TEGRABL_NO_ERROR) {
-		pr_warn("Booting with default kernel-dtb!!!\n");
-		err = TEGRABL_NO_ERROR;
 	}
 #endif
 
